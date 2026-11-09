@@ -1,0 +1,274 @@
+/* ResourceWatch HTML UI — no direct disk, GPU, or network system access.
+ * External host may call window.ResourceWatchUI.update(snapshot).
+ * All sensor-looking values on initial load are clearly marked DEMO.
+ */
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const MAX_SAMPLES = 45;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function wave(level, swing, samples = MAX_SAMPLES, phase = 0) {
+    return Array.from({length: samples}, (_, i) =>
+      Math.max(0, Math.min(100, level + swing * Math.sin(i * .36 + phase)
+        + swing * .24 * Math.cos(i * .79 + phase * 2))));
+  }
+
+  const demo = {
+    version: "0.0.3",
+    cpuName: "Intel Xeon CPU E3-1231 v3 @ 3.40GHz",
+    cpu: {displayValue: "18.4%", percent: 18.4},
+    cpuFreqText: "3.00 GHz", cpuTempText: "46.8 °C", uptimeText: "2:29:50",
+    gpuIndex: 0, gpuName: "NVIDIA Quadro P620",
+    gpu: {displayValue: "68%", percent: 68}, gpuTempText: "60 °C",
+    vram: {displayValue: "80%", percent: 80, usedText: "1.6 GiB", totalText: "2.0 GiB"},
+    // Neither NVENC nor NVDEC is exposed by the current SensorManager.
+    encoder: null, decoder: null,
+    ram: {displayValue: "41.7%", percent: 41.7, usedText: "6.5 GiB", totalText: "15.5 GiB"},
+    ramSubtitle: "15.5 GiB DDR3", ramSpeedText: "--",
+    swap: {usedText: "0 B", totalText: "7.8 GiB"},
+    disks: [
+      {name: "sda", sizeText: "1.8 TiB", model: "TOSHIBA DT01ABA200V"},
+      {name: "nvme0n1", sizeText: "476.9 GiB", model: "Micron 2400 MTFDKBA512QFM"}
+    ],
+    diskRates: {sda:{read:0,write:208400},nvme0n1:{read:0,write:0}},
+    netIp: "192.168.50.212", netHasInterface: true,
+    netUp: {rawValue: 1363149, displayValue:"1.3 MiB/s"},
+    netDown: {rawValue: 14234, displayValue:"13.9 KiB/s"},
+    history: {
+      cpu: wave(15, 5), gpu: wave(56, 15, MAX_SAMPLES, .5),
+      vram: wave(80, 2), ram: wave(41.7, .8),
+      netUp: Array.from({length: MAX_SAMPLES}, (_, i) => 660000 + (i===35?600000:0) + 90000 * Math.sin(i*.39)),
+      netDown: Array.from({length: MAX_SAMPLES}, (_, i) => 40000 + 15000 * Math.cos(i*.45))
+    }
+  };
+
+  const clone = obj => JSON.parse(JSON.stringify(obj));
+  // 在 QtWebEngine 中絕不顯示虛假的示範數值；瀏覽器預覽才使用 demo。
+  const embedded = Boolean(window.qt && window.qt.webChannelTransport);
+  const empty = {
+    version: "0.0.3", cpuName: "--",
+    cpu: {displayValue:"--"}, cpuFreqText:"--", cpuTempText:"--", uptimeText:"--",
+    gpuIndex:0, gpuName:"--", gpu:{displayValue:"--"}, gpuTempText:"--",
+    vram:{usedText:"--",totalText:"--"}, encoder:null, decoder:null,
+    ram:{displayValue:"--",usedText:"--",totalText:"--"}, ramSpeedText:"--",
+    swap:{usedText:"--",totalText:"--"},
+    disks:[], diskRates:{}, netHasInterface:false, netIp:"--",
+    netUp:{displayValue:"--"}, netDown:{displayValue:"--"},
+    history:{cpu:[],gpu:[],vram:[],ram:[],netUp:[],netDown:[]}
+  };
+  let state = clone(embedded ? empty : demo);
+  let isDemo = !embedded;
+  let connected = false;
+  let bridge = null;
+  let frame = 0;
+  const text = (value, fallback = "--") => value === null || value === undefined || value === "" ? fallback : String(value);
+  const metricText = value => text(value && value.displayValue);
+  function setText(id, value) { const element = $(id); if (element) element.textContent = text(value); }
+  function formatRate(value) {
+    if (!Number.isFinite(value) || value < 0) return "--";
+    const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
+    let v = value, unit = 0;
+    while (v >= 1024 && unit < units.length - 1) { v /= 1024; unit++; }
+    return (unit === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + units[unit];
+  }
+  function escapeAttr(value) { return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function makeDiskCard(disk, idx, rates) {
+    const card = document.createElement("section");
+    card.className = "monitor-card monitor-card--disk";
+    card.setAttribute("aria-label", "硬碟 " + (idx + 1));
+    const name = text(disk.name);
+    const model = text(disk.model);
+    const size = text(disk.sizeText);
+    const diskRates = rates?.[name] || {};
+    card.innerHTML = `<div class="disk-header"><h2>硬碟${idx + 1}</h2><span class="disk-name" title="${escapeAttr(name)}">${escapeAttr(name)}</span></div>
+      <div class="disk-model" title="${escapeAttr(model)}">${escapeAttr(model)} · ${escapeAttr(size)}</div>
+      <div class="disk-stats"><div class="stat"><span class="stat-label">讀取速度</span><strong class="stat-value">${formatRate(diskRates.read)}</strong></div><div class="stat"><span class="stat-label">寫入速度</span><strong class="stat-value">${formatRate(diskRates.write)}</strong></div></div>`;
+    return card;
+  }
+
+  function updateGrid(svg) {
+    const g = svg.querySelector(".grid-lines");
+    if (!g) return;
+    // Grid as a vector path, inspectable in browser DevTools.
+    let d = "";
+    for (let y = 0; y <= 100; y += 20) d += `M0 ${y} H300 `;
+    for (let x = 0; x <= 300; x += 30) d += `M${x} 0 V100 `;
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    g.replaceChildren(path);
+  }
+  document.querySelectorAll(".plot svg").forEach(updateGrid);
+
+  function chartSeries(name, values, max = 100) {
+    const chart = document.querySelector(`[data-chart="${name}"]`);
+    if (!chart) return;
+    const line = chart.querySelector(".line");
+    const area = chart.querySelector(".area");
+    if (!Array.isArray(values) || values.every(v => !Number.isFinite(v))) {
+      chart.classList.add("is-missing");
+      line.setAttribute("d", ""); area.setAttribute("d", "");
+      return;
+    }
+    const source = values.map(v => Number.isFinite(v) ? Math.max(0, v) : null);
+    const upper = max > 0 ? max : Math.max(1, ...source.filter(v => v !== null));
+    const lines = [];
+    const pts = [];
+    const last = Math.max(1, source.length - 1);
+    for (let i = 0; i < source.length; i++) {
+      if (source[i] === null) continue;
+      const x = i / last * 300;
+      const y = 100 - Math.min(1, source[i] / upper) * 100;
+      lines.push(`${lines.length ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`);
+      pts.push([x, y]);
+    }
+    if (!pts.length) { chart.classList.add("is-missing"); return; }
+    chart.classList.remove("is-missing");
+    line.setAttribute("d", lines.join(" "));
+    area.setAttribute("d", `M${pts[0][0].toFixed(2)} 100 ${lines.join(" ").replace(/^M/, "L")} L${pts[pts.length-1][0].toFixed(2)} 100 Z`);
+  }
+
+  function render() {
+    const s = state;
+    setText("cpuName", s.cpuName);
+    setText("cpuUsage", metricText(s.cpu));
+    setText("cpuSpeed", s.cpuFreqText);
+    setText("cpuTemp", s.cpuTempText);
+    setText("cpuUptime", s.uptimeText);
+    setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
+    setText("gpuName", s.gpuName);
+    setText("gpuUsage", metricText(s.gpu));
+    setText("gpuTemp", s.gpuTempText);
+    setText("gpuVram", s.vram ? `${text(s.vram.usedText)} / ${text(s.vram.totalText)}` : "--");
+    setText("vramGraphMax", s.vram?.totalText);
+    setText("encoderLabel", s.encoder?.displayValue ?? "--");
+    setText("decoderLabel", s.decoder?.displayValue ?? "--");
+    setText("ramSubtitle", s.ramSubtitle ?? s.ram?.totalText);
+    setText("ramUsage", metricText(s.ram));
+    setText("ramSpeed", s.ramSpeedText);
+    setText("ramUsed", s.ram ? `${text(s.ram.usedText)} / ${text(s.ram.totalText)}` : "--");
+    setText("swapUsed", s.swap ? `${text(s.swap.usedText)} / ${text(s.swap.totalText)}` : "--");
+    setText("netSubtitle", s.netHasInterface ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
+    setText("netUp", metricText(s.netUp));
+    setText("netDown", metricText(s.netDown));
+    setText("versionText", "v" + text(s.version,"0.0.3"));
+    $("disksGrid").replaceChildren(...(s.disks || []).map((disk,i) => makeDiskCard(disk,i,s.diskRates)));
+
+    const h = s.history || {};
+    chartSeries("cpu", h.cpu);
+    chartSeries("gpu", h.gpu);
+    chartSeries("vram", h.vram);
+    chartSeries("ram", h.ram);
+    chartSeries("encode", h.encode || (Number.isFinite(s.encoder?.percent) ? [s.encoder.percent] : null));
+    chartSeries("decode", h.decode || (Number.isFinite(s.decoder?.percent) ? [s.decoder.percent] : null));
+    const up = Array.isArray(h.netUp) ? h.netUp : [];
+    const down = Array.isArray(h.netDown) ? h.netDown : [];
+    const max = Math.max(1, ...up.filter(Number.isFinite), ...down.filter(Number.isFinite));
+    // Network demo displays the larger of up/down for one compact chart.
+    const net = Array.from({length: Math.max(up.length,down.length)}, (_,i) => {
+      const a = up[i], b = down[i];
+      if (!Number.isFinite(a) && !Number.isFinite(b)) return null;
+      return Math.max(0, Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
+    });
+    chartSeries("network", net.length ? net : null, max * 1.12);
+    setText("networkGraphMax", formatRate(max));
+  }
+
+  function updateMode() {
+    const badge = $("dataMode");
+    badge.textContent = isDemo ? "示範資料 · 非實機" :
+      (connected ? "即時資料" : "連線中 · 等待 KDE 感測器");
+    badge.classList.toggle("is-live",connected);
+    badge.hidden = connected;
+  }
+  // Public integration API for an eventual QML/QtWebChannel bridge.
+  // Pass a complete snapshot with the same property names as SensorManager.qml.
+  window.ResourceWatchUI = Object.freeze({
+    update(snapshot) {
+      if (!snapshot || typeof snapshot !== "object") return;
+      state = clone(snapshot);
+      isDemo = false;
+      connected = true;
+      $("demoAnimation").checked = false;
+      updateMode();
+      render();
+    },
+    showDemo() {
+      if (embedded) return; // Plasma Widget 禁止手動切回虛假監控資料
+      state = clone(demo);
+      isDemo = true;
+      updateMode();
+      render();
+    }
+  });
+
+  $("settingsButton").addEventListener("click", () => {
+    if (embedded) {
+      if (bridge) bridge.openSettings();
+      return;
+    }
+    const panel = $("previewSettings");
+    panel.hidden = !panel.hidden;
+    $("settingsButton").setAttribute("aria-expanded", String(!panel.hidden));
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      $("previewSettings").hidden = true;
+      $("settingsButton").setAttribute("aria-expanded","false");
+    }
+  });
+  $("showGridLines").addEventListener("change", e => {
+    $("resourceWatch").classList.toggle("hide-grid", !e.target.checked);
+  });
+  $("demoAnimation").addEventListener("change", e => {
+    if (!embedded && e.target.checked && !isDemo) window.ResourceWatchUI.showDemo();
+  });
+
+  if (embedded) {
+    $("previewSettings").hidden = true;
+    $("settingsButton").title = "KDE 小工具設定";
+    $("settingsButton").setAttribute("aria-label", "KDE 小工具設定");
+    const clientScript = document.createElement("script");
+    clientScript.src = "qrc:///qtwebchannel/qwebchannel.js";
+    clientScript.onload = () => {
+      if (typeof QWebChannel !== "function") return;
+      new QWebChannel(window.qt.webChannelTransport, channel => {
+        bridge = channel.objects.resourceWatch;
+        if (!bridge) {
+          $("dataMode").textContent = "KDE 資料橋接失敗";
+          return;
+        }
+        const receive = json => {
+          try { window.ResourceWatchUI.update(JSON.parse(json)); }
+          catch (error) { console.warn("Invalid ResourceWatch snapshot", error); }
+        };
+        bridge.snapshotReady.connect(receive);
+        receive(bridge.snapshotJson);
+      });
+    };
+    clientScript.onerror = () => { $("dataMode").textContent = "QtWebChannel 載入失敗"; };
+    document.head.appendChild(clientScript);
+  }
+
+  setInterval(() => {
+    if (embedded || !isDemo || !$("demoAnimation").checked) return;
+    frame++;
+    const h = state.history;
+    function push(key, value) { if (!Array.isArray(h[key])) h[key]=[]; h[key].push(value); if (h[key].length>MAX_SAMPLES) h[key].shift(); }
+    const cpu = 18 + 6 * Math.sin(frame*.5) + 3 * Math.sin(frame*.17);
+    const gpu = 52 + 17 * Math.cos(frame*.25);
+    const ram = 41.7 + .9*Math.sin(frame*.12);
+    const up = Math.max(0, 850000 + 360000*Math.sin(frame*.4));
+    const down = Math.max(0, 24000 + 15000*Math.cos(frame*.31));
+    push("cpu",cpu); push("gpu",gpu); push("ram",ram);
+    push("vram",80+.5*Math.sin(frame*.07)); push("netUp",up); push("netDown",down);
+    state.cpu = {displayValue:cpu.toFixed(1)+"%",percent:cpu};
+    state.gpu = {displayValue:gpu.toFixed(1)+"%",percent:gpu};
+    state.ram = {...state.ram,displayValue:ram.toFixed(1)+"%",percent:ram};
+    state.netUp = {rawValue:up,displayValue:formatRate(up)};
+    state.netDown = {rawValue:down,displayValue:formatRate(down)};
+    render();
+  }, 1500);
+  updateMode();
+  render();
+})();

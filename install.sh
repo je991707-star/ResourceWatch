@@ -14,6 +14,9 @@ case "${1:-install}" in
         kpackagetool6 --type Plasma/Applet --remove "$ID"
         ;;
     install|upgrade)
+        # 以 web/ 作為 HTML 原始碼；安裝前更新 Plasmoid 內的隨附副本。
+        mkdir -p package/contents/web
+        cp web/index.html web/styles.css web/app.js package/contents/web/
         if kpackagetool6 --type Plasma/Applet --list 2>/dev/null | grep -q "$ID"; then
             kpackagetool6 --type Plasma/Applet --upgrade ./package
         else

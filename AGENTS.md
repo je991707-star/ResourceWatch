@@ -1,3 +1,17 @@
+# 架構更新（HTML Widget 整合版，優先於本文件舊規劃）
+
+**使用者已決定採用 HTML/CSS/JavaScript 作為 Plasma 6 Widget 的正式完整畫面**。本次修改已以 `HtmlView.qml` + QtWebEngine / QtWebChannel 將 `web/` 的 HTML 接入桌面小工具，`SensorManager.qml` 沿用現有感測器邏輯。原本「禁止 HTML/QtWebEngine UI」「正式 UI 只能純 QML」「FullView.qml 為活躍主視圖」等敘述已被此決策取代，不可再用來否決現在的架構。`FullView.qml` 及 `components/` 保留為舊版參考，不再是主要 UI。
+
+- 正式 HTML 編輯位置：`web/index.html`、`web/styles.css`、`web/app.js`。
+- 安裝用 HTML 副本：`package/contents/web/`；執行 `./install.sh upgrade` 同步後安裝。
+- 容器與資料橋接：`package/contents/ui/main.qml`、`package/contents/ui/HtmlView.qml`。
+- 資料後端：`package/contents/ui/models/SensorManager.qml`。
+- 面板仍以 `CompactView.qml` 提供輕量緊湊表示，完整視圖全部由 HTML 繪製。
+- 不得新增網頁任意 shell 存取；真實桌面 Widget 不可顯示示範資料當作感測器數據。保留失效時 `--`。
+- 真正加入桌面前必須用 `plasmawindowed` 測試 QtWebEngine 相容性，不使用 `--no-sandbox` 迴避。
+
+---
+
 # Resource Watch — 開發代理指引（Agent.md）
 
 > 專案：Resource Watch（KDE Plasma 6 / Qt 6 / QML 原生資源監控小工具）  

@@ -3,7 +3,7 @@
 // 依系統語系（zh*）顯示繁體中文，其他語系顯示英文。
 var en = {
     usage: "Usage", speed: "Speed", temp: "Temp", uptime: "Uptime",
-    cpuUsageChart: "CPU usage", gpuCompute: "GPU usage", vram: "VRAM",
+    cpuUsageChart: "CPU usage", gpuCompute: "GPU usage", gpuCopy: "Copy", gpuDecode: "Decode", vram: "VRAM",
     ramUsage: "RAM usage", inUse: "In use", swapInUse: "Swap in use", gpuMemory: "GPU memory",
     disk: "Disk", allDisks: "All disks", read: "Read speed", write: "Write speed",
     network: "Network", upload: "Upload", download: "Download",
@@ -18,7 +18,7 @@ var en = {
 
 var zh = {
     usage: "使用率", speed: "速度", temp: "溫度", uptime: "運作時間",
-    cpuUsageChart: "CPU使用率", gpuCompute: "GPU使用率", vram: "VRAM",
+    cpuUsageChart: "CPU使用率", gpuCompute: "GPU使用率", gpuCopy: "複製", gpuDecode: "解碼", vram: "VRAM",
     ramUsage: "RAM使用率", inUse: "使用中", swapInUse: "SWAP使用中", gpuMemory: "GPU記憶體",
     disk: "硬碟", allDisks: "所有硬碟", read: "讀取速度", write: "寫入速度",
     network: "網路", upload: "上傳", download: "下載",

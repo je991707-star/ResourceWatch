@@ -1,188 +1,252 @@
-# Resource Watch
+# ResourceWatch
 
-**目前版本：v0.0.3** · KDE Plasma 6 原生系統資源監控小工具（Plasmoid）
+**v0.0.4（README 文件版）** · KDE Plasma 6 · Wayland · HTML / CSS / JavaScript · MIT
 
-Resource Watch 使用 **QML / Qt Quick** 製作介面，結合 KDE **KSysGuard / KSystemStats** 感測器顯示 CPU、GPU、記憶體、硬碟與網路狀態。目標環境為 **Bazzite KDE、Plasma 6、Wayland**；其他 Plasma 6 發行版的相容性仍需各自驗證。
+ResourceWatch（資源監控）是一款供 **KDE Plasma 6 桌面**使用的系統資源監控小工具（Plasmoid），顯示 CPU、GPU、RAM、實體硬碟及網路活動。
 
-* **小工具 ID**：`io.github.local.resourcewatch`
-* **授權**：MIT
-* **專案狀態**：持續開發中；功能及感測器可用性依系統、驅動與 Plasma 版本而異。
+目前採用 **QML 作為 KDE 小工具容器與感測器後端，HTML + CSS + JavaScript 作為完整監控畫面**。因此，調整卡片位置、字體、配色、圖表和 RWD 時，可以使用瀏覽器開發者工具與熟悉的網頁開發流程，而不需要重寫感測器程式。
 
-## 功能
+> **版本提醒：** 本文件以 **v0.0.4** 為目標整理；我所能核對的最近一份專案封裝中，`package/metadata.json` 的 `KPlugin.Version` 仍為 `0.0.3`。這次僅製作 README，**沒有修改程式或宣稱 v0.0.4 已完成實機驗收**。正式發布 v0.0.4 前，應由專案維護者同步版本號並測試。
 
-|分類|顯示資訊|備註|
-|-|-|-|
-|CPU|使用率、平均頻率、溫度、處理器名稱、系統運作時間|使用率歷史圖|
-|GPU|使用率、溫度、顯示卡名稱、VRAM 已用／總量|使用率及 VRAM 歷史圖；可設定 GPU 編號|
-|RAM|使用率、已用／總量、Swap 已用／總量|RAM 使用率歷史圖|
-|硬碟|自動辨識實體硬碟的 **NAME、SIZE、MODEL**，以及讀寫速度|不再需要手動填寫硬碟 ID 或 Label；目前完整視圖最多顯示前兩顆|
-|網路|上傳／下載速度、傳輸歷史圖|可指定網路介面；指定介面時顯示 IPv4（若感測器支援）|
+## 功能現況
 
-小工具包含 **Full View**（桌面／展開視圖）和 **Compact View**（面板簡潔視圖，顯示 CPU、GPU、RAM 使用率）。介面字串依系統語系在繁體中文與英文間切換。
+| 模組 | 目前功能 | 狀態或限制 |
+| --- | --- | --- |
+| CPU | 整體使用率、時脈、溫度、運作時間、處理器名稱、歷史曲線 | 個別數值取決於 KDE 感測器是否可用 |
+| GPU | 使用率、溫度、顯示卡名稱、VRAM 用量與歷史曲線 | 獨立的 Copy、Encode、Decode 使用率尚未接入 |
+| RAM | 使用率、已用／總容量、Swap、歷史曲線 | RAM 傳輸速度（MT/s）尚無資料來源 |
+| 硬碟 | 自動偵測實體磁碟的名稱、容量、型號及讀／寫速度 | 僅納入允許的裝置類型與傳輸介面；可用性需在實機確認 |
+| 網路 | 上傳／下載速度、歷史曲線、網卡 IPv4（適用時） | 依 KSystemStats 與選定介面而定 |
+| UI | 深色卡片、SVG 圖表、40:60 資訊／圖表比例、RWD | QtWebEngine 嵌入 Plasma 的結果仍需實機驗證 |
 
-無法取得的資料以 `--` 表示，不刻意將缺失數值當作 `0`。
+### 硬碟自動辨識
 
-## v0.0.3：硬碟自動偵測
+- 透過 `lsblk` 讀取 `NAME`、`SIZE`、`MODEL`、`TRAN`、`TYPE`。
+- 只選擇容量大於 0、`TYPE=disk` 且傳輸介面符合 SATA／ATA／IDE／SAS／SCSI／NVMe 等規則的裝置，並針對原生 NVMe 名稱提供辨識後備條件。
+- 排除不符合條件的 USB 裝置、光碟機、空讀卡機、zram 及分割區。
+- 透過 `/proc/diskstats` 的累計讀寫計數器差值換算 **B/s**，不需手動填入 `diskId` 或 `diskLabel`。
+- HTML 介面可依自動辨識的磁碟清單產生卡片；首次採樣未完成前，速度可能顯示 `--`。
 
-本版主要調整硬碟資料來源：**不再透過設定頁輸入 `disk1Id`、`disk1Label`、`disk2Id`、`disk2Label`**。
+## 核心架構
 
-### 裝置辨識
+```text
+KSystemStats / KSysGuard sensors
+              +
+    lsblk / /proc/diskstats
+              │
+              ▼
+ package/contents/ui/models/SensorManager.qml
+              │
+              ▼
+ package/contents/ui/main.qml
+              │  建立 SensorManager、切換顯示視圖
+              ▼
+ package/contents/ui/HtmlView.qml
+              │  QtWebEngine + QtWebChannel
+              │  JSON 感測器快照
+              ▼
+ package/contents/web/index.html
+              ├── styles.css   排版、主題、RWD
+              └── app.js       數值更新、SVG 曲線
+```
 
-透過系統提供的 `lsblk` 取得實體磁碟資訊：
+- **QML：** 負責 Plasma 的生命週期、設定介面、系統感測器及 HTML 橋接。
+- **QtWebEngine：** 在小工具內渲染 HTML；不是另外開一個瀏覽器視窗。
+- **QtWebChannel：** 以 `resourceWatch` 橋接物件將即時 JSON 快照傳給網頁，並供設定齒輪呼叫原生設定頁面。
+- **HTML/CSS/JS：** 只處理顯示及使用者操作，不直接存取系統感測器、執行 shell 命令或讀寫任意本機檔案。
+
+**目前的 `main.qml` 強制 `preferredRepresentation: fullRepresentation`，以避免 `plasmawindowed` 選到只顯示三項數值的 CompactView。** 專案仍保留 `CompactView.qml`，但面板體驗尚需單獨驗收。
+
+## 執行需求
+
+- KDE Plasma **6**，建議在 Wayland 工作階段測試。
+- Qt 6 與可供 QML 匯入的 `QtWebEngine`、`QtWebChannel` 模組。
+- KDE Kirigami、KSysGuard Sensors、Plasma5Support 等專案已使用的 QML 模組。
+- `lsblk`（util-linux）、`/proc/diskstats`、`cat`，供既有硬碟後端使用。
+- `kpackagetool6`；開發測試時建議使用 `plasmawindowed`。
+
+Bazzite 上可先確認套件：
+
+```bash
+rpm -q qt6-qtwebengine qt6-qtwebchannel
+command -v kpackagetool6
+command -v plasmawindowed
+```
+
+如果缺少 Qt 模組，請依目前 Bazzite／Fedora 版本確認官方套件名稱與安裝方式。**不需要為了啟動 WebEngine 停用 Chromium 沙盒，也不建議直接把未驗證版本附加到 `plasmashell` 除錯。**
+
+## 安裝與更新（Bazzite KDE）
+
+專案預期位於 `/home/h97m/ResourceWatch/`；若你的使用者名稱不同，請改用實際路徑。
+
+```bash
+cd /home/h97m/ResourceWatch
+
+# 先檢查既有程式與 HTML 同步狀態
+bash tests/static_check.sh
+
+# 安裝或升級 Plasma Widget，並同步 web/ 至安裝套件
+./install.sh upgrade
+
+# 先用獨立視窗驗證
+plasmawindowed io.github.local.resourcewatch
+```
+
+實測確認 HTML 卡片和即時資料正常後，再於 KDE 桌面右鍵選擇 **新增小工具**，搜尋「資源監控」或 `Resource Watch`。
+
+卸載：
+
+```bash
+cd /home/h97m/ResourceWatch
+./install.sh uninstall
+```
+
+以上是使用者空間的小工具安裝流程，**安裝 Plasmoid 本身不需要 `sudo`**。
+
+## 使用 VS Code 開發 HTML UI
+
+請修改 **專案根目錄的 `web/`**：
+
+| 檔案 | 用途 |
+| --- | --- |
+| `web/index.html` | CPU／GPU／RAM／硬碟／網路卡片的 HTML 元素 |
+| `web/styles.css` | 顏色、字型、留白、卡片尺寸、4:6 比例、CSS 容器查詢與 RWD |
+| `web/app.js` | JSON 快照接收、DOM 更新、硬碟卡片生成及 SVG 歷史圖表 |
+
+在 VS Code 使用 Live Server，或在終端機啟動本機預覽：
+
+```bash
+cd /home/h97m/ResourceWatch/web
+python3 -m http.server 8000
+```
+
+瀏覽器開啟 `http://localhost:8000/`，按 **F12** 可以檢查並調整 HTML/CSS。此模式會清楚標示**示範資料**；放進 Plasma 的 QtWebEngine 後，則會等待 QtWebChannel 的**真實快照**，不應把瀏覽器的示範數值當成硬體讀值。
+
+完成修改後：
+
+```bash
+cd /home/h97m/ResourceWatch
+./install.sh upgrade
+```
+
+`install.sh` 會把 `web/index.html`、`web/styles.css`、`web/app.js` 複製到 `package/contents/web/`，再透過 `kpackagetool6` 安裝或更新。**不要只修改 `package/contents/web/` 中的副本**；下一次執行安裝腳本時它會被覆蓋。
+
+## 設定項目
+
+KDE 原生設定頁目前提供：
+
+| 設定 | 範圍／預設值 |
+| --- | --- |
+| 更新間隔 | 500–10,000 毫秒；預設 2,000 毫秒 |
+| 歷史資料點數 | 10–120；預設 30 |
+| GPU Index | 0–15；預設 0 |
+| 網路介面 | 文字指定；預設 `all` |
+
+硬碟改採自動辨識，**沒有**手動磁碟 ID 或標籤欄位。HTML 畫面的設定齒輪透過 QtWebChannel 呼叫 KDE 的小工具設定。
+
+## 專案目錄
+
+```text
+ResourceWatch/
+├── README.md
+├── AGENTS.md
+├── LICENSE
+├── install.sh
+├── web/                          # HTML 原始碼／瀏覽器開發入口
+│     ├── index.html
+│     ├── styles.css
+│     └── app.js     
+├── package/
+│     ├── metadata.json              # Plasmoid ID、版本、名稱
+│     └── contents/
+│            ├── web/                   # 由 install.sh 同步的部署副本
+│            │     ├── index.html
+│            │     ├── styles.css
+│            │     └── app.js
+│            ├── config/
+│            │     ├── config.qml
+│            │     └── main.xml
+│            └── ui/
+│                   ├── main.qml           # Plasma 主入口
+│                   ├── HtmlView.qml       # WebEngine + WebChannel
+│                   ├── CompactView.qml    # 舊有緊湊視圖
+│                   ├── configGeneral.qml  # KDE 原生設定
+│                   └── models/
+│                          ├── SensorManager.qml
+│                          ├── FormatUtils.js
+│                          └── Strings.js
+└── tests/
+       ├── static_check.sh
+       └── format_utils_test.js
+```
+
+## 排查問題
+
+### 視窗只出現 `CPU xx% GPU xx% RAM xx%`
+
+這代表顯示了 `CompactView`，未必是感測器故障。檢查 `package/contents/ui/main.qml` 是否為：
+
+```qml
+preferredRepresentation: fullRepresentation
+```
+
+更新安裝後，關閉舊測試視窗並重新啟動 `plasmawindowed`。
+
+### 視窗空白或 HTML 沒有載入
+
+先確認 `package/contents/web/` 下的三個檔案存在，然後在終端機觀察錯誤：
+
+```bash
+cd /home/h97m/ResourceWatch
+./install.sh upgrade
+plasmawindowed io.github.local.resourcewatch 2>&1 | tee /tmp/resourcewatch-plasmawindowed.log
+```
+
+留意 `QtWebEngine`、`QtWebChannel`、QML import 或 HTML 路徑錯誤。`bash tests/static_check.sh` 通過**不代表** WebEngine 已成功在 KDE 實際載入。
+
+### 網頁卡片出現，但數值都是 `--`
+
+代表 HTML 已渲染，還需檢查 `HtmlView.qml` 的 WebChannel 連線和 `SensorManager.qml` 的感測器回傳；不要把無資料直接判定為 0%。
+
+### 硬碟沒有出現或沒有速度
 
 ```bash
 lsblk -J -b -d -o NAME,SIZE,MODEL,TRAN,TYPE
+cat /proc/diskstats | grep -E ' (sda|nvme0n1) '
 ```
 
-篩選條件：
+上面的 `sda|nvme0n1` 僅是示範裝置名稱，請依你的主機替換。確認裝置符合篩選條件，並等待至少兩次磁碟計數器採樣。
 
-* 只接受 `TYPE=disk`，且容量大於 0 的裝置。
-* 接受程式允許清單中的傳輸類型：`sata`、`ata`、`pata`、`ide`、`sas`、`scsi`、`nvme`。
-* 若 `TRAN` 缺失，仍可依 `nvme0n1` 等原生 NVMe 裝置名稱辨識。
-* 排除不符合條件的 USB、光碟、分割區、zram 和空讀卡機等項目。
-
-例如，若主機有 `sda`（TOSHIBA）和 `nvme0n1`（Micron），卡片會自動使用裝置名稱、二進位容量（GiB／TiB）與型號作為顯示資訊。**裝置出現順序取決於 `lsblk` 的列舉結果**，目前不提供手動排序。
-
-### 讀取／寫入速度
-
-硬碟讀寫速度改由 `/proc/diskstats` 的累計扇區數計算：
-
-```text
-速度（B/s）＝兩次取樣的扇區數差 × 512 ÷ 取樣間隔（秒）
-```
-
-* 首次取樣只建立基準值，須等待下一次取樣才會出現速度。
-* 採樣間隔沿用設定頁的「更新間隔」。
-* 裝置清單約每 **60 秒**重新偵測一次。
-* 裝置不存在、資料無法讀取或計數器重設時，顯示 `--`，不虛構讀寫速度。
-* 目前介面最多顯示兩顆硬碟，即使資料層偵測到更多裝置亦然。
-
-此功能使用 Plasma 6 的 `org.kde.plasma.plasma5support` 相容層 `DataSource` 呼叫固定的本機唯讀命令。未來若 Plasma 移除或限制該介面，需要調整執行方式。
-
-## 執行環境
-
-* KDE **Plasma 6**（目標為 Wayland 工作階段）。
-* Qt 6、Qt Quick、Kirigami、Plasma QML 模組及 KSysGuard/KSystemStats 感測器服務。
-* 自動硬碟辨識所需的 `lsblk`（通常由 `util-linux` 提供）、`/proc/diskstats`、`cat`。
-* `kpackagetool6` 用於安裝／升級 Plasmoid；`plasmawindowed` 用於獨立視窗測試。
-
-一般安裝與監控**不需要 `sudo`**；但不同發行版的 Qt／Plasma 套件名稱及功能可能不同。
-
-## 安裝、更新與解除安裝
+## 測試與限制
 
 在專案根目錄執行：
 
 ```bash
-cd /home/h97m/ResourceWatch
-
-# 安裝或更新現有小工具
-./install.sh
-
-# 獨立視窗測試
-plasmawindowed io.github.local.resourcewatch
-
-# 解除安裝
-./install.sh uninstall
+bash tests/static_check.sh
+node --check web/app.js
 ```
 
-亦可手動更新：
+最近一份可核對的封裝中，上述原有靜態檢查與 JavaScript 語法檢查通過；**未執行 `qmllint`，也未在本環境進行 Bazzite Plasma 6／QtWebEngine 的完整執行驗證**。正式測試仍應涵蓋不同視窗寬度、Wayland、設定按鈕、WebChannel 初始化、感測器更新與資源占用。
 
-```bash
-kpackagetool6 --type Plasma/Applet --upgrade ./package
-```
+尚未完成或待確認的部分：
 
-更新後若畫面仍顯示舊版，請重新開啟測試視窗或重新載入小工具，並確認 `package/metadata.json` 的 `KPlugin.Version` 與實際發行版本一致。
-
-## 設定
-
-在 Full View 右上角點擊齒輪可調整：
-
-|設定|範圍／內容|預設|
-|-|-|-|
-|更新間隔|500–10,000 ms，以 500 ms 遞增|2,000 ms|
-|歷史資料點數|10–120 點|30 點|
-|GPU 編號|0–15|0|
-|網路介面|例如 `enp3s0`；`all` 代表彙總|`all`|
-
-硬碟現在**自動偵測，無需人工設定 ID 或顯示名稱**。預設 30 點、2 秒間隔時，歷史資料大約覆蓋 60 秒；實際圖表更新仍依感測器可用性而定。
-
-### 檢查裝置與感測器
-
-```bash
-# 確認可被列舉的實體硬碟與傳輸介面
-lsblk -o NAME,TYPE,SIZE,MODEL,TRAN
-
-# 確認 Linux 核心的硬碟 I/O 統計
-cat /proc/diskstats
-
-# 查看網卡名稱
-ip -br a
-
-# 如果系統提供 kstatsviewer，可檢查 KDE 感測器
-kstatsviewer --list
-```
-
-## 專案結構
-
-```text
-ResourceWatch/
-├── AGENTS.md                     # Agent / 開發規範（另有 Agent.md）
-├── README.md                     # 本文件
-├── LICENSE                       # MIT 授權
-├── install.sh                    # 安裝、升級、解除安裝
-├── package/
-│   ├── metadata.json            # 小工具 ID、名稱與版本
-│   └── contents/
-│       ├── config/
-│       │   ├── config.qml       # 設定頁入口
-│       │   └── main.xml         # KConfig 欄位與預設值
-│       └── ui/
-│           ├── main.qml         # Plasmoid 入口、視圖與資料連接
-│           ├── FullView.qml     # 完整監控畫面
-│           ├── CompactView.qml  # 面板緊湊畫面
-│           ├── configGeneral.qml# 使用者設定頁
-│           ├── components/
-│           │   ├── SectionCard.qml # 監控卡片容器
-│           │   ├── StatItem.qml    # 數值與標籤
-│           │   └── Sparkline.qml   # 歷史曲線
-│           └── models/
-│               ├── SensorManager.qml # 感測器、硬碟發現與採樣
-│               ├── FormatUtils.js    # 數值／歷史資料工具
-│               └── Strings.js        # 介面文字
-└── tests/
-    ├── static\\\_check.sh           # 靜態檢查
-    └── format\\\_utils\\\_test.js      # JavaScript 工具測試
-```
-
-## 開發與測試
-
-```bash
-cd /home/h97m/ResourceWatch
-bash tests/static\\\_check.sh
-node tests/format\\\_utils\\\_test.js  # 如已安裝 Node.js
-plasmawindowed io.github.local.resourcewatch
-```
-
-靜態檢查只能確認部分檔案規則；**不等於 QML 一定能載入，也不代表硬體資料在實機上正確**。如有 `qmllint-qt6`，可額外用它檢查 QML；KDE 專屬模組在獨立 Lint 環境中可能需要額外的 import path。
-
-建議實機驗證 CPU／GPU／RAM／網路資料、兩顆磁碟的名稱／容量／型號／讀寫速度，以及設定頁、Compact View 與 Full View 的基本運作。硬碟寫入速度可在有實際 I/O 時對照系統工具觀察。
-
-## 已知限制與後續方向
-
-* **GPU 獨立引擎**：尚未實作與 Windows 工作管理員完全相同的 3D／Copy／Video Encode／Video Decode 個別曲線；KSystemStats 提供的 GPU 資料視驅動而定。
-* **GPU 使用率定義**：KDE 與 NVIDIA 驅動回報方式可能和 Windows 工作管理員不同，特別是在影片編解碼或遠端串流負載時。
-* **RAM 規格資訊**：尚未顯示 RAM 頻率（MT/s）或 DDR 類型。
-* **磁碟數量**：Full View 目前只顯示前兩顆，尚無自動擴充卡片與手動排序。
-* **實體裝置辨識**：部分控制器、虛擬化環境或特殊傳輸方式可能不符合現有 `TRAN` 篩選清單。
-* **UI 與圖表**：版面細節、各項目圖表及效能仍持續調整。
+- GPU Copy、Video Encode、Video Decode 的獨立使用率來源。
+- RAM 速度（MT/s）的可靠資料來源。
+- QtWebEngine 在目標 Bazzite／Plasma 組合上的載入與穩定性。
+- 強制完整視圖下的面板模式體驗，以及不同 DPI／視窗尺寸的實機驗證。
+- 與純 QML 版本相比，QtWebEngine 可能增加 CPU／RAM 消耗。
 
 ## 版本紀錄
 
-* **v0.0.3** — 硬碟自動辨識（NAME／SIZE／MODEL），利用 `/proc/diskstats` 取得整顆硬碟讀寫速度，移除手動硬碟 ID／Label 設定。
-* **v0.0.2** — CPU／GPU／RAM／磁碟／網路的完整監控介面、歷史圖、設定頁及緊湊視圖（依既有專案文件）。
-* **v0.0.1** — 初始專案結構。
+| 版本 | 說明 |
+| --- | --- |
+| **v0.0.4（本 README）** | 整理 HTML Widget 現行架構、安裝／預覽流程、排查方式與尚待驗證項目；**本次不包含程式修改** |
+| v0.0.3 | HTML + CSS + JavaScript 顯示層、QtWebEngine／QtWebChannel 整合；延續硬碟自動辨識功能 |
+| v0.0.2 | QML 資源監控介面與感測器功能開發階段 |
+| v0.0.1 | 專案初始化 |
+
+正式將程式標記為 `v0.0.4` 之前，至少要同步 `package/metadata.json` 的版本號，檢查 HTML 與 QML 裡的舊版預設字串，完成實機驗證後再建立 Git Tag。
 
 ## 授權
 
-本專案使用 [MIT License](LICENSE)。
-
+本專案使用 **MIT License**，詳見 [`LICENSE`](LICENSE)。
