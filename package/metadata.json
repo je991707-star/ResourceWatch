@@ -1,0 +1,16 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "KPlugin": {
+    "Authors": [{ "Name": "Resource Watch Contributors" }],
+    "Category": "System Information",
+    "Description": "Native CPU / GPU / RAM / Disk / Network monitor using KSysGuard sensors",
+    "Description[zh_TW]": "使用 KSysGuard 感測器的原生 CPU / GPU / RAM / 磁碟 / 網路監控小工具",
+    "Icon": "utilities-system-monitor",
+    "Id": "io.github.local.resourcewatch",
+    "License": "MIT",
+    "Name": "Resource Watch",
+    "Name[zh_TW]": "資源監控",
+    "Version": "0.0.1"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
