@@ -19,7 +19,8 @@
       <min>0</min>
       <max>15</max>
     </entry>
-    <entry name="disk1Id" type="String">
+    <!-- v0.0.2版本的輸入數值 -->
+    <!-- <entry name="disk1Id" type="String">
       <default></default>
     </entry>
     <entry name="disk1Label" type="String">
@@ -30,7 +31,7 @@
     </entry>
     <entry name="disk2Label" type="String">
       <default></default>
-    </entry>
+    </entry> -->
     <entry name="netInterface" type="String">
       <default>all</default>
     </entry>

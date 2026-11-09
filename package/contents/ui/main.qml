@@ -11,10 +11,11 @@ PlasmoidItem {
         updateInterval: Plasmoid.configuration.updateInterval
         historyPoints: Plasmoid.configuration.historyPoints
         gpuIndex: Plasmoid.configuration.gpuIndex
-        disk1Id: Plasmoid.configuration.disk1Id.trim()
-        disk1Label: Plasmoid.configuration.disk1Label.trim()
-        disk2Id: Plasmoid.configuration.disk2Id.trim()
-        disk2Label: Plasmoid.configuration.disk2Label.trim()
+        // v0.0.2 版本的硬碟設定
+        // disk1Id: Plasmoid.configuration.disk1Id.trim()
+        // disk1Label: Plasmoid.configuration.disk1Label.trim()
+        // disk2Id: Plasmoid.configuration.disk2Id.trim()
+        // disk2Label: Plasmoid.configuration.disk2Label.trim()
         netInterface: Plasmoid.configuration.netInterface.trim() || "all"
     }
 

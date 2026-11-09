@@ -15,11 +15,14 @@ KCM.SimpleKCM {
     property alias cfg_updateInterval: intervalBox.value
     property alias cfg_historyPoints: historyBox.value
     property alias cfg_gpuIndex: gpuBox.value
-    property alias cfg_disk1Id: disk1Id.text
-    property alias cfg_disk1Label: disk1Label.text
-    property alias cfg_disk2Id: disk2Id.text
-    property alias cfg_disk2Label: disk2Label.text
     property alias cfg_netInterface: netInterface.text
+
+    // v0.0.2 版本的引用
+    // property alias cfg_disk1Id: disk1Id.text
+    // property alias cfg_disk1Label: disk1Label.text
+    // property alias cfg_disk2Id: disk2Id.text
+    // property alias cfg_disk2Label: disk2Label.text
+
 
     Kirigami.FormLayout {
         QQC2.SpinBox {
@@ -38,35 +41,36 @@ KCM.SimpleKCM {
             from: 0; to: 15
         }
 
-        Item { Kirigami.FormData.isSection: true }
+        // v0.0.2 版本的硬碟輸入框
+        // Item { Kirigami.FormData.isSection: true }
 
-        QQC2.TextField {
-            id: disk1Id
-            Kirigami.FormData.label: page.t("cfgDisk1Id")
-            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        }
-        QQC2.TextField {
-            id: disk1Label
-            Kirigami.FormData.label: page.t("cfgDisk1Label")
-            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        }
-        QQC2.TextField {
-            id: disk2Id
-            Kirigami.FormData.label: page.t("cfgDisk2Id")
-            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        }
-        QQC2.TextField {
-            id: disk2Label
-            Kirigami.FormData.label: page.t("cfgDisk2Label")
-            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        }
-        QQC2.Label {
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-            wrapMode: Text.WordWrap
-            font: Kirigami.Theme.smallFont
-            opacity: 0.7
-            text: page.t("cfgHintDisk")
-        }
+        // QQC2.TextField {
+        //     id: disk1Id
+        //     Kirigami.FormData.label: page.t("cfgDisk1Id")
+        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        // }
+        // QQC2.TextField {
+        //     id: disk1Label
+        //     Kirigami.FormData.label: page.t("cfgDisk1Label")
+        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        // }
+        // QQC2.TextField {
+        //     id: disk2Id
+        //     Kirigami.FormData.label: page.t("cfgDisk2Id")
+        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        // }
+        // QQC2.TextField {
+        //     id: disk2Label
+        //     Kirigami.FormData.label: page.t("cfgDisk2Label")
+        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        // }
+        // QQC2.Label {
+        //     Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+        //     wrapMode: Text.WordWrap
+        //     font: Kirigami.Theme.smallFont
+        //     opacity: 0.7
+        //     text: page.t("cfgHintDisk")
+        // }
 
         Item { Kirigami.FormData.isSection: true }
 

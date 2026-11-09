@@ -15,7 +15,12 @@ chk "main.xml 可解析"             "python3 -c \"import xml.dom.minidom as m; 
 chk "設定頁檔案齊全"              "test -f package/contents/config/config.qml && test -f package/contents/ui/configGeneral.qml"
 chk "main.qml 讀取的設定都在 main.xml" "for k in \$(grep -o 'Plasmoid.configuration\\.[A-Za-z0-9]*' package/contents/ui/main.qml | sed 's/.*\\.//' | sort -u); do grep -q \"name=\\\"\$k\\\"\" package/contents/config/main.xml || exit 1; done"
 chk "無寫死裝置名稱 sensorId"     "! grep -rEn 'disk/(sda|nvme)' package/contents"
-chk "無 nvidia-smi 呼叫"          "! grep -rEn 'nvidia-smi|DataSource|executable' package/contents/ui --include=*.qml --include=*.js | grep -v '^.*//'"
+# chk "無 nvidia-smi 呼叫"          "! grep -rEn 'nvidia-smi|DataSource|executable' package/contents/ui --include=*.qml --include=*.js | grep -v '^.*//'"
+chk "禁止 NVIDIA CLI" \
+  "! grep -rEn 'nvidia-smi' package/contents/ui --include=*.qml --include=*.js"
+
+chk "executable 僅允許 SensorManager 使用" \
+  "! grep -rEn 'engine:[[:space:]]*\"executable\"' package/contents/ui --include=*.qml | grep -v 'models/SensorManager.qml:'"
 chk "install.sh 不使用 sudo 指令" "! grep -v '^#' install.sh | grep -q 'sudo '"
 if command -v node >/dev/null; then node tests/format_utils_test.js || fail=1; else echo "NOT TESTED  node 未安裝，略過 FormatUtils 單元測試"; fi
 if command -v qmllint >/dev/null; then

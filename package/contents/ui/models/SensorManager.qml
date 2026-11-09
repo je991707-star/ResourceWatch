@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.ksysguard.sensors as Sensors
+import org.kde.plasma.plasma5support as Plasma5Support
 import "FormatUtils.js" as FormatUtils
 
 // 唯一的感測器訂閱 / 正規化 / 歷史緩衝層。UI 不接觸感測器 ID。
@@ -12,21 +13,37 @@ QtObject {
     property int updateInterval: 2000
     property int historyPoints: 30
     property int gpuIndex: 0
-    property string disk1Id: ""          // "" = disk/all 彙總
-    property string disk1Label: ""
-    property string disk2Id: ""          // "" = 隱藏第二顆
-    property string disk2Label: ""
+    // 自動辨識的實體硬碟清單
+    property var disks: []
+
+    // 每顆硬碟的即時讀寫速度
+    property var diskRates: ({})
+
+    // 上次讀取的磁碟累計計數器
+    property var _previousDiskCounters: ({})
+
+    readonly property var disk1:
+        disks.length > 0 ? disks[0] : null
+
+    readonly property var disk2:
+        disks.length > 1 ? disks[1] : null
+
+    // v0.0.2 版本的硬碟設定
+    // property string disk1Id: ""          // "" = disk/all 彙總
+    // property string disk1Label: ""
+    // property string disk2Id: ""          // "" = 隱藏第二顆
+    // property string disk2Label: ""
     property string netInterface: "all"  // "all" = network/all 彙總
 
     property bool graceElapsed: false
     property var _warned: ({})
 
-    readonly property bool disk2Enabled: disk2Id.length > 0
+    readonly property bool disk2Enabled: disk2 !== null
     readonly property bool netHasInterface: netInterface.length > 0 && netInterface !== "all"
 
     readonly property string _gpuPrefix: "gpu/gpu" + gpuIndex
-    readonly property string _disk1Prefix: "disk/" + (disk1Id.length > 0 ? disk1Id : "all")
-    readonly property string _disk2Prefix: "disk/" + disk2Id
+    // readonly property string _disk1Prefix: "disk/" + (disk1Id.length > 0 ? disk1Id : "all")
+    // readonly property string _disk2Prefix: "disk/" + disk2Id
     readonly property string _netPrefix: "network/" + (netHasInterface ? netInterface : "all")
 
     // ---- 對 UI 公開的資料 ----
@@ -48,10 +65,23 @@ QtObject {
     readonly property var ram: _pairMetric("ram", "RAM", memUsed, memTotal)
     readonly property var swap: _pairMetric("swap", "Swap", swapUsed, swapTotal)
 
-    readonly property var disk1Read: _rateMetric("disk1Read", "Disk 1 read", disk1ReadS)
-    readonly property var disk1Write: _rateMetric("disk1Write", "Disk 1 write", disk1WriteS)
-    readonly property var disk2Read: _rateMetric("disk2Read", "Disk 2 read", disk2ReadS)
-    readonly property var disk2Write: _rateMetric("disk2Write", "Disk 2 write", disk2WriteS)
+    // v0.0.2 版本的硬碟設定
+    // readonly property var disk1Read: _rateMetric("disk1Read", "Disk 1 read", disk1ReadS)
+    // readonly property var disk1Write: _rateMetric("disk1Write", "Disk 1 write", disk1WriteS)
+    // readonly property var disk2Read: _rateMetric("disk2Read", "Disk 2 read", disk2ReadS)
+    // readonly property var disk2Write: _rateMetric("disk2Write", "Disk 2 write", disk2WriteS)
+
+    readonly property var disk1Read:
+        _diskMetric("disk1Read", "Disk 1 read", disk1, "read")
+
+    readonly property var disk1Write:
+        _diskMetric("disk1Write", "Disk 1 write", disk1, "write")
+
+    readonly property var disk2Read:
+        _diskMetric("disk2Read", "Disk 2 read", disk2, "read")
+
+    readonly property var disk2Write:
+        _diskMetric("disk2Write", "Disk 2 write", disk2, "write")
 
     readonly property var netDown: _rateMetric("netDown", "Download", netDownS)
     readonly property var netUp: _rateMetric("netUp", "Upload", netUpS)
@@ -152,6 +182,219 @@ QtObject {
     }
 
     // ---- 感測器（ID 皆為候選；實機以 kstatsviewer --list 確認）----
+    readonly property string _lsblkCommand:
+        "/usr/bin/lsblk -J -b -d -o NAME,SIZE,MODEL,TRAN,TYPE"
+
+    readonly property string _diskStatsCommand:
+        "/usr/bin/cat /proc/diskstats"
+
+    // 容量顯示：GiB / TiB
+    function _formatDiskSize(bytes) {
+        let value = bytes;
+        const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+        let index = 0;
+
+        while (value >= 1024 && index < units.length - 1) {
+            value /= 1024;
+            index++;
+        }
+
+        return (index === 0 ? value.toFixed(0) : value.toFixed(1))
+            + " " + units[index];
+    }
+
+    // 自動查詢實體硬碟
+    property Plasma5Support.DataSource _diskDiscovery:
+        Plasma5Support.DataSource {
+            engine: "executable"
+            connectedSources: []
+
+            onNewData: (source, data) => {
+                disconnectSource(source);
+
+                if (Number(data["exit code"]) !== 0) {
+                    console.warn("ResourceWatch: lsblk failed",
+                                data["stderr"]);
+                    return;
+                }
+
+                try {
+                    const result = JSON.parse(data["stdout"]);
+                    const allowed = [
+                        "sata", "ata", "pata", "ide",
+                        "sas", "scsi", "nvme"
+                    ];
+
+                    const found = [];
+
+                    for (const device of (result.blockdevices || [])) {
+                        const name = String(device.name || "");
+                        const transport =
+                            String(device.tran || "").toLowerCase();
+                        const size = Number(device.size);
+
+                        // 有些環境的原生 NVMe 不回報 TRAN
+                        const nativeNvme =
+                            /^nvme[0-9]+n[0-9]+$/.test(name);
+
+                        if (device.type !== "disk") continue;
+                        if (!name || !isFinite(size) || size <= 0) continue;
+                        if (allowed.indexOf(transport) === -1
+                            && !nativeNvme) continue;
+
+                        found.push({
+                            name: name,
+                            model: String(device.model || "").trim() || "--",
+                            sizeBytes: size,
+                            sizeText: manager._formatDiskSize(size),
+                            transport: transport
+                        });
+                    }
+
+                    manager.disks = found;
+
+                } catch (error) {
+                    console.warn("ResourceWatch: invalid lsblk JSON",
+                                error);
+                }
+            }
+        }
+
+    // 每 60 秒重新檢查裝置；首次啟動立即查詢
+    property Timer _diskDiscoveryTimer: Timer {
+        interval: 60000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+
+        onTriggered: {
+            if (manager._diskDiscovery.connectedSources.length === 0)
+                manager._diskDiscovery.connectSource(
+                    manager._lsblkCommand);
+        }
+    }
+
+        // B/s 轉成可讀文字
+        function _formatDiskRate(bytesPerSecond) {
+            if (!FormatUtils.isValidRate(bytesPerSecond))
+                return "--";
+
+            let value = bytesPerSecond;
+            const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
+            let index = 0;
+
+            while (value >= 1024 && index < units.length - 1) {
+                value /= 1024;
+                index++;
+            }
+
+            return (index === 0 ? value.toFixed(0) : value.toFixed(1))
+                + " " + units[index];
+        }
+
+        function _diskMetric(id, label, disk, direction) {
+            const data = disk ? diskRates[disk.name] : undefined;
+            const rate = data ? data[direction] : undefined;
+            const valid = FormatUtils.isValidRate(rate);
+
+            return {
+                id: id,
+                label: label,
+                status: _status(valid),
+                rawValue: valid ? rate : null,
+                displayValue: valid ? _formatDiskRate(rate) : "--",
+                percent: null
+            };
+        }
+
+        // 處理 /proc/diskstats 中的實體硬碟讀寫計數器
+        function _processDiskStats(stdout) {
+            const now = Date.now();
+            const next = {};
+            const rates = {};
+
+            for (const line of stdout.split("\n")) {
+                const fields = line.trim().split(/\s+/);
+                if (fields.length < 10) continue;
+
+                const name = fields[2];
+                const readSectors = Number(fields[5]);
+                const writeSectors = Number(fields[9]);
+
+                if (!isFinite(readSectors) || !isFinite(writeSectors))
+                    continue;
+
+                next[name] = {
+                    readBytes: readSectors * 512,
+                    writeBytes: writeSectors * 512,
+                    time: now
+                };
+            }
+
+            for (const disk of disks) {
+                const current = next[disk.name];
+                const previous = _previousDiskCounters[disk.name];
+
+                if (!current || !previous) continue;
+
+                const seconds = (current.time - previous.time) / 1000;
+                if (seconds <= 0) continue;
+
+                const readDelta =
+                    current.readBytes - previous.readBytes;
+                const writeDelta =
+                    current.writeBytes - previous.writeBytes;
+
+                // 裝置重設、重新連線時不產生負速率
+                if (readDelta < 0 || writeDelta < 0) continue;
+
+                rates[disk.name] = {
+                    read: readDelta / seconds,
+                    write: writeDelta / seconds
+                };
+            }
+
+            _previousDiskCounters = next;
+            diskRates = rates;
+        }
+
+        property Plasma5Support.DataSource _diskStats:
+            Plasma5Support.DataSource {
+                engine: "executable"
+                connectedSources: []
+
+                onNewData: (source, data) => {
+                    disconnectSource(source);
+
+                    if (Number(data["exit code"]) !== 0) {
+                        if (!manager._warned.diskstats) {
+                            console.warn(
+                                "ResourceWatch: /proc/diskstats failed",
+                                data["stderr"]);
+                            manager._warned.diskstats = true;
+                        }
+                        manager.diskRates = {};
+                        return;
+                    }
+
+                    manager._processDiskStats(
+                        String(data["stdout"] || ""));
+                }
+            }
+
+        // 遵循既有 updateInterval 設定
+        property Timer _diskStatsTimer: Timer {
+            interval: manager.updateInterval
+            repeat: true
+            running: true
+            triggeredOnStart: true
+
+            onTriggered: {
+                if (manager._diskStats.connectedSources.length === 0)
+                    manager._diskStats.connectSource(
+                        manager._diskStatsCommand);
+            }
+        }
     property Sensors.Sensor cpuSensor: Sensors.Sensor {
         sensorId: "cpu/all/usage"; updateRateLimit: manager.updateInterval
         onValueChanged: manager._checkRange("cpu", value)
@@ -181,11 +424,12 @@ QtObject {
     property Sensors.Sensor swapUsed: Sensors.Sensor { sensorId: "memory/swap/used"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor swapTotal: Sensors.Sensor { sensorId: "memory/swap/total"; updateRateLimit: manager.updateInterval }
 
-    property Sensors.Sensor disk1ReadS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/read"; updateRateLimit: manager.updateInterval }
-    property Sensors.Sensor disk1WriteS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/write"; updateRateLimit: manager.updateInterval }
-    // 第二顆未設定時 sensorId 為空字串＝不訂閱
-    property Sensors.Sensor disk2ReadS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/read" : ""; updateRateLimit: manager.updateInterval }
-    property Sensors.Sensor disk2WriteS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/write" : ""; updateRateLimit: manager.updateInterval }
+    // v0.0.2 版本的硬碟設定
+    // property Sensors.Sensor disk1ReadS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/read"; updateRateLimit: manager.updateInterval }
+    // property Sensors.Sensor disk1WriteS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/write"; updateRateLimit: manager.updateInterval }
+    // // 第二顆未設定時 sensorId 為空字串＝不訂閱
+    // property Sensors.Sensor disk2ReadS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/read" : ""; updateRateLimit: manager.updateInterval }
+    // property Sensors.Sensor disk2WriteS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/write" : ""; updateRateLimit: manager.updateInterval }
 
     property Sensors.Sensor netDownS: Sensors.Sensor { sensorId: manager._netPrefix + "/download"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor netUpS: Sensors.Sensor { sensorId: manager._netPrefix + "/upload"; updateRateLimit: manager.updateInterval }

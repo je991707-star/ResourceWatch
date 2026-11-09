@@ -181,8 +181,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 title: view.t("disk") + "1"
-                subtitle: view.m.disk1Label.length > 0 ? view.m.disk1Label
-                        : (view.m.disk1Id.length > 0 ? view.m.disk1Id : view.t("allDisks"))
+                subtitle: view.m.disk1 ? view.m.disk1.name + " · " + view.m.disk1.sizeText + " · " + view.m.disk1.model : "--"
 
                 StatItem { Layout.fillWidth: true; label: view.t("read"); value: view.m.disk1Read.displayValue }
                 StatItem { Layout.fillWidth: true; label: view.t("write"); value: view.m.disk1Write.displayValue }
@@ -194,7 +193,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 title: view.t("disk") + "2"
-                subtitle: view.m.disk2Label.length > 0 ? view.m.disk2Label : view.m.disk2Id
+                subtitle: view.m.disk2 ? view.m.disk2.name + " · " + view.m.disk2.sizeText + " · " + view.m.disk2.model : "--"
 
                 StatItem { Layout.fillWidth: true; label: view.t("read"); value: view.m.disk2Read.displayValue }
                 StatItem { Layout.fillWidth: true; label: view.t("write"); value: view.m.disk2Write.displayValue }
