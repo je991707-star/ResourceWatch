@@ -5,7 +5,7 @@ ID="io.github.local.resourcewatch"
 cd "$(dirname "$0")"
 
 if ! command -v kpackagetool6 >/dev/null 2>&1; then
-    echo "找不到 kpackagetool6。請確認系統為 Plasma 6。" >&2
+    echo "找不到 kpackagetool6。請確認系統為 Plasma 6（Bazzite KDE 通常已內建）。" >&2
     exit 1
 fi
 
@@ -19,7 +19,7 @@ case "${1:-install}" in
         else
             kpackagetool6 --type Plasma/Applet --install ./package
         fi
-        echo "完成。可用以下指令開獨立測試視窗："
+        echo "完成。可用以下指令開獨立測試視窗（不影響桌面）："
         echo "  plasmawindowed $ID"
         ;;
     *)

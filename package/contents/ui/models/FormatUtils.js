@@ -30,3 +30,12 @@ function formatPercent(p) {
 function displayText(formatted) {
     return (typeof formatted === "string" && formatted.length > 0) ? formatted : "--";
 }
+
+// 有界環形緩衝：回傳「新陣列」（QML 才會偵測到變更），長度不超過 limit。
+// 無效值存成 null，圖表在該處斷線，不會畫成 0。
+function pushHistory(arr, value, limit) {
+    var n = Math.max(2, Math.floor(limit) || 2);
+    var out = (arr || []).slice(-(n - 1));
+    out.push(isValidNumber(value) ? value : null);
+    return out;
+}
