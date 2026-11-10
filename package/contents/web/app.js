@@ -8,6 +8,38 @@
   const MAX_SAMPLES = 45;
   const SVG_NS = "http://www.w3.org/2000/svg";
 
+  // 固定 720px 的設計寬度；保留既有卡片比例與圖表 SVG。
+  // 外層 Widget 的尺寸由 main.qml 決定，HTML 僅在容器內等比縮放。
+  const DESIGN_WIDTH = 720;
+  const DESIGN_MIN_HEIGHT = 821;
+
+  function fitToViewport() {
+    const canvas = $("resourceWatch");
+    if (!canvas) return;
+
+    // 先恢復自然高度，避免前一次視窗大小留下的 min-height
+    // 影響下一次重新測量，導致反覆縮小或底部留白。
+    canvas.style.width = DESIGN_WIDTH + "px";
+    canvas.style.minHeight = "0";
+    canvas.style.height = "auto";
+    canvas.style.zoom = "1";
+
+    const naturalHeight = Math.max(DESIGN_MIN_HEIGHT, canvas.scrollHeight);
+    const viewportWidth = Math.max(1, window.innerWidth);
+    const viewportHeight = Math.max(1, window.innerHeight);
+    const scale = Math.max(0.1, Math.min(viewportWidth / DESIGN_WIDTH,
+                                          viewportHeight / naturalHeight));
+
+    // 將多出的高度用於卡片間距（card-stack 的 space-between），
+    // 使 footer 靠近視窗底緣，不把空白堆積在版本號下方。
+    canvas.style.minHeight = (viewportHeight / scale) + "px";
+    canvas.style.zoom = String(scale);
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  }
+
+  window.addEventListener("resize", fitToViewport, {passive: true});
+
   function wave(level, swing, samples = MAX_SAMPLES, phase = 0) {
     return Array.from({length: samples}, (_, i) =>
       Math.max(0, Math.min(100, level + swing * Math.sin(i * .36 + phase)
@@ -15,17 +47,17 @@
   }
 
   const demo = {
-    version: "0.0.3",
+    version: "0.0.4",
     cpuName: "Intel Xeon CPU E3-1231 v3 @ 3.40GHz",
     cpu: {displayValue: "18.4%", percent: 18.4},
     cpuFreqText: "3.00 GHz", cpuTempText: "46.8 °C", uptimeText: "2:29:50",
-    gpuIndex: 0, gpuName: "NVIDIA Quadro P620",
+    gpuIndex: 0, gpuVendor: "nvidia", gpuName: "Quadro P620",
     gpu: {displayValue: "68%", percent: 68}, gpuTempText: "60 °C",
     vram: {displayValue: "80%", percent: 80, usedText: "1.6 GiB", totalText: "2.0 GiB"},
     // Neither NVENC nor NVDEC is exposed by the current SensorManager.
     encoder: null, decoder: null,
     ram: {displayValue: "41.7%", percent: 41.7, usedText: "6.5 GiB", totalText: "15.5 GiB"},
-    ramSubtitle: "15.5 GiB DDR3", ramSpeedText: "--",
+    ramSubtitle: "15.5 GiB DDR3", ramSpeedText: "1600 MT/s",
     swap: {usedText: "0 B", totalText: "7.8 GiB"},
     disks: [
       {name: "sda", sizeText: "1.8 TiB", model: "TOSHIBA DT01ABA200V"},
@@ -47,7 +79,7 @@
   // 在 QtWebEngine 中絕不顯示虛假的示範數值；瀏覽器預覽才使用 demo。
   const embedded = Boolean(window.qt && window.qt.webChannelTransport);
   const empty = {
-    version: "0.0.3", cpuName: "--",
+    version: "0.0.4", cpuName: "--",
     cpu: {displayValue:"--"}, cpuFreqText:"--", cpuTempText:"--", uptimeText:"--",
     gpuIndex:0, gpuName:"--", gpu:{displayValue:"--"}, gpuTempText:"--",
     vram:{usedText:"--",totalText:"--"}, encoder:null, decoder:null,
@@ -128,16 +160,27 @@
     area.setAttribute("d", `M${pts[0][0].toFixed(2)} 100 ${lines.join(" ").replace(/^M/, "L")} L${pts[pts.length-1][0].toFixed(2)} 100 Z`);
   }
 
+  function labeledGpuName(name, vendor) {
+    const raw = text(name);
+    if (raw === "--") return raw;
+    const brand = ({nvidia: "NVIDIA", amd: "AMD", intel: "Intel"})[
+      String(vendor || "").toLowerCase()];
+    if (!brand || new RegExp(`\\b${brand}\\b`, "i").test(raw)) return raw;
+    return `${brand} ${raw}`;
+  }
+
   function render() {
     const s = state;
     setText("cpuName", s.cpuName);
     setText("cpuUsage", metricText(s.cpu));
+    setText("cpuChartUsage", metricText(s.cpu));
     setText("cpuSpeed", s.cpuFreqText);
     setText("cpuTemp", s.cpuTempText);
     setText("cpuUptime", s.uptimeText);
     setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
-    setText("gpuName", s.gpuName);
+    setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
+    setText("gpuChartUsage", metricText(s.gpu));
     setText("gpuTemp", s.gpuTempText);
     setText("gpuVram", s.vram ? `${text(s.vram.usedText)} / ${text(s.vram.totalText)}` : "--");
     setText("vramGraphMax", s.vram?.totalText);
@@ -145,8 +188,9 @@
     setText("decoderLabel", s.decoder?.displayValue ?? "--");
     setText("ramSubtitle", s.ramSubtitle ?? s.ram?.totalText);
     setText("ramUsage", metricText(s.ram));
+    setText("ramChartUsage", s.ram?.usedText);
     setText("ramSpeed", s.ramSpeedText);
-    setText("ramUsed", s.ram ? `${text(s.ram.usedText)} / ${text(s.ram.totalText)}` : "--");
+    setText("ramUsed", metricText(s.ram));
     setText("swapUsed", s.swap ? `${text(s.swap.usedText)} / ${text(s.swap.totalText)}` : "--");
     setText("netSubtitle", s.netHasInterface ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
     setText("netUp", metricText(s.netUp));
@@ -172,6 +216,8 @@
     });
     chartSeries("network", net.length ? net : null, max * 1.12);
     setText("networkGraphMax", formatRate(max));
+    // 硬碟數量變化時重新計算內容高度，避免下一列硬碟被裁掉。
+    fitToViewport();
   }
 
   function updateMode() {

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ResourceWatch — 設定</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./settings.js" defer></script>
+</head>
+<body>
+  <main class="settings-page">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">RESOURCE WATCH</p>
+        <h1>小工具設定</h1>
+        <p class="subtitle">調整資料更新和監控裝置</p>
+      </div>
+      <span class="connection-state" id="connectionState" role="status">預覽模式</span>
+    </header>
+
+    <section class="settings-card" aria-labelledby="refreshHeading">
+      <h2 id="refreshHeading">監控與歷史資料</h2>
+      <div class="field-grid">
+        <label class="field" for="updateInterval">
+          <span class="field-label">更新間隔</span>
+          <span class="field-hint">感測器重新取樣的間隔，單位毫秒</span>
+          <div class="input-unit"><input id="updateInterval" name="updateInterval" type="number" min="50" max="10000" step="50" value="500" required><span>ms</span></div>
+        </label>
+        <label class="field" for="historyPoints">
+          <span class="field-label">歷史資料點數</span>
+          <span class="field-hint">圖表最多保留的取樣點數</span>
+          <div class="input-unit"><input id="historyPoints" name="historyPoints" type="number" min="10" max="120" step="10" value="30" required><span>點</span></div>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-card" aria-labelledby="devicesHeading">
+      <h2 id="devicesHeading">裝置選擇</h2>
+      <div class="field-grid">
+        <label class="field" for="gpuIndex">
+          <span class="field-label">GPU 編號</span>
+          <span class="field-hint">從 0 開始編號，多張顯卡可切換</span>
+          <input id="gpuIndex" name="gpuIndex" type="number" min="0" max="15" step="1" value="0" required>
+        </label>
+        <label class="field" for="netInterface">
+          <span class="field-label">網路介面</span>
+          <span class="field-hint">all 表示所有介面，也可指定名稱</span>
+          <input id="netInterface" name="netInterface" type="text" maxlength="64" value="all" spellcheck="false" autocomplete="off" placeholder="例如 enp3s0 或 all">
+        </label>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <p>在 KDE 設定視窗底部按「套用」或「確定」才會儲存；按「取消」則放棄這次修改。</p>
+      <p class="preview-note" id="previewNote">在瀏覽器開啟時僅供設計預覽，不會寫入 KDE 設定。</p>
+    </footer>
+  </main>
+</body>
+</html>

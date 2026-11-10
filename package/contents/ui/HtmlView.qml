@@ -59,17 +59,19 @@ Item {
             cpu: metric(m.cpu), cpuFreqText: m.cpuFreqText,
             cpuTempText: m.cpuTempText, uptimeText: m.uptimeText,
             gpuIndex: m.gpuIndex, gpuName: m.gpuName || "--",
+            gpuVendor: m.gpuVendor, gpuSource: m.gpuSource,
             gpu: metric(m.gpu), gpuTempText: m.gpuTempText,
             vram: metric(m.vram),
-            encoder: null, decoder: null, // 尚無經證實的編/解碼感測器
+            encoder: metric(m.encoder), decoder: metric(m.decoder),
             ram: metric(m.ram), ramSubtitle: m.ram.totalText,
-            ramSpeedText: "--", // 現有 SensorManager 尚未提供記憶體速度
+            ramSpeedText: m.ramSpeedText || "--",
             swap: metric(m.swap),
             disks: list, diskRates: rates,
             netHasInterface: m.netHasInterface, netIp: m.netIp,
             netUp: metric(m.netUp), netDown: metric(m.netDown),
             history: {
                 cpu: historyArray(h.cpu), gpu: historyArray(h.gpu),
+                encode: historyArray(h.encode), decode: historyArray(h.decode),
                 vram: historyArray(h.vram), ram: historyArray(h.ram),
                 netUp: historyArray(h.netUp), netDown: historyArray(h.netDown)
             }

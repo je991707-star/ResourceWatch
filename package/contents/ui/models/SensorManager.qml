@@ -42,6 +42,14 @@ QtObject {
     readonly property bool netHasInterface: netInterface.length > 0 && netInterface !== "all"
 
     readonly property string _gpuPrefix: "gpu/gpu" + gpuIndex
+
+    // Linux DRM PCI vendor ID -> NVIDIA / AMD / Intel / other.
+    // Helper performs discovery before querying NVIDIA-specific counters.
+    property var _gpuProbeData: ({ devices: [] })
+    readonly property var gpuDevice: _selectGpuDevice()
+    readonly property string gpuVendor: gpuDevice ? gpuDevice.vendor : _vendorFromName(gpuNameSensor.value)
+    readonly property string gpuSource: gpuVendor === "nvidia"
+        ? (gpuDevice ? gpuDevice.source : "unavailable") : "ksystemstats"
     // readonly property string _disk1Prefix: "disk/" + (disk1Id.length > 0 ? disk1Id : "all")
     // readonly property string _disk2Prefix: "disk/" + disk2Id
     readonly property string _netPrefix: "network/" + (netHasInterface ? netInterface : "all")
@@ -51,15 +59,30 @@ QtObject {
     readonly property string cpuFreqText: _text(cpuFreqSensor)
     readonly property string cpuTempText: _text(FormatUtils.isValidNumber(cpuTempAvg.value) ? cpuTempAvg : cpuTempMax)
     readonly property string uptimeText: _text(uptimeSensor)
-    readonly property string cpuName: _firstString([cpuNameAll.value, cpuName0.value])
+    // KSystemStats cpu/all/name 可能回傳「全部」而非實際 CPU 型號。
+    // 先用 /proc/cpuinfo 的型號，失敗才回退至有效的 KDE 字串。
+    readonly property string cpuName: _firstString([
+        _hardwareProbeData.cpuModel,
+        _usableCpuName(cpuName0.value),
+        _usableCpuName(cpuNameAll.value)
+    ]) || "--"
+    readonly property string ramSpeedText:
+        _firstString([_hardwareProbeData.ramSpeedText]) || "--"
 
-    // GPU 使用率：gpu/all 有值才優先（Agent.md §6.1），否則退回指定編號
+    // NVIDIA: NVML GPU-Util；絕不使用有爭議的 KDE 合成總負載代替。
+    // 其他品牌: 優先選定 GPU 的 KDE 感測器，而非 gpu/all 彙總。
     readonly property var _gpuUsageSensor:
-        FormatUtils.isValidNumber(gpuAll.value) ? gpuAll
-        : (FormatUtils.isValidNumber(gpuIdx.value) ? gpuIdx : gpuAll)
-    readonly property var gpu: _percentMetric("gpu", "GPU", _gpuUsageSensor)
+        FormatUtils.isValidNumber(gpuIdx.value) ? gpuIdx : gpuAll
+    readonly property var gpu: gpuVendor === "nvidia"
+        ? _probePercentMetric("gpu", "GPU", gpuDevice ? gpuDevice.usage : null)
+        : _percentMetric("gpu", "GPU", _gpuUsageSensor)
+    readonly property var encoder: _probePercentMetric("encoder", "NVENC",
+        gpuVendor === "nvidia" && gpuDevice ? gpuDevice.encoder : null)
+    readonly property var decoder: _probePercentMetric("decoder", "NVDEC",
+        gpuVendor === "nvidia" && gpuDevice ? gpuDevice.decoder : null)
     readonly property string gpuTempText: _text(gpuTemp)
-    readonly property string gpuName: _firstString([gpuNameSensor.value])
+    readonly property string gpuName: _firstString([gpuNameSensor.value,
+        gpuDevice ? gpuDevice.name : ""])
     readonly property var vram: _pairMetric("vram", "VRAM", vramUsed, vramTotal)
 
     readonly property var ram: _pairMetric("ram", "RAM", memUsed, memTotal)
@@ -88,7 +111,7 @@ QtObject {
     readonly property string netIp: _firstString([netIpS.value])
 
     // 歷史：每 updateInterval 取一點，上限 historyPoints（有界環形緩衝）
-    property var history: ({ cpu: [], gpu: [], vram: [], ram: [], netDown: [], netUp: [] })
+    property var history: ({ cpu: [], gpu: [], encode: [], decode: [], vram: [], ram: [], netDown: [], netUp: [] })
 
     // ---- 內部函式 ----
     function _status(valid) {
@@ -96,6 +119,13 @@ QtObject {
     }
 
     function _str(v) { return (typeof v === "string") ? v : ""; }
+    function _usableCpuName(name) {
+        const value = String(name || "").trim();
+        // 顯示器的泛用名稱不是 CPU 型號。
+        if (/^(all|all cores|cpu|cpu\s*[0-9]+|全部|總計)$/i.test(value)) return "";
+        return value;
+    }
+
 
     function _firstString(list) {
         for (let i = 0; i < list.length; i++) {
@@ -122,6 +152,57 @@ QtObject {
             rawValue: valid ? raw : null, displayValue: text,
             percent: valid ? FormatUtils.clampPercent(raw) : null
         };
+    }
+
+    function _probePercentMetric(id, label, value) {
+        const valid = FormatUtils.isValidNumber(value) && value >= 0 && value <= 100;
+        return {
+            id: id, label: label, status: _status(valid),
+            rawValue: valid ? value : null,
+            displayValue: valid ? FormatUtils.formatPercent(value) : "--",
+            percent: valid ? value : null
+        };
+    }
+
+    function _vendorFromName(name) {
+        const v = String(name || "").toLowerCase();
+        if (/nvidia|geforce|quadro|tesla|\bgtx\b|\brtx\b/.test(v)) return "nvidia";
+        if (/\bamd\b|radeon|\bati\b/.test(v)) return "amd";
+        if (/\bintel\b|\biris\b|\buhd\b|\barc\b/.test(v)) return "intel";
+        return "other";
+    }
+
+    function _gpuNameKey(name) {
+        return String(name || "").toLowerCase()
+            .replace(/nvidia|geforce|corporation|graphics|controller|series/g, "")
+            .replace(/[^a-z0-9]/g, "");
+    }
+
+    // KDE 的 gpu0 與 NVIDIA 的 index 0 在混合顯卡系統中不保證相同。
+    // 優先使用 KSystemStats 名稱匹配，再使用唯一廠牌 / DRM card 順序。
+    function _selectGpuDevice() {
+        const inventory = _gpuProbeData && _gpuProbeData.devices;
+        if (!Array.isArray(inventory) || inventory.length === 0) return null;
+        const kdeName = String(gpuNameSensor.value || "");
+        const target = _gpuNameKey(kdeName);
+        const vendor = _vendorFromName(kdeName);
+        if (target.length >= 4) {
+            const matchingName = inventory.filter(function(device) {
+                const candidate = _gpuNameKey(device.name);
+                return candidate.length >= 4
+                    && (target.indexOf(candidate) >= 0 || candidate.indexOf(target) >= 0);
+            });
+            if (matchingName.length === 1) return matchingName[0];
+        }
+        if (vendor !== "other") {
+            const sameVendor = inventory.filter(d => d.vendor === vendor);
+            if (sameVendor.length === 1) return sameVendor[0];
+            if (sameVendor.length > 1 && gpuIndex < sameVendor.length)
+                return sameVendor[gpuIndex];
+        }
+        // No identified vendor: use DRM order only if it is unambiguous.
+        return inventory.length === 1 ? inventory[0] :
+            (gpuIndex >= 0 && gpuIndex < inventory.length ? inventory[gpuIndex] : null);
     }
 
     function _rateMetric(id, label, s) {
@@ -164,6 +245,8 @@ QtObject {
         history = {
             cpu: FormatUtils.pushHistory(h.cpu, cpu.percent, n),
             gpu: FormatUtils.pushHistory(h.gpu, gpu.percent, n),
+            encode: FormatUtils.pushHistory(h.encode, encoder.percent, n),
+            decode: FormatUtils.pushHistory(h.decode, decoder.percent, n),
             vram: FormatUtils.pushHistory(h.vram, vram.percent, n),
             ram: FormatUtils.pushHistory(h.ram, ram.percent, n),
             netDown: FormatUtils.pushHistory(h.netDown, netDown.rawValue, n),
@@ -179,6 +262,92 @@ QtObject {
     property Timer _sampler: Timer {
         interval: manager.updateInterval; running: true; repeat: true
         onTriggered: manager._sample()
+    }
+
+    function _shellQuote(input) {
+        return "'" + String(input).replace(/'/g, "'\\''") + "'";
+    }
+
+    // Path is resolved relative to this QML file, including when installed by KPackage.
+    readonly property string _gpuProbeCommand: "/usr/bin/python3 " +
+        _shellQuote(decodeURIComponent(String(Qt.resolvedUrl("../../scripts/gpu_backend.py"))
+            .replace(/^file:\/\//, "")))
+
+    property Plasma5Support.DataSource _gpuProbe: Plasma5Support.DataSource {
+        engine: "executable"
+        connectedSources: []
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (Number(data["exit code"]) !== 0) {
+                manager._gpuProbeData = { devices: [] };
+                if (!manager._warned.gpuProbe) {
+                    console.warn("ResourceWatch: GPU probe failed:", data["stderr"]);
+                    manager._warned.gpuProbe = true;
+                }
+                return;
+            }
+            try {
+                const result = JSON.parse(String(data["stdout"] || ""));
+                manager._gpuProbeData = Array.isArray(result.devices)
+                    ? result : { devices: [] };
+            } catch (error) {
+                manager._gpuProbeData = { devices: [] };
+                console.warn("ResourceWatch: invalid GPU probe JSON:", error);
+            }
+        }
+    }
+
+    // Short-lived Python/NVML queries, never a resident daemon.
+    property Timer _gpuProbeTimer: Timer {
+        interval: Math.max(1000, manager.updateInterval)
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (manager._gpuProbe.connectedSources.length === 0)
+                manager._gpuProbe.connectSource(manager._gpuProbeCommand);
+        }
+    }
+
+    // CPU 型號 + RAM 模組速度：低頻率查詢，不持續要求 root。
+    property var _hardwareProbeData: ({})
+    readonly property string _hardwareProbeCommand: "/usr/bin/python3 " +
+        _shellQuote(decodeURIComponent(String(Qt.resolvedUrl("../../scripts/hardware_info.py"))
+            .replace(/^file:\/\//, "")))
+
+    property Plasma5Support.DataSource _hardwareProbe: Plasma5Support.DataSource {
+        engine: "executable"
+        connectedSources: []
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (Number(data["exit code"]) !== 0) {
+                if (!manager._warned.hardwareProbe) {
+                    console.warn("ResourceWatch: CPU/RAM info probe failed:", data["stderr"]);
+                    manager._warned.hardwareProbe = true;
+                }
+                return;
+            }
+            try {
+                const parsed = JSON.parse(String(data["stdout"] || ""));
+                manager._hardwareProbeData = {
+                    cpuModel: typeof parsed.cpuModel === "string" ? parsed.cpuModel : "",
+                    ramSpeedText: typeof parsed.ramSpeedText === "string" ? parsed.ramSpeedText : ""
+                };
+            } catch (error) {
+                console.warn("ResourceWatch: invalid CPU/RAM probe JSON:", error);
+            }
+        }
+    }
+
+    property Timer _hardwareProbeTimer: Timer {
+        interval: 300000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (manager._hardwareProbe.connectedSources.length === 0)
+                manager._hardwareProbe.connectSource(manager._hardwareProbeCommand);
+        }
     }
 
     // ---- 感測器（ID 皆為候選；實機以 kstatsviewer --list 確認）----

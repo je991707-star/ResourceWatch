@@ -1,90 +1,96 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls as QQC2
-import org.kde.kirigami as Kirigami
+import QtWebEngine
+import QtWebChannel
 import org.kde.kcmutils as KCM
-import "models/Strings.js" as Strings
 
+// KDE/Plasma owns persistence, Apply and Cancel. HTML is only the editor.
+// Do not write directly to Plasmoid.configuration from this page.
 KCM.SimpleKCM {
     id: page
 
-    readonly property string loc: Qt.locale().name
-    function t(key) { return Strings.t(key, loc); }
+    // Names must continue to match contents/config/main.xml exactly.
+    // Plasma copies saved values into these properties and commits them on Apply.
+    property int cfg_updateInterval: 2000
+    property int cfg_historyPoints: 30
+    property int cfg_gpuIndex: 0
+    property string cfg_netInterface: "all"
 
-    // Plasma 會自動把 main.xml 的欄位對應到 cfg_<name>
-    property alias cfg_updateInterval: intervalBox.value
-    property alias cfg_historyPoints: historyBox.value
-    property alias cfg_gpuIndex: gpuBox.value
-    property alias cfg_netInterface: netInterface.text
+    function settingsSnapshot() {
+        return JSON.stringify({
+            updateInterval: cfg_updateInterval,
+            historyPoints: cfg_historyPoints,
+            gpuIndex: cfg_gpuIndex,
+            netInterface: cfg_netInterface
+        });
+    }
 
-    // v0.0.2 版本的引用
-    // property alias cfg_disk1Id: disk1Id.text
-    // property alias cfg_disk1Label: disk1Label.text
-    // property alias cfg_disk2Id: disk2Id.text
-    // property alias cfg_disk2Label: disk2Label.text
+    function publishSettings() {
+        // WebChannel retains this property even if the page is not ready yet.
+        settingsBridge.settingsJson = settingsSnapshot();
+    }
 
-
-    Kirigami.FormLayout {
-        QQC2.SpinBox {
-            id: intervalBox
-            Kirigami.FormData.label: page.t("cfgInterval")
-            from: 500; to: 10000; stepSize: 500
+    function updateSetting(key, value) {
+        // Only known keys are writable. Ranges mirror config/main.xml.
+        if (key === "netInterface") {
+            if (typeof value !== "string") return;
+            const clean = value.trim();
+            if (clean.length > 64) return;
+            cfg_netInterface = clean || "all";
+            return;
         }
-        QQC2.SpinBox {
-            id: historyBox
-            Kirigami.FormData.label: page.t("cfgHistory")
-            from: 10; to: 120; stepSize: 10
+        const n = Number(value);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) return;
+        if (key === "updateInterval" && n >= 500 && n <= 10000 && n % 500 === 0)
+            cfg_updateInterval = n;
+        else if (key === "historyPoints" && n >= 10 && n <= 120 && n % 10 === 0)
+            cfg_historyPoints = n;
+        else if (key === "gpuIndex" && n >= 0 && n <= 15)
+            cfg_gpuIndex = n;
+    }
+
+    onCfg_updateIntervalChanged: publishSettings()
+    onCfg_historyPointsChanged: publishSettings()
+    onCfg_gpuIndexChanged: publishSettings()
+    onCfg_netInterfaceChanged: publishSettings()
+    Component.onCompleted: Qt.callLater(publishSettings)
+
+    Item {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        implicitWidth: 600
+        implicitHeight: 495
+
+        QtObject {
+            id: settingsBridge
+            WebChannel.id: "resourceSettings"
+            property string settingsJson: "{}"
+            function setSetting(key, value) { page.updateSetting(key, value); }
+            function refresh() { page.publishSettings(); }
         }
-        QQC2.SpinBox {
-            id: gpuBox
-            Kirigami.FormData.label: page.t("cfgGpu")
-            from: 0; to: 15
+
+        WebChannel {
+            id: settingsChannel
+            registeredObjects: [settingsBridge]
         }
 
-        // v0.0.2 版本的硬碟輸入框
-        // Item { Kirigami.FormData.isSection: true }
+        WebEngineView {
+            id: settingsWeb
+            anchors.fill: parent
+            url: Qt.resolvedUrl("../web/settings/index.html")
+            webChannel: settingsChannel
+            backgroundColor: "#24272c"
 
-        // QQC2.TextField {
-        //     id: disk1Id
-        //     Kirigami.FormData.label: page.t("cfgDisk1Id")
-        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        // }
-        // QQC2.TextField {
-        //     id: disk1Label
-        //     Kirigami.FormData.label: page.t("cfgDisk1Label")
-        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        // }
-        // QQC2.TextField {
-        //     id: disk2Id
-        //     Kirigami.FormData.label: page.t("cfgDisk2Id")
-        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        // }
-        // QQC2.TextField {
-        //     id: disk2Label
-        //     Kirigami.FormData.label: page.t("cfgDisk2Label")
-        //     Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        // }
-        // QQC2.Label {
-        //     Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-        //     wrapMode: Text.WordWrap
-        //     font: Kirigami.Theme.smallFont
-        //     opacity: 0.7
-        //     text: page.t("cfgHintDisk")
-        // }
-
-        Item { Kirigami.FormData.isSection: true }
-
-        QQC2.TextField {
-            id: netInterface
-            Kirigami.FormData.label: page.t("cfgNet")
-            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
-        }
-        QQC2.Label {
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-            wrapMode: Text.WordWrap
-            font: Kirigami.Theme.smallFont
-            opacity: 0.7
-            text: page.t("cfgHintNet")
+            onNavigationRequested: function(request) {
+                if (request.url.toString().split("#")[0] !== settingsWeb.url.toString().split("#")[0])
+                    request.reject();
+            }
+            onLoadingChanged: function(info) {
+                if (info.status === WebEngineView.LoadSucceededStatus)
+                    page.publishSettings();
+                else if (info.status === WebEngineView.LoadFailedStatus)
+                    console.error("ResourceWatch settings HTML failed:", info.errorString);
+            }
         }
     }
 }

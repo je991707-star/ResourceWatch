@@ -14,9 +14,14 @@ case "${1:-install}" in
         kpackagetool6 --type Plasma/Applet --remove "$ID"
         ;;
     install|upgrade)
-        # 以 web/ 作為 HTML 原始碼；安裝前更新 Plasmoid 內的隨附副本。
-        mkdir -p package/contents/web
-        cp web/index.html web/styles.css web/app.js package/contents/web/
+        # 單一 HTML 原始碼：package/contents/web/；直接納入 Plasmoid。
+        # 不再複製專案根目錄的 web/，避免修改內容被舊副本覆蓋。
+        for asset in index.html styles.css app.js; do
+            if [[ ! -f "package/contents/web/$asset" ]]; then
+                echo "缺少 HTML 資源：package/contents/web/$asset" >&2
+                exit 1
+            fi
+        done
         if kpackagetool6 --type Plasma/Applet --list 2>/dev/null | grep -q "$ID"; then
             kpackagetool6 --type Plasma/Applet --upgrade ./package
         else
