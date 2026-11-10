@@ -15,7 +15,7 @@ chk "HTML 只有一份正式來源" "test ! -e web && test -f package/contents/w
 chk "安裝腳本不複製舊 web/" "! grep -E '^[[:space:]]*cp[[:space:]].*web/' install.sh"
 chk "CPU/GPU/RAM 圖表即時使用率 ID" "grep -q cpuChartUsage package/contents/web/index.html && grep -q gpuChartUsage package/contents/web/index.html && grep -q ramChartUsage package/contents/web/index.html"
 chk "JS 更新 CPU/GPU/RAM 圖表標題" "grep -q cpuChartUsage package/contents/web/app.js && grep -q gpuChartUsage package/contents/web/app.js && grep -q ramChartUsage package/contents/web/app.js"
-chk "QtWebChannel 單向感測器快照" "grep -q 'snapshotReady' package/contents/ui/HtmlView.qml && grep -q 'qtwebchannel/qwebchannel.js' package/contents/web/app.js"
+chk "QtWebChannel 感測器快照" "grep -q 'snapshotReady' package/contents/ui/HtmlView.qml && grep -q 'qtwebchannel/qwebchannel.js' package/contents/web/app.js"
 chk "無網路請求"                  "! grep -rEn 'XMLHttpRequest|fetch\(' package/contents"
 chk "main.xml 可解析"             "python3 -c \"import xml.dom.minidom as m; m.parse('package/contents/config/main.xml')\""
 chk "設定頁檔案齊全"              "test -f package/contents/config/config.qml && test -f package/contents/ui/configGeneral.qml"
@@ -34,9 +34,12 @@ chk "CPU 名稱與 RAM 速度資訊探針" \
 chk "executable 僅允許 SensorManager 使用" \
   "! grep -rEn 'engine:[[:space:]]*\"executable\"' package/contents/ui --include=*.qml | grep -v 'models/SensorManager.qml:'"
 chk "install.sh 不使用 sudo 指令" "! grep -v '^#' install.sh | grep -q 'sudo '"
-if command -v node >/dev/null; then node tests/format_utils_test.js || fail=1; else echo "NOT TESTED  node 未安裝，略過 FormatUtils 單元測試"; fi
+chk "單一刷新間隔已設定" "grep -q 'property int updateInterval: 500' package/contents/ui/models/SensorManager.qml && grep -q 'cfg_updateInterval' package/contents/ui/configGeneral.qml"
+chk "設定頁手動刷新按鈕" "grep -q 'refreshIPv4' package/contents/web/settings/index.html && grep -q 'refreshDisks' package/contents/web/settings/index.html"
+if command -v node >/dev/null; then node tests/scheduler_test.js || fail=1; node tests/format_utils_test.js || fail=1; else echo "NOT TESTED  node 未安裝，略過 FormatUtils 單元測試"; fi
 if command -v python3 >/dev/null; then python3 -m unittest discover -s tests -p 'gpu_backend_test.py' || fail=1; fi
 if command -v python3 >/dev/null; then python3 -m unittest discover -s tests -p 'hardware_info_test.py' || fail=1; fi
+if command -v python3 >/dev/null; then python3 -m unittest discover -s tests -p 'scheduler_contract_test.py' || fail=1; fi
 if command -v qmllint >/dev/null; then
   qmllint package/contents/ui/*.qml package/contents/ui/*/*.qml && echo "PASS  qmllint" || echo "WARN  qmllint 有警告（缺 KDE 模組屬正常）"
 else

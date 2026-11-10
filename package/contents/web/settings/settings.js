@@ -3,12 +3,10 @@
  */
 (() => {
   "use strict";
-  const specs = {
-    updateInterval: { min: 500, max: 10000, step: 500 },
-    historyPoints: { min: 10, max: 120, step: 10 },
-    gpuIndex: { min: 0, max: 15, step: 1 },
-    netInterface: { text: true }
-  };
+  const specs = {updateInterval: {min:100, max:10000, step:50}};
+  specs.historyPoints = {min:10,max:120,step:10};
+  specs.gpuIndex = {min:0,max:15,step:1};
+  specs.netInterface = {text:true};
   const fields = Object.fromEntries(Object.keys(specs).map(key => [key, document.getElementById(key)]));
   const indicator = document.getElementById("connectionState");
   const note = document.getElementById("previewNote");
@@ -41,6 +39,21 @@
       if (value === null) { field.reportValidity(); return; }
       if (bridge) bridge.setSetting(key, value);
       // In a browser this only changes the preview; no storage involved.
+    });
+  });
+
+  const feedback = document.getElementById("refreshFeedback");
+  [["refreshIPv4", "ipv4"], ["refreshDisks", "disks"]].forEach(([id, kind]) => {
+    document.getElementById(id).addEventListener("click", () => {
+      if (!bridge) {
+        feedback.textContent = "僅能從 KDE 設定視窗執行裝置刷新。";
+        return;
+      }
+      bridge.refreshDevice(kind, accepted => {
+        feedback.textContent = accepted
+          ? "已送出重新查詢請求。"
+          : "無法送出刷新請求，請查看 KDE 記錄。";
+      });
     });
   });
 

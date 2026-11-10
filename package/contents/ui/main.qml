@@ -91,6 +91,8 @@ PlasmoidItem {
     SensorManager {
         id: sensors
         updateInterval: Plasmoid.configuration.updateInterval
+        ipRefreshSerial: Plasmoid.configuration.ipRefreshSerial
+        diskRefreshSerial: Plasmoid.configuration.diskRefreshSerial
         historyPoints: Plasmoid.configuration.historyPoints
         gpuIndex: Plasmoid.configuration.gpuIndex
         netInterface: Plasmoid.configuration.netInterface.trim() || "all"

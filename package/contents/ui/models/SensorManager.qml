@@ -10,9 +10,14 @@ QtObject {
     id: manager
 
     // ---- 設定（由 main.qml 從 Plasmoid.configuration 綁定）----
-    property int updateInterval: 2000
+    // 所有即時監控、歷史採樣與 HTML 快照共用同一個更新間隔。
+    // KSystemStats 仍以 updateRateLimit 訂閱，GPU／Disk／History／HTML 由單一 Timer 排程。
+    property int updateInterval: 500
+    property int ipRefreshSerial: 0
+    property int diskRefreshSerial: 0
     property int historyPoints: 30
     property int gpuIndex: 0
+    onGpuIndexChanged: { if (_schedulerStarted) requestGpuProbe(); }
     // 自動辨識的實體硬碟清單
     property var disks: []
 
@@ -28,14 +33,21 @@ QtObject {
     readonly property var disk2:
         disks.length > 1 ? disks[1] : null
 
-    // v0.0.2 版本的硬碟設定
-    // property string disk1Id: ""          // "" = disk/all 彙總
-    // property string disk1Label: ""
-    // property string disk2Id: ""          // "" = 隱藏第二顆
-    // property string disk2Label: ""
     property string netInterface: "all"  // "all" = network/all 彙總
 
     property bool graceElapsed: false
+    signal snapshotDue()
+    property bool _schedulerStarted: false
+    property double _graceDeadline: 0
+    property var _nextDue: ({})
+    property string _manualNetIp: ""
+    property bool _hasManualNetIp: false
+    onNetInterfaceChanged: {
+        _hasManualNetIp = false;
+        _manualNetIp = "";
+    }
+    onIpRefreshSerialChanged: { if (_schedulerStarted) refreshNetworkIp(); }
+    onDiskRefreshSerialChanged: { if (_schedulerStarted) refreshDisks(); }
     property var _warned: ({})
 
     readonly property bool disk2Enabled: disk2 !== null
@@ -50,8 +62,6 @@ QtObject {
     readonly property string gpuVendor: gpuDevice ? gpuDevice.vendor : _vendorFromName(gpuNameSensor.value)
     readonly property string gpuSource: gpuVendor === "nvidia"
         ? (gpuDevice ? gpuDevice.source : "unavailable") : "ksystemstats"
-    // readonly property string _disk1Prefix: "disk/" + (disk1Id.length > 0 ? disk1Id : "all")
-    // readonly property string _disk2Prefix: "disk/" + disk2Id
     readonly property string _netPrefix: "network/" + (netHasInterface ? netInterface : "all")
 
     // ---- 對 UI 公開的資料 ----
@@ -88,12 +98,6 @@ QtObject {
     readonly property var ram: _pairMetric("ram", "RAM", memUsed, memTotal)
     readonly property var swap: _pairMetric("swap", "Swap", swapUsed, swapTotal)
 
-    // v0.0.2 版本的硬碟設定
-    // readonly property var disk1Read: _rateMetric("disk1Read", "Disk 1 read", disk1ReadS)
-    // readonly property var disk1Write: _rateMetric("disk1Write", "Disk 1 write", disk1WriteS)
-    // readonly property var disk2Read: _rateMetric("disk2Read", "Disk 2 read", disk2ReadS)
-    // readonly property var disk2Write: _rateMetric("disk2Write", "Disk 2 write", disk2WriteS)
-
     readonly property var disk1Read:
         _diskMetric("disk1Read", "Disk 1 read", disk1, "read")
 
@@ -108,9 +112,10 @@ QtObject {
 
     readonly property var netDown: _rateMetric("netDown", "Download", netDownS)
     readonly property var netUp: _rateMetric("netUp", "Upload", netUpS)
-    readonly property string netIp: _firstString([netIpS.value])
+    readonly property string netIp: _hasManualNetIp
+        ? _manualNetIp : (_firstString([netIpS.value]) || "--")
 
-    // 歷史：每 updateInterval 取一點，上限 historyPoints（有界環形緩衝）
+    // 歷史：由統一排程器按 updateInterval 記錄，緩衝長度 historyPoints
     property var history: ({ cpu: [], gpu: [], encode: [], decode: [], vram: [], ram: [], netDown: [], netUp: [] })
 
     // ---- 內部函式 ----
@@ -155,7 +160,9 @@ QtObject {
     }
 
     function _probePercentMetric(id, label, value) {
-        const valid = FormatUtils.isValidNumber(value) && value >= 0 && value <= 100;
+        // The NVIDIA backend already bounds percentages to 0..100.
+        // Only the missing/null case needs checking at this internal boundary.
+        const valid = FormatUtils.isValidNumber(value);
         return {
             id: id, label: label, status: _status(valid),
             rawValue: valid ? value : null,
@@ -232,13 +239,6 @@ QtObject {
         };
     }
 
-    function _checkRange(key, v) {
-        if (FormatUtils.isValidNumber(v) && (v < 0 || v > 100) && !_warned[key]) {
-            _warned[key] = true;
-            console.warn("ResourceWatch: sensor '" + key + "' reported out-of-range percent:", v);
-        }
-    }
-
     function _sample() {
         const h = history;
         const n = historyPoints;
@@ -254,14 +254,76 @@ QtObject {
         };
     }
 
-    property Timer _grace: Timer {
-        interval: 5000; running: true; repeat: false
-        onTriggered: manager.graceElapsed = true
+    // ---- 統一排程：只用一個 one-shot Timer，睡到下一個工作到期 ----
+    // KSystemStats 本身是推播訂閱；不在此處重啟它的系統服務。
+    // 使用者在 HTML 設定頁變更更新間隔後，重新安排四個工作的下次到期時間。
+    // 不重新查詢固定硬體資訊，不連帶重掃 IPv4 或硬碟清單。
+    function _rescheduleAll() {
+        if (!_schedulerStarted) return;
+        const deadline = Date.now() + updateInterval;
+        _nextDue = { gpu: deadline, disk: deadline, history: deadline, html: deadline };
+        _armScheduler();
+    }
+    onUpdateIntervalChanged: _rescheduleAll()
+
+    function _armScheduler() {
+        if (!_schedulerStarted) return;
+        const due = _nextDue;
+        // Fixed four jobs: avoid temporary arrays on every scheduler wakeup.
+        const first = Math.min(due.gpu, due.disk, due.history, due.html,
+                               graceElapsed ? Infinity : _graceDeadline);
+        const wait = Math.max(1, first - Date.now());
+        _schedulerTimer.interval = Math.max(1, Math.ceil(wait));
+        _schedulerTimer.restart();
     }
 
-    property Timer _sampler: Timer {
-        interval: manager.updateInterval; running: true; repeat: true
-        onTriggered: manager._sample()
+    function _runScheduled() {
+        if (!_schedulerStarted) return;
+        const now = Date.now();
+        if (!graceElapsed && now >= _graceDeadline)
+            graceElapsed = true;
+        const next = Object.assign({}, _nextDue);
+        // 每項工作至多執行一次；固定工作不需每次建立 jobs 陣列。
+        const deadline = now + updateInterval;
+        if (now >= next.gpu) { next.gpu = deadline; requestGpuProbe(); }
+        if (now >= next.disk) { next.disk = deadline; requestDiskStats(); }
+        if (now >= next.history) { next.history = deadline; _sample(); }
+        if (now >= next.html) { next.html = deadline; snapshotDue(); }
+        _nextDue = next;
+        _armScheduler();
+    }
+
+    property Timer _schedulerTimer: Timer {
+        interval: 500
+        repeat: false
+        onTriggered: manager._runScheduled()
+    }
+
+    function requestGpuProbe() {
+        if (_gpuProbe.connectedSources.length === 0)
+            _gpuProbe.connectSource(_gpuProbeCommand);
+    }
+    function requestDiskStats() {
+        if (disks.length > 0 && _diskStats.connectedSources.length === 0)
+            _diskStats.connectSource(_diskStatsCommand);
+    }
+    function refreshDisks() {
+        if (_diskDiscovery.connectedSources.length === 0)
+            _diskDiscovery.connectSource(_lsblkCommand);
+    }
+    function refreshNetworkIp() {
+        if (_ipRefresh.connectedSources.length === 0)
+            _ipRefresh.connectSource(_ipRefreshCommand);
+    }
+
+    Component.onCompleted: {
+        refreshDisks();                  // 裝置清單只在啟動與手動要求時掃描
+        _requestHardwareProbe();         // 靜態資訊只查詢一次
+        _schedulerStarted = true;
+        const now = Date.now();
+        _graceDeadline = now + 5000;
+        _nextDue = { gpu: now, disk: now, history: now, html: now };
+        _runScheduled();
     }
 
     function _shellQuote(input) {
@@ -297,17 +359,7 @@ QtObject {
         }
     }
 
-    // Short-lived Python/NVML queries, never a resident daemon.
-    property Timer _gpuProbeTimer: Timer {
-        interval: Math.max(1000, manager.updateInterval)
-        repeat: true
-        running: true
-        triggeredOnStart: true
-        onTriggered: {
-            if (manager._gpuProbe.connectedSources.length === 0)
-                manager._gpuProbe.connectSource(manager._gpuProbeCommand);
-        }
-    }
+    // GPU 查詢由共用 scheduler 觸發；同時只允許一個查詢執行。
 
     // CPU 型號 + RAM 模組速度：低頻率查詢，不持續要求 root。
     property var _hardwareProbeData: ({})
@@ -339,15 +391,9 @@ QtObject {
         }
     }
 
-    property Timer _hardwareProbeTimer: Timer {
-        interval: 300000
-        repeat: true
-        running: true
-        triggeredOnStart: true
-        onTriggered: {
-            if (manager._hardwareProbe.connectedSources.length === 0)
-                manager._hardwareProbe.connectSource(manager._hardwareProbeCommand);
-        }
+    function _requestHardwareProbe() {
+        if (_hardwareProbe.connectedSources.length === 0)
+            _hardwareProbe.connectSource(_hardwareProbeCommand);
     }
 
     // ---- 感測器（ID 皆為候選；實機以 kstatsviewer --list 確認）----
@@ -421,6 +467,10 @@ QtObject {
                     }
 
                     manager.disks = found;
+                    manager._previousDiskCounters = {};
+                    manager.diskRates = {};
+                    manager.requestDiskStats();
+                    manager.snapshotDue();
 
                 } catch (error) {
                     console.warn("ResourceWatch: invalid lsblk JSON",
@@ -429,25 +479,11 @@ QtObject {
             }
         }
 
-    // 每 60 秒重新檢查裝置；首次啟動立即查詢
-    property Timer _diskDiscoveryTimer: Timer {
-        interval: 60000
-        repeat: true
-        running: true
-        triggeredOnStart: true
-
-        onTriggered: {
-            if (manager._diskDiscovery.connectedSources.length === 0)
-                manager._diskDiscovery.connectSource(
-                    manager._lsblkCommand);
-        }
-    }
+    // 磁碟枚舉僅在啟動及設定頁要求時執行，不再每 60 秒輪詢。
 
         // B/s 轉成可讀文字
         function _formatDiskRate(bytesPerSecond) {
-            if (!FormatUtils.isValidRate(bytesPerSecond))
-                return "--";
-
+            // _diskMetric() already validated this number before calling us.
             let value = bytesPerSecond;
             const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
             let index = 0;
@@ -481,12 +517,14 @@ QtObject {
             const now = Date.now();
             const next = {};
             const rates = {};
+            const selected = new Set(disks.map(d => d.name));
 
             for (const line of stdout.split("\n")) {
                 const fields = line.trim().split(/\s+/);
                 if (fields.length < 10) continue;
 
                 const name = fields[2];
+                if (!selected.has(name)) continue;
                 const readSectors = Number(fields[5]);
                 const writeSectors = Number(fields[9]);
 
@@ -551,40 +589,62 @@ QtObject {
                 }
             }
 
-        // 遵循既有 updateInterval 設定
-        property Timer _diskStatsTimer: Timer {
-            interval: manager.updateInterval
-            repeat: true
-            running: true
-            triggeredOnStart: true
+    // 讀寫速度由統一排程器控制，不另建 Timer。
 
-            onTriggered: {
-                if (manager._diskStats.connectedSources.length === 0)
-                    manager._diskStats.connectSource(
-                        manager._diskStatsCommand);
+    // IPv4 只在設定頁手動刷新時執行一次固定命令。
+    // 不拼接使用者的介面名稱到 Shell；僅在解析 JSON 後篩選。
+    readonly property string _ipRefreshCommand: "/usr/sbin/ip -j -4 address show"
+    property Plasma5Support.DataSource _ipRefresh: Plasma5Support.DataSource {
+        engine: "executable"
+        connectedSources: []
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (Number(data["exit code"]) !== 0) {
+                console.warn("ResourceWatch: IPv4 refresh unavailable:", data["stderr"]);
+                return;
+            }
+            try {
+                const adapters = JSON.parse(String(data["stdout"] || "[]"));
+                const addresses = Array.isArray(adapters) ? adapters : [];
+                const selected = addresses.filter(function(a) {
+                    return manager.netHasInterface
+                        ? a.ifname === manager.netInterface
+                        : a.ifname !== "lo";
+                });
+                let ip = "--";
+                for (const adapter of selected) {
+                    const found = (adapter.addr_info || []).find(function(a) {
+                        return a.family === "inet" && a.scope === "global";
+                    });
+                    if (found && found.local) { ip = String(found.local); break; }
+                }
+                manager._manualNetIp = ip;
+                manager._hasManualNetIp = true;
+                manager.snapshotDue();
+            } catch (error) {
+                console.warn("ResourceWatch: IPv4 JSON parse failed:", error);
             }
         }
+    }
+
     property Sensors.Sensor cpuSensor: Sensors.Sensor {
         sensorId: "cpu/all/usage"; updateRateLimit: manager.updateInterval
-        onValueChanged: manager._checkRange("cpu", value)
     }
     property Sensors.Sensor cpuFreqSensor: Sensors.Sensor { sensorId: "cpu/all/averageFrequency"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor cpuTempAvg: Sensors.Sensor { sensorId: "cpu/all/averageTemperature"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor cpuTempMax: Sensors.Sensor { sensorId: "cpu/all/maximumTemperature"; updateRateLimit: manager.updateInterval }
-    property Sensors.Sensor cpuNameAll: Sensors.Sensor { sensorId: "cpu/all/name"; updateRateLimit: 10000 }
-    property Sensors.Sensor cpuName0: Sensors.Sensor { sensorId: "cpu/cpu0/name"; updateRateLimit: 10000 }
-    property Sensors.Sensor uptimeSensor: Sensors.Sensor { sensorId: "os/system/uptime"; updateRateLimit: 5000 }
+    property Sensors.Sensor cpuNameAll: Sensors.Sensor { sensorId: "cpu/all/name"; updateRateLimit: 86400000 }
+    property Sensors.Sensor cpuName0: Sensors.Sensor { sensorId: "cpu/cpu0/name"; updateRateLimit: 86400000 }
+    property Sensors.Sensor uptimeSensor: Sensors.Sensor { sensorId: "os/system/uptime"; updateRateLimit: 60000 }
 
     property Sensors.Sensor gpuAll: Sensors.Sensor {
         sensorId: "gpu/all/usage"; updateRateLimit: manager.updateInterval
-        onValueChanged: manager._checkRange("gpu/all", value)
     }
     property Sensors.Sensor gpuIdx: Sensors.Sensor {
         sensorId: manager._gpuPrefix + "/usage"; updateRateLimit: manager.updateInterval
-        onValueChanged: manager._checkRange("gpu/idx", value)
     }
     property Sensors.Sensor gpuTemp: Sensors.Sensor { sensorId: manager._gpuPrefix + "/temperature"; updateRateLimit: manager.updateInterval }
-    property Sensors.Sensor gpuNameSensor: Sensors.Sensor { sensorId: manager._gpuPrefix + "/name"; updateRateLimit: 10000 }
+    property Sensors.Sensor gpuNameSensor: Sensors.Sensor { sensorId: manager._gpuPrefix + "/name"; updateRateLimit: 86400000 }
     property Sensors.Sensor vramUsed: Sensors.Sensor { sensorId: manager._gpuPrefix + "/usedVram"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor vramTotal: Sensors.Sensor { sensorId: manager._gpuPrefix + "/totalVram"; updateRateLimit: manager.updateInterval }
 
@@ -593,14 +653,7 @@ QtObject {
     property Sensors.Sensor swapUsed: Sensors.Sensor { sensorId: "memory/swap/used"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor swapTotal: Sensors.Sensor { sensorId: "memory/swap/total"; updateRateLimit: manager.updateInterval }
 
-    // v0.0.2 版本的硬碟設定
-    // property Sensors.Sensor disk1ReadS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/read"; updateRateLimit: manager.updateInterval }
-    // property Sensors.Sensor disk1WriteS: Sensors.Sensor { sensorId: manager._disk1Prefix + "/write"; updateRateLimit: manager.updateInterval }
-    // // 第二顆未設定時 sensorId 為空字串＝不訂閱
-    // property Sensors.Sensor disk2ReadS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/read" : ""; updateRateLimit: manager.updateInterval }
-    // property Sensors.Sensor disk2WriteS: Sensors.Sensor { sensorId: manager.disk2Enabled ? manager._disk2Prefix + "/write" : ""; updateRateLimit: manager.updateInterval }
-
     property Sensors.Sensor netDownS: Sensors.Sensor { sensorId: manager._netPrefix + "/download"; updateRateLimit: manager.updateInterval }
     property Sensors.Sensor netUpS: Sensors.Sensor { sensorId: manager._netPrefix + "/upload"; updateRateLimit: manager.updateInterval }
-    property Sensors.Sensor netIpS: Sensors.Sensor { sensorId: manager.netHasInterface ? manager._netPrefix + "/ipv4address" : ""; updateRateLimit: 10000 }
+    property Sensors.Sensor netIpS: Sensors.Sensor { sensorId: manager.netHasInterface ? manager._netPrefix + "/ipv4address" : ""; updateRateLimit: 86400000 }
 }

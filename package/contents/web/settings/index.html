@@ -20,39 +20,45 @@
     </header>
 
     <section class="settings-card" aria-labelledby="refreshHeading">
-      <h2 id="refreshHeading">監控與歷史資料</h2>
+      <h2 id="refreshHeading">監控更新排程</h2>
+      <p class="settings-explainer">所有即時監控、歷史圖表和 HTML 畫面共用一組更新間隔。預設 500 ms，範圍 100–10000 ms、步進 50 ms；實際感測器更新率仍受 KDE 與驅動限制。</p>
       <div class="field-grid">
         <label class="field" for="updateInterval">
-          <span class="field-label">更新間隔</span>
-          <span class="field-hint">感測器重新取樣的間隔，單位毫秒</span>
-          <div class="input-unit"><input id="updateInterval" name="updateInterval" type="number" min="50" max="10000" step="50" value="500" required><span>ms</span></div>
+          <span class="field-label">統一更新間隔</span>
+          <span class="field-hint">CPU、GPU、VRAM、RAM、磁碟、網路、歷史圖表及 HTML 畫面共用</span>
+          <div class="input-unit"><input id="updateInterval" type="number" min="100" max="10000" step="50" value="500" required><span>ms</span></div>
         </label>
         <label class="field" for="historyPoints">
           <span class="field-label">歷史資料點數</span>
-          <span class="field-hint">圖表最多保留的取樣點數</span>
-          <div class="input-unit"><input id="historyPoints" name="historyPoints" type="number" min="10" max="120" step="10" value="30" required><span>點</span></div>
+          <span class="field-hint">每張圖最多保留的紀錄數量</span>
+          <div class="input-unit"><input id="historyPoints" type="number" min="10" max="120" step="10" value="30" required><span>點</span></div>
         </label>
       </div>
     </section>
 
     <section class="settings-card" aria-labelledby="devicesHeading">
-      <h2 id="devicesHeading">裝置選擇</h2>
+      <h2 id="devicesHeading">裝置與手動刷新</h2>
       <div class="field-grid">
         <label class="field" for="gpuIndex">
           <span class="field-label">GPU 編號</span>
-          <span class="field-hint">從 0 開始編號，多張顯卡可切換</span>
-          <input id="gpuIndex" name="gpuIndex" type="number" min="0" max="15" step="1" value="0" required>
+          <span class="field-hint">多張顯卡可從 0 開始指定</span>
+          <input id="gpuIndex" type="number" min="0" max="15" step="1" value="0" required>
         </label>
         <label class="field" for="netInterface">
           <span class="field-label">網路介面</span>
-          <span class="field-hint">all 表示所有介面，也可指定名稱</span>
-          <input id="netInterface" name="netInterface" type="text" maxlength="64" value="all" spellcheck="false" autocomplete="off" placeholder="例如 enp3s0 或 all">
+          <span class="field-hint">all 為所有介面，可指定如 enp3s0</span>
+          <input id="netInterface" type="text" maxlength="64" value="all" spellcheck="false" autocomplete="off">
         </label>
+      </div>
+      <div class="refresh-actions">
+        <div class="refresh-action"><div><strong>IPv4 位址</strong><p>立即重新查詢目前選取的介面（已套用的設定）</p></div><button type="button" id="refreshIPv4">重新讀取 IPv4</button></div>
+        <div class="refresh-action"><div><strong>實體硬碟清單</strong><p>立即重新偵測 SATA／SAS／NVMe／IDE</p></div><button type="button" id="refreshDisks">重新掃描硬碟</button></div>
+        <p class="refresh-feedback" id="refreshFeedback" role="status" aria-live="polite"></p>
       </div>
     </section>
 
     <footer class="page-footer">
-      <p>在 KDE 設定視窗底部按「套用」或「確定」才會儲存；按「取消」則放棄這次修改。</p>
+      <p>更新間隔與裝置設定在「套用／確定」後儲存；重新讀取按鈕是立即動作，不需要按「套用」。</p>
       <p class="preview-note" id="previewNote">在瀏覽器開啟時僅供設計預覽，不會寫入 KDE 設定。</p>
     </footer>
   </main>

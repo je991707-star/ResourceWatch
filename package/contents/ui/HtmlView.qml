@@ -21,23 +21,26 @@ Item {
         if (!m) return { displayValue: "--", percent: null, rawValue: null };
         return {
             displayValue: m.displayValue || "--",
-            percent: Number.isFinite(m.percent) ? m.percent : null,
-            rawValue: Number.isFinite(m.rawValue) ? m.rawValue : null,
+            // SensorManager has already normalized both fields to a number or null.
+            percent: m.percent,
+            rawValue: m.rawValue,
             status: m.status || "unavailable",
             usedText: m.usedText || "--",
             totalText: m.totalText || "--"
         };
     }
 
+    // SensorManager already keeps history arrays within historyPoints (max 120).
+    // Re-slicing eight arrays on every HTML snapshot is unnecessary.
     function historyArray(values) {
-        return Array.isArray(values) ? values.slice(0, 120) : [];
+        return values && values.length > 120 ? values.slice(-120) : (values || []);
     }
 
     function createSnapshot() {
         const m = manager;
         if (!m) return { version: version, history: {}, disks: [], diskRates: {} };
-        const h = m.history || {};
-        const allDisks = Array.isArray(m.disks) ? m.disks : [];
+        const h = m.history;
+        const allDisks = m.disks;
         const rates = {};
         const list = allDisks.map(function(d) {
             const name = String(d.name || "");
@@ -58,6 +61,8 @@ Item {
             cpuName: m.cpuName || "--",
             cpu: metric(m.cpu), cpuFreqText: m.cpuFreqText,
             cpuTempText: m.cpuTempText, uptimeText: m.uptimeText,
+            uptimeSeconds: Number.isFinite(m.uptimeSensor.value)
+                ? m.uptimeSensor.value : null,
             gpuIndex: m.gpuIndex, gpuName: m.gpuName || "--",
             gpuVendor: m.gpuVendor, gpuSource: m.gpuSource,
             gpu: metric(m.gpu), gpuTempText: m.gpuTempText,
@@ -67,7 +72,9 @@ Item {
             ramSpeedText: m.ramSpeedText || "--",
             swap: metric(m.swap),
             disks: list, diskRates: rates,
-            netHasInterface: m.netHasInterface, netIp: m.netIp,
+            netHasInterface: m.netHasInterface,
+            netIpAvailable: m._hasManualNetIp && m._manualNetIp !== "--",
+            netIp: m.netIp,
             netUp: metric(m.netUp), netDown: metric(m.netDown),
             history: {
                 cpu: historyArray(h.cpu), gpu: historyArray(h.gpu),
@@ -110,16 +117,16 @@ Item {
                 request.reject();
         }
         onLoadingChanged: function(info) {
-            if (info.status === WebEngineView.LoadFailedStatus)
+            if (info.status === WebEngineView.LoadSucceededStatus)
+                view.publishSnapshot();
+            else if (info.status === WebEngineView.LoadFailedStatus)
                 console.error("ResourceWatch: HTML failed to load:", info.errorString);
         }
     }
 
-    Timer {
-        interval: view.manager ? Math.max(500, view.manager.updateInterval) : 2000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: view.publishSnapshot()
+    // Full snapshots are sent only by the unified scheduler; no second Timer.
+    Connections {
+        target: view.manager
+        function onSnapshotDue() { view.publishSnapshot(); }
     }
 }

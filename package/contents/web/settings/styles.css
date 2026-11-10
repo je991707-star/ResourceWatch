@@ -174,3 +174,13 @@ input:invalid {
         flex-wrap: wrap;
     }
 }
+.settings-explainer { color: #adb7c5; font-size: 12px; line-height: 1.55; margin: -7px 0 15px; }
+.refresh-actions { border-top: 1px solid #4b505a; margin-top: 17px; padding-top: 14px; }
+.refresh-action { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:10px 0; }
+.refresh-action strong { font-size:13px; font-weight:500; }
+.refresh-action p { color:#b2bac5; font-size:11px; line-height:1.5; margin:3px 0 0; }
+.refresh-action button { background:#3c5e80; color:#fff; border:1px solid #597d9f; padding:8px 12px; border-radius:8px; font:inherit; font-size:12px; cursor:pointer; flex-shrink:0; }
+.refresh-action button:hover { background:#456f98; }
+.refresh-action button:focus-visible { outline:2px solid #8cc0ff; outline-offset:2px; }
+.refresh-feedback { font-size:11px; color:#b4d9c0; min-height:16px; margin:8px 0 0; }
+@media (max-width: 520px) { .refresh-action { align-items:flex-start; flex-direction:column; } }

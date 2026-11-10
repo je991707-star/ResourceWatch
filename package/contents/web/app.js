@@ -94,9 +94,34 @@
   let connected = false;
   let bridge = null;
   let frame = 0;
+  let uptimeAnchorSeconds = null;
+  let uptimeAnchorAt = 0;
+  let lastObservedUptimeSeconds = null;
+  function uptimeFromSeconds(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    const hms = [hours, minutes, secs].map(v => String(v).padStart(2, "0")).join(":");
+    return days > 0 ? `${days}天 ${hms}` : hms;
+  }
+  function refreshUptimeText() {
+    if (uptimeAnchorSeconds === null) return;
+    const elapsed = Math.max(0, (performance.now() - uptimeAnchorAt) / 1000);
+    setText("cpuUptime", uptimeFromSeconds(uptimeAnchorSeconds + elapsed));
+  }
+  // One DOM text change per second. No subprocess and no full chart redraw.
+  if (embedded) setInterval(refreshUptimeText, 1000);
   const text = (value, fallback = "--") => value === null || value === undefined || value === "" ? fallback : String(value);
   const metricText = value => text(value && value.displayValue);
-  function setText(id, value) { const element = $(id); if (element) element.textContent = text(value); }
+  // Avoid scheduling text layout/paint when a sensor value has not changed.
+  function setText(id, value) {
+    const element = $(id);
+    if (!element) return;
+    const next = text(value);
+    if (element.textContent !== next) element.textContent = next;
+  }
   function formatRate(value) {
     if (!Number.isFinite(value) || value < 0) return "--";
     const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
@@ -132,32 +157,46 @@
   }
   document.querySelectorAll(".plot svg").forEach(updateGrid);
 
+  // Resolve chart nodes only once; all charts are static HTML elements.
+  const chartNodes = Object.fromEntries(
+    Array.from(document.querySelectorAll("[data-chart]"), chart => [
+      chart.dataset.chart,
+      { root: chart, line: chart.querySelector(".line"), area: chart.querySelector(".area") }
+    ])
+  );
+
   function chartSeries(name, values, max = 100) {
-    const chart = document.querySelector(`[data-chart="${name}"]`);
+    const chart = chartNodes[name];
     if (!chart) return;
-    const line = chart.querySelector(".line");
-    const area = chart.querySelector(".area");
-    if (!Array.isArray(values) || values.every(v => !Number.isFinite(v))) {
-      chart.classList.add("is-missing");
-      line.setAttribute("d", ""); area.setAttribute("d", "");
+    if (!Array.isArray(values)) {
+      chart.root.classList.add("is-missing");
+      if (chart.line.getAttribute("d")) chart.line.setAttribute("d", "");
+      if (chart.area.getAttribute("d")) chart.area.setAttribute("d", "");
       return;
     }
-    const source = values.map(v => Number.isFinite(v) ? Math.max(0, v) : null);
-    const upper = max > 0 ? max : Math.max(1, ...source.filter(v => v !== null));
-    const lines = [];
-    const pts = [];
-    const last = Math.max(1, source.length - 1);
-    for (let i = 0; i < source.length; i++) {
-      if (source[i] === null) continue;
-      const x = i / last * 300;
-      const y = 100 - Math.min(1, source[i] / upper) * 100;
-      lines.push(`${lines.length ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`);
-      pts.push([x, y]);
+    const last = Math.max(1, values.length - 1);
+    const upper = max > 0 ? max : 1;
+    const points = [];
+    let path = "";
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i];
+      if (!Number.isFinite(value)) continue;
+      const x = (i / last * 300).toFixed(2);
+      const y = (100 - Math.min(1, Math.max(0, value) / upper) * 100).toFixed(2);
+      path += `${path ? " L" : "M"}${x} ${y}`;
+      points.push(x);
     }
-    if (!pts.length) { chart.classList.add("is-missing"); return; }
-    chart.classList.remove("is-missing");
-    line.setAttribute("d", lines.join(" "));
-    area.setAttribute("d", `M${pts[0][0].toFixed(2)} 100 ${lines.join(" ").replace(/^M/, "L")} L${pts[pts.length-1][0].toFixed(2)} 100 Z`);
+    if (!points.length) {
+      chart.root.classList.add("is-missing");
+      if (chart.line.getAttribute("d")) chart.line.setAttribute("d", "");
+      if (chart.area.getAttribute("d")) chart.area.setAttribute("d", "");
+      return;
+    }
+    chart.root.classList.remove("is-missing");
+    const areaPath = `M${points[0]} 100 ${path.replace(/^M/, "L")} L${points[points.length - 1]} 100 Z`;
+    // Attribute assignments invalidate SVG paint; skip identical paths.
+    if (chart.line.getAttribute("d") !== path) chart.line.setAttribute("d", path);
+    if (chart.area.getAttribute("d") !== areaPath) chart.area.setAttribute("d", areaPath);
   }
 
   function labeledGpuName(name, vendor) {
@@ -169,6 +208,8 @@
     return `${brand} ${raw}`;
   }
 
+  let lastDiskInventory = null;
+  let diskStatNodes = [];
   function render() {
     const s = state;
     setText("cpuName", s.cpuName);
@@ -176,7 +217,18 @@
     setText("cpuChartUsage", metricText(s.cpu));
     setText("cpuSpeed", s.cpuFreqText);
     setText("cpuTemp", s.cpuTempText);
-    setText("cpuUptime", s.uptimeText);
+    if (Number.isFinite(s.uptimeSeconds)) {
+      // The kernel uptime sensor can update less often than HTML snapshots.
+      // Never reset the local clock for repeated identical snapshots.
+      if (s.uptimeSeconds !== lastObservedUptimeSeconds) {
+        lastObservedUptimeSeconds = s.uptimeSeconds;
+        uptimeAnchorSeconds = s.uptimeSeconds;
+        uptimeAnchorAt = performance.now();
+        refreshUptimeText();
+      }
+    } else if (uptimeAnchorSeconds === null) {
+      setText("cpuUptime", s.uptimeText);
+    }
     setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
@@ -192,11 +244,31 @@
     setText("ramSpeed", s.ramSpeedText);
     setText("ramUsed", metricText(s.ram));
     setText("swapUsed", s.swap ? `${text(s.swap.usedText)} / ${text(s.swap.totalText)}` : "--");
-    setText("netSubtitle", s.netHasInterface ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
+    setText("netSubtitle", (s.netHasInterface || s.netIpAvailable)
+      ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
     setText("versionText", "v" + text(s.version,"0.0.3"));
-    $("disksGrid").replaceChildren(...(s.disks || []).map((disk,i) => makeDiskCard(disk,i,s.diskRates)));
+    const disks = s.disks || [];
+    const inventory = JSON.stringify(disks.map(d => [d.name, d.model, d.sizeText]));
+    const disksChanged = inventory !== lastDiskInventory;
+    if (disksChanged) {
+      const cards = disks.map((disk, i) => makeDiskCard(disk, i, s.diskRates));
+      $("disksGrid").replaceChildren(...cards);
+      // Disk inventory only changes on startup / manual refresh.
+      // Reuse the two label references rather than querying each snapshot.
+      diskStatNodes = cards.map(card => card.querySelectorAll(".stat-value"));
+      lastDiskInventory = inventory;
+    } else {
+      diskStatNodes.forEach((labels, i) => {
+        const rate = s.diskRates?.[disks[i]?.name] || {};
+        if (labels.length >= 2) {
+          const read = formatRate(rate.read), write = formatRate(rate.write);
+          if (labels[0].textContent !== read) labels[0].textContent = read;
+          if (labels[1].textContent !== write) labels[1].textContent = write;
+        }
+      });
+    }
 
     const h = s.history || {};
     chartSeries("cpu", h.cpu);
@@ -207,17 +279,25 @@
     chartSeries("decode", h.decode || (Number.isFinite(s.decoder?.percent) ? [s.decoder.percent] : null));
     const up = Array.isArray(h.netUp) ? h.netUp : [];
     const down = Array.isArray(h.netDown) ? h.netDown : [];
-    const max = Math.max(1, ...up.filter(Number.isFinite), ...down.filter(Number.isFinite));
-    // Network demo displays the larger of up/down for one compact chart.
-    const net = Array.from({length: Math.max(up.length,down.length)}, (_,i) => {
+    // Compute the network graph and its scale in one pass, without
+    // allocating two filtered arrays on every snapshot.
+    const net = [];
+    let max = 1;
+    for (let i = 0, count = Math.max(up.length, down.length); i < count; i++) {
       const a = up[i], b = down[i];
-      if (!Number.isFinite(a) && !Number.isFinite(b)) return null;
-      return Math.max(0, Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
-    });
+      if (!Number.isFinite(a) && !Number.isFinite(b)) {
+        net.push(null);
+        continue;
+      }
+      const value = Math.max(0, Number.isFinite(a) ? a : 0,
+                               Number.isFinite(b) ? b : 0);
+      net.push(value);
+      if (value > max) max = value;
+    }
     chartSeries("network", net.length ? net : null, max * 1.12);
     setText("networkGraphMax", formatRate(max));
     // 硬碟數量變化時重新計算內容高度，避免下一列硬碟被裁掉。
-    fitToViewport();
+    if (disksChanged) fitToViewport();
   }
 
   function updateMode() {
@@ -232,11 +312,16 @@
   window.ResourceWatchUI = Object.freeze({
     update(snapshot) {
       if (!snapshot || typeof snapshot !== "object") return;
-      state = clone(snapshot);
+      // The WebChannel JSON has already been parsed into a fresh object.
+      // Do not stringify/parse the complete history a second time every tick.
+      state = snapshot;
+      const firstLive = !connected || isDemo;
       isDemo = false;
       connected = true;
-      $("demoAnimation").checked = false;
-      updateMode();
+      if (firstLive) {
+        $("demoAnimation").checked = false;
+        updateMode();
+      }
       render();
     },
     showDemo() {
@@ -284,9 +369,17 @@
           $("dataMode").textContent = "KDE 資料橋接失敗";
           return;
         }
+        let lastSnapshotJson = null;
         const receive = json => {
-          try { window.ResourceWatchUI.update(JSON.parse(json)); }
-          catch (error) { console.warn("Invalid ResourceWatch snapshot", error); }
+          // The initial snapshot can arrive via both property and signal.
+          if (json === lastSnapshotJson) return;
+          try {
+            const snapshot = JSON.parse(json);
+            lastSnapshotJson = json;
+            window.ResourceWatchUI.update(snapshot);
+          } catch (error) {
+            console.warn("Invalid ResourceWatch snapshot", error);
+          }
         };
         bridge.snapshotReady.connect(receive);
         receive(bridge.snapshotJson);
@@ -296,8 +389,8 @@
     document.head.appendChild(clientScript);
   }
 
-  setInterval(() => {
-    if (embedded || !isDemo || !$("demoAnimation").checked) return;
+  if (!embedded) setInterval(() => {
+    if (!isDemo || !$("demoAnimation").checked) return;
     frame++;
     const h = state.history;
     function push(key, value) { if (!Array.isArray(h[key])) h[key]=[]; h[key].push(value); if (h[key].length>MAX_SAMPLES) h[key].shift(); }

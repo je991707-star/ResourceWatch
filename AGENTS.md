@@ -2,6 +2,9 @@
 
 **使用者已決定採用 HTML/CSS/JavaScript 作為 Plasma 6 Widget 的正式完整畫面**。本次修改已以 `HtmlView.qml` + QtWebEngine / QtWebChannel 將 `package/contents/web/` 的 HTML 接入桌面小工具，`SensorManager.qml` 沿用現有感測器邏輯。原本「禁止 HTML/QtWebEngine UI」「正式 UI 只能純 QML」「FullView.qml 為活躍主視圖」等敘述已被此決策取代，不可再用來否決現在的架構。`FullView.qml` 及 `components/` 保留為舊版參考，不再是主要 UI。
 
+- **現行更新架構：** `SensorManager.qml` 的單一 one-shot 排程 Timer 控制 GPU／硬碟／歷史／HTML 推送；KSystemStats 透過共同的 `updateRateLimit` 受限速。單一 `updateInterval` 由 HTML 設定頁控制 CPU/GPU/RAM/磁碟/網路/歷史與 HTML，預設 500ms、範圍 100–10000ms、步進 50ms。本文後續「統一 2000ms」「不得使用 HTML UI」為舊規劃，不得當作現況。
+- **固定與手動工作：** CPU 型號／RAM 速度在啟動時讀取；磁碟枚舉只在啟動／按鈕時執行；網路 IPv4 僅按鈕時執行固定一次命令；uptime 在 HTML 端每秒更新單一文字，不每秒執行 Python。
+- **設定頁：** `cfg_*` 由 KConfig 管理 Apply／Cancel；「刷新 IPv4／硬碟」按鈕直接觸發即時操作，不屬於可取消的表單變更。不要擅自將可輸入的網路介面名稱串進 Shell 命令。
 - 正式且唯一的 HTML 編輯位置：`package/contents/web/index.html`、`package/contents/web/styles.css`、`package/contents/web/app.js`。
 - 專案根目錄 **不保留 `web/` 副本**；`install.sh upgrade` 直接安裝 `package/`，不得從根目錄 `web/` 覆蓋 HTML。
 - CPU/GPU/RAM 圖表標題右側顯示即時使用率；`chartSeries()` 的 100% 座標上限維持不變。

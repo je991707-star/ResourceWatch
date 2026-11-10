@@ -146,12 +146,22 @@ KDE 的設定視窗仍由 `configGeneral.qml` 與 `config/main.xml` 管理；HTM
 
 | 項目 | KConfig 範圍／預設值 |
 | --- | --- |
-| 更新間隔（`updateInterval`） | 500–10,000 ms；預設 2,000 ms |
-| 歷史資料點數（`historyPoints`） | 10–120；預設 30 |
-| GPU 編號（`gpuIndex`） | 0–15；預設 0 |
-| 網路介面（`netInterface`） | `all` 或介面名稱；預設 `all` |
+| **統一更新間隔（`updateInterval`）** | CPU、GPU（含 NVENC/NVDEC）、GPU 溫度／VRAM、RAM／SWAP、硬碟、網路、歷史圖表及 HTML 推送共用；100–10,000 ms，預設 500 ms，步進 50 ms |
+| 歷史資料點數（`historyPoints`） | 10–120，預設 30 |
+| GPU 編號（`gpuIndex`） | 0–15，預設 0 |
+| 網路介面（`netInterface`） | `all` 或介面名稱，預設 `all` |
 
-目前 HTML 設定頁的更新間隔 `<input>` 標示 50ms 步進，但 `settings.js`／`configGeneral.qml` 只接受 500ms 步進與至少 500ms；這是**待同步的 UI 驗證限制**，不是已完成的 50ms 更新功能。硬碟已自動辨識，不需手動設定硬碟 ID／Label。
+單一更新間隔輸入為 **50 ms 步進**；所有八類即時工作都使用相同的設定值。設定按「套用」才會儲存；**IPv4 重新讀取與硬碟重新掃描**則是立即操作，按按鈕後無須再按「套用」（需在 Plasma 設定視窗操作）。硬碟已自動辨識，不需手動輸入 ID。
+
+### 統一排程器
+
+`SensorManager.qml` 只有一個動態單次觸發的排程 `Timer`，統一決定 GPU NVML 查詢、硬碟讀寫取樣、歷史採樣、HTML 快照推送的下一次截止時間。使用者修改共用更新間隔後，會一起重排四項週期工作；若發生睡眠、卡頓或外部命令尚未完成，**不會補執行大量過期的取樣任務**。
+
+CPU、RAM、VRAM、網路等 KDE 原生感測器共用 `updateInterval` 設為 `updateRateLimit`，該數值是**限制更新頻率**而非命令 KSystemStats 後端精確以 100ms 取樣；硬體/驅動回報慢時，UI 仍可能看到連續相同數值。NVIDIA GPU 查詢為短命 Python 程式，頻率設太高會增加程序啟動與驅動負擔，同一時間只允許一個查詢進行。
+
+固定資訊在啟動時取得：`hardware_info.py` 負責 CPU 型號及 RAM 速度，KSystemStats 取得 GPU 名稱（同時 NVIDIA 查詢也可回傳型號）；硬碟裝置清單在啟動時讀取一次，之後只由使用者按「重新掃描硬碟」更新。IPv4 可由設定頁按鈕重新查詢，不會為此開啟長期週期性外部程序。
+
+系統運行時間採用 KSystemStats 的 uptime 數值作基準，網頁端每秒只更新一次 `cpuUptime` 文字，使用單調時間差累加；**不會每秒重繪所有 SVG 圖表，也不會每秒額外啟動 Python 或 shell**。HTML 完整快照的週期也由共用的 `updateInterval` 控制。
 
 ## 測試
 
@@ -160,11 +170,13 @@ cd /home/h97m/ResourceWatch
 bash tests/static_check.sh
 node --check package/contents/web/app.js
 node --check package/contents/web/settings/settings.js
+node tests/scheduler_test.js
 python3 -m unittest discover -s tests -p 'gpu_backend_test.py'
 python3 -m unittest discover -s tests -p 'hardware_info_test.py'
+python3 -m unittest discover -s tests -p 'scheduler_contract_test.py'
 ```
 
-截至撰寫此文件，對上傳的候選原始碼已完成原有 `static_check.sh`、JavaScript 語法檢查與 GPU／硬體資訊單元測試（Python 測試各 5 項，均通過）。**本次環境沒有執行 `qmllint` 或 Bazzite／Plasma 6 的實際 UI、硬體取樣與設定保存驗證。** 靜態測試通過不等於已確認所有執行階段功能。
+這次排程改造完成了原有 `static_check.sh`、JavaScript 語法檢查、GPU／硬體資訊單元測試，以及排程器邏輯與 KConfig／HTML 介面一致性測試。**本次環境沒有執行 `qmllint` 或 Bazzite／Plasma 6 的實際 UI、硬體取樣與設定保存驗證。** 靜態測試通過不等於已確認所有執行階段功能。
 
 ### 常見問題
 

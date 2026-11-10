@@ -4,9 +4,10 @@
       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
   <kcfgfile name=""/>
   <group name="General">
+    <!-- 統一監控與 HTML 更新間隔，100–10000 ms、50 ms 步進 -->
     <entry name="updateInterval" type="Int">
-      <default>2000</default>
-      <min>500</min>
+      <default>500</default>
+      <min>100</min>
       <max>10000</max>
     </entry>
     <entry name="historyPoints" type="Int">
@@ -19,19 +20,9 @@
       <min>0</min>
       <max>15</max>
     </entry>
-    <!-- v0.0.2版本的輸入數值 -->
-    <!-- <entry name="disk1Id" type="String">
-      <default></default>
-    </entry>
-    <entry name="disk1Label" type="String">
-      <default></default>
-    </entry>
-    <entry name="disk2Id" type="String">
-      <default></default>
-    </entry>
-    <entry name="disk2Label" type="String">
-      <default></default>
-    </entry> -->
+    <!-- 一次性刷新操作：按下 HTML 按鈕後立即觸發，不經套用流程。 -->
+    <entry name="ipRefreshSerial" type="Int"><default>0</default></entry>
+    <entry name="diskRefreshSerial" type="Int"><default>0</default></entry>
     <entry name="netInterface" type="String">
       <default>all</default>
     </entry>
