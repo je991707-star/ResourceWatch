@@ -139,6 +139,8 @@ pub struct Snapshot {
     pub cpu_cores: Option<u32>,
     pub cpu_threads: Option<u32>,
     pub cpu: Metric,
+    /// Usage per logical CPU (0–100, `null` when missing), `/proc/stat` order.
+    pub cpu_per_core: Vec<Option<f64>>,
     pub cpu_freq_text: String,
     pub cpu_temp_text: String,
     pub uptime_text: String,

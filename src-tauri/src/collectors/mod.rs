@@ -13,7 +13,6 @@ pub mod network;
 pub mod system;
 
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 /// Filesystem roots for Linux pseudo filesystems.
@@ -60,15 +59,6 @@ pub fn read_u64(path: &Path) -> Option<u64> {
 
 pub fn read_i64(path: &Path) -> Option<i64> {
     read_trimmed(path)?.parse().ok()
-}
-
-/// First line only (avoids reading per-CPU lines of `/proc/stat`).
-pub fn read_first_line(path: &Path) -> Option<String> {
-    let mut line = String::new();
-    BufReader::new(fs::File::open(path).ok()?)
-        .read_line(&mut line)
-        .ok()?;
-    Some(line)
 }
 
 /// Sorted directory entries whose file name matches `filter`.

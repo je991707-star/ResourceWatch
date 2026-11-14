@@ -70,7 +70,7 @@ fn parsers_never_panic_on_garbage() {
         let raw = String::from_utf8_lossy(&r.bytes(400)).into_owned();
         let tok = r.tokens();
         for text in [&raw, &tok] {
-            let _ = cpu::parse_stat_line(text);
+            let _ = cpu::parse_stat(text);
             let _ = cpu::parse_topology(text);
             let _ = memory::parse_meminfo(text);
             let _ = disk::parse_diskstats(text);
@@ -90,7 +90,9 @@ fn parsers_never_panic_on_garbage() {
 fn extreme_counter_values() {
     let max = u64::MAX;
     // CPU: sums that would overflow are rejected.
-    assert!(cpu::parse_stat_line(&format!("cpu {max} 1 1 1 1 1 1 1")).is_none());
+    assert!(cpu::parse_stat(&format!("cpu {max} 1 1 1 1 1 1 1"))
+        .0
+        .is_none());
     // Memory: kB values that overflow when converted to bytes are rejected.
     assert_eq!(
         memory::parse_meminfo(&format!("MemTotal: {max} kB\n")).ram_total,

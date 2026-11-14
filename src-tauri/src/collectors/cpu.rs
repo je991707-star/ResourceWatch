@@ -2,7 +2,7 @@
 //! temperature (hwmon). Paths are discovered once in [`CpuCollector::new`];
 //! each sample only reads small files, no process is started.
 
-use super::{list_dir, read_first_line, read_i64, read_trimmed, read_u64, Roots};
+use super::{list_dir, read_i64, read_trimmed, read_u64, Roots};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,14 +11,32 @@ pub struct CpuTimes {
     pub idle: u64,
 }
 
-/// Parses the aggregate `cpu` line of `/proc/stat`.
+/// Aggregate line and per-CPU `cpuN` lines (label, times) of `/proc/stat`.
+/// Offline CPUs are absent, so lines are matched by label, not position.
+pub fn parse_stat(text: &str) -> (Option<CpuTimes>, Vec<(String, Option<CpuTimes>)>) {
+    let mut total = None;
+    let mut cores = Vec::new();
+    for line in text.lines() {
+        let mut it = line.split_whitespace();
+        match it.next() {
+            Some("cpu") => total = parse_times(it),
+            Some(l)
+                if l.len() > 3
+                    && l.starts_with("cpu")
+                    && l[3..].bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                cores.push((l.to_string(), parse_times(it)));
+            }
+            _ => {}
+        }
+    }
+    (total, cores)
+}
+
+/// Fields of one `cpu`/`cpuN` line:
 /// total = user+nice+system+idle+iowait+irq+softirq+steal (guest time is
 /// already included in user/nice); idle = idle+iowait.
-pub fn parse_stat_line(line: &str) -> Option<CpuTimes> {
-    let mut it = line.split_whitespace();
-    if it.next()? != "cpu" {
-        return None;
-    }
+fn parse_times<'a>(it: impl Iterator<Item = &'a str>) -> Option<CpuTimes> {
     let v: Vec<u64> = it.take(8).map(|x| x.parse().ok()).collect::<Option<_>>()?;
     if v.len() < 4 {
         return None;
@@ -169,9 +187,12 @@ pub fn cpu_topology(roots: &Roots) -> (Option<u32>, Option<u32>) {
     std::fs::read_to_string(roots.proc("cpuinfo")).map_or((None, None), |t| parse_topology(&t))
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CpuReading {
     pub usage: Option<f64>,
+    /// Per logical CPU, in `/proc/stat` order; `None` for the first sample,
+    /// a CPU that just came online or a counter reset.
+    pub per_core: Vec<Option<f64>>,
     pub freq_mhz: Option<f64>,
     pub temp_c: Option<f64>,
 }
@@ -181,6 +202,7 @@ pub struct CpuCollector {
     freq_paths: Vec<PathBuf>,
     temp: TempSource,
     prev: Option<CpuTimes>,
+    prev_cores: std::collections::HashMap<String, CpuTimes>,
 }
 
 impl CpuCollector {
@@ -198,6 +220,7 @@ impl CpuCollector {
             freq_paths,
             temp: discover_temp(roots),
             prev: None,
+            prev_cores: std::collections::HashMap::new(),
         }
     }
 
@@ -214,14 +237,28 @@ impl CpuCollector {
 
     /// First call has no usage (needs two readings).
     pub fn sample(&mut self) -> CpuReading {
-        let cur = read_first_line(&self.stat_path).and_then(|l| parse_stat_line(&l));
+        let (cur, cores) = std::fs::read_to_string(&self.stat_path)
+            .map(|t| parse_stat(&t))
+            .unwrap_or_default();
         let usage = match (self.prev, cur) {
             (Some(p), Some(c)) => usage_between(p, c),
             _ => None,
         };
         self.prev = cur;
+        let per_core = cores
+            .iter()
+            .map(|(label, c)| {
+                c.zip(self.prev_cores.get(label).copied())
+                    .and_then(|(c, p)| usage_between(p, c))
+            })
+            .collect();
+        self.prev_cores = cores
+            .into_iter()
+            .filter_map(|(label, c)| Some((label, c?)))
+            .collect();
         CpuReading {
             usage,
+            per_core,
             freq_mhz: self.read_freq(),
             temp_c: read_temp(&self.temp),
         }
@@ -253,7 +290,8 @@ mod tests {
 
     #[test]
     fn stat_parsing_and_usage() {
-        let a = parse_stat_line("cpu  4619833 1989 1947850 129917758 138714 938250 394073 0 0 0")
+        let a = parse_stat("cpu  4619833 1989 1947850 129917758 138714 938250 394073 0 0 0")
+            .0
             .unwrap();
         assert_eq!(a.idle, 129917758 + 138714);
         assert_eq!(
@@ -267,11 +305,11 @@ mod tests {
         assert_eq!(usage_between(a, b), Some(25.0));
         assert_eq!(usage_between(a, a), None, "no elapsed ticks");
         assert_eq!(usage_between(b, a), None, "counter went backwards");
-        assert!(parse_stat_line("cpu0 1 2 3 4").is_none());
-        assert!(parse_stat_line("cpu x y z").is_none());
+        assert!(parse_stat("cpu0 1 2 3 4").0.is_none());
+        assert!(parse_stat("cpu x y z").0.is_none());
         let max = u64::MAX;
         assert!(
-            parse_stat_line(&format!("cpu {max} {max} 0 0")).is_none(),
+            parse_stat(&format!("cpu {max} {max} 0 0")).0.is_none(),
             "overflow rejected"
         );
     }
@@ -357,8 +395,26 @@ mod tests {
         let mut c = CpuCollector::new(&rt);
         let first = c.sample();
         assert_eq!(first.usage, None);
+        assert_eq!(first.per_core, vec![None], "first sample has no delta");
         assert_eq!(first.freq_mhz, Some(3600.0));
-        write(&r, "proc/stat", "cpu  150 0 150 900 0 0 0 0 0 0\n");
-        assert_eq!(c.sample().usage, Some(50.0));
+        // cpu0: 3 of 4 jiffies busy; cpu1 just came online (no previous value).
+        write(
+            &r,
+            "proc/stat",
+            "cpu  150 0 150 900 0 0 0 0 0 0\ncpu0 2 2 5 5\ncpu1 1 1 1 1\n",
+        );
+        let second = c.sample();
+        assert_eq!(second.usage, Some(50.0));
+        assert_eq!(second.per_core, vec![Some(75.0), None]);
+    }
+
+    #[test]
+    fn stat_lines_are_matched_by_label() {
+        let (total, cores) =
+            parse_stat("cpu 1 1 1 1\ncpu0 1 1 1 1\ncpu2 x\ncpufoo 1 1 1 1\nintr 5\n");
+        assert!(total.is_some());
+        let labels: Vec<&str> = cores.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["cpu0", "cpu2"]);
+        assert!(cores[1].1.is_none(), "malformed line kept as missing");
     }
 }

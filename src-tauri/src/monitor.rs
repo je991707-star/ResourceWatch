@@ -13,7 +13,7 @@ use crate::collectors::{
     network::{self, NetCollector, NetReading},
     system, Roots,
 };
-use crate::format::{format_bytes, MISSING};
+use crate::format::{clamp_percent, format_bytes, MISSING};
 use crate::history::{HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
@@ -209,6 +209,7 @@ impl Monitor {
             cpu_cores: self.cpu_topology.0,
             cpu_threads: self.cpu_topology.1,
             cpu: g(Metric::percent(r.cpu.usage)),
+            cpu_per_core: r.cpu.per_core.iter().map(|v| clamp_percent(*v)).collect(),
             cpu_freq_text: freq_text(r.cpu.freq_mhz),
             cpu_temp_text: temp_text(r.cpu.temp_c, 1),
             uptime_text: format_uptime(r.uptime),
@@ -304,6 +305,10 @@ mod tests {
         assert_eq!(snap.uptime_seconds, Some(100.5));
         assert_eq!(snap.swap.percent, None, "no swap configured: no percentage");
         assert_eq!(snap.history.cpu, vec![None, Some(50.0)]);
+        assert!(
+            snap.cpu_per_core.is_empty(),
+            "no cpuN lines in the fake stat"
+        );
         // peek repeats the last readings without touching history.
         assert_eq!(m.peek(&s).history.cpu.len(), 2);
     }

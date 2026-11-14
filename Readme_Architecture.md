@@ -28,7 +28,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器與記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
@@ -167,6 +167,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `cpuName` | string | 缺失為 `"--"` |
 | `cpuCores`, `cpuThreads` | number \| null | 實體核心數、邏輯 CPU 數；啟動與硬體重新偵測時讀取 |
 | `cpu` | Metric | 見下方 Metric 子物件 |
+| `cpuPerCore` | (number\|null)[] | 各邏輯 CPU 使用率 0–100，依 `/proc/stat` 順序 |
 | `cpuFreqText`, `cpuTempText`, `uptimeText` | string | 已格式化文字，缺失 `"--"` |
 | `uptimeSeconds` | number \| null | 供 HTML 本地每秒內插 |
 | `gpuIndex` | number | 選擇的 GPU 索引 |
@@ -226,8 +227,9 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 
 ### src/collectors/cpu.rs
 
-- 使用率：只讀 `/proc/stat` 第一行；total = user+nice+system+idle+iowait+irq+softirq+steal，idle = idle+iowait，取前後兩次差值；第一次、計數器倒退時為 `None`。
-  加總使用檢查過的整數運算，異常的極大值會被拒絕（`None`）而不會溢位。同一時段實測與 KSystemStats 平均值一致（6.99% 對 6.96%）。
+- 使用率：讀整個 `/proc/stat`（`parse_stat`）；整體使用 `cpu` 行，total = user+nice+system+idle+iowait+irq+softirq+steal，idle = idle+iowait，取前後兩次差值；第一次、計數器倒退時為 `None`。
+  加總使用檢查過的整數運算，異常的極大值會被拒絕（`None`）而不會溢位。
+  每核心使用率取 `cpuN` 行，以標籤（不是位置）對應前次讀值，因此 CPU 離線／上線時其他核心不受影響；新上線、第一次或計數器倒退的核心為 `None`。同一時段實測與 KSystemStats 平均值一致（6.99% 對 6.96%）。
 - 時脈：啟動時找出各 `cpuN/cpufreq/scaling_cur_freq`，每次取平均（kHz → MHz）。
 - 溫度：啟動時掃描 hwmon。`coretemp` 取所有 `Core N` 平均（與 KSystemStats `averageTemperature` 相同，不含 Package），沒有則用 `Package id`；
   `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。

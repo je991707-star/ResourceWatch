@@ -136,6 +136,9 @@ impl MockSource {
             cpu_cores: Some(4),
             cpu_threads: Some(8),
             cpu: cpu_m,
+            cpu_per_core: (0..8)
+                .map(|i| Some((cpu + 14.0 * (t * 0.6 + i as f64).sin()).clamp(0.0, 100.0)))
+                .collect(),
             cpu_freq_text: format!("{:.2} GHz", 3.0 + 0.4 * (t * 0.23).sin()),
             cpu_temp_text: format!("{:.1} °C", 46.0 + 3.0 * (t * 0.11).sin()),
             uptime_text: format_uptime(Some(uptime)),

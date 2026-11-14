@@ -73,6 +73,7 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "cpuName",
         "cpuCores",
         "cpuThreads",
+        "cpuPerCore",
         "cpu",
         "cpuFreqText",
         "cpuTempText",

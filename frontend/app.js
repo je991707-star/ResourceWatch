@@ -218,6 +218,26 @@
     }
   }
 
+  // ---------------------------------------------------------------- per-core bars
+  const coreBarHosts = all("[data-core-bars]");
+  function renderCoreBars(values) {
+    const list = Array.isArray(values) ? values : [];
+    for (const host of coreBarHosts) {
+      if (host.children.length !== list.length) {
+        // Rebuilt only when the CPU count changes (CPU hotplug).
+        host.replaceChildren(...list.map(() => document.createElement("span")));
+      }
+      list.forEach((v, i) => {
+        const bar = host.children[i];
+        const ok = Number.isFinite(v);
+        const height = ok ? Math.min(100, Math.max(0, v)).toFixed(1) + "%" : "";
+        bar.classList.toggle("is-missing", !ok);
+        if (bar.style.height !== height) bar.style.height = height;
+        bar.title = `CPU ${i}：${ok ? v.toFixed(1) + "%" : "--"}`;
+      });
+    }
+  }
+
   // ---------------------------------------------------------------- disks
   const diskLists = all("[data-disk-list]");
   const diskEmptyNotes = all("[data-disk-empty]");
@@ -275,6 +295,7 @@
     setText("cpuThreads", s.cpuThreads);
     setText("cpuTemp", s.cpuTempText);
     setRing("cpu", s.cpu);
+    renderCoreBars(s.cpuPerCore);
     if (Number.isFinite(s.uptimeSeconds)) {
       if (s.uptimeSeconds !== lastObservedUptimeSeconds) {
         lastObservedUptimeSeconds = s.uptimeSeconds;

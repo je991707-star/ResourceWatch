@@ -61,7 +61,7 @@
 |---|---|---|---|---|
 | 3.1 ✅ | 主機名稱、機型 | `/proc/sys/kernel/hostname`；`/sys/class/dmi/id/product_name`（一般使用者可讀） | `hostname`, `machineModel` | 頂部資訊列 |
 | 3.2 ✅ | CPU 核心／執行緒數 | `/proc/cpuinfo`（`physical id`＋`core id` 去重）、邏輯 CPU 數 | `cpuCores`, `cpuThreads` | 摘要「處理器」 |
-| 3.3 | 每核心使用率 | `/proc/stat` `cpuN` 行，重用 `collectors/cpu.rs` `parse_stat_line`／`usage_between` | `cpuPerCore: (number\|null)[]` | 處理器卡片左側小長條 |
+| 3.3 ✅ | 每核心使用率 | `/proc/stat` `cpuN` 行，重用 `collectors/cpu.rs` `parse_stat_line`／`usage_between` | `cpuPerCore: (number\|null)[]` | 處理器卡片左側小長條 |
 | 3.4 | 記憶體細分＋壓力 | `/proc/meminfo`：應用程式＝Total−Free−Buffers−Cached−SReclaimable、快取＝Buffers+Cached+SReclaimable、可用＝MemFree；`/proc/pressure/memory` `some avg10` | `ramBreakdown {app, cache, free}`, `history.memPressure` | 記憶體卡片多段堆疊條＋Pressure 圖、摘要記憶體環 |
 | 3.5 | 磁碟 I/O 歷史 | 現有 `/proc/diskstats` 速率加總 | `history.diskRead`, `history.diskWrite` | 新「磁碟 I/O」卡片雙線圖 |
 | 3.6 | 硬碟容量 | `/proc/self/mounts` 對應分割區所屬硬碟 → `statvfs`（`libc`）；啟動、手動刷新與每 10 秒讀一次 | `disks[].used/total/percent` | 磁碟卡片容量條、摘要卡片硬碟切換（‹ ›） |

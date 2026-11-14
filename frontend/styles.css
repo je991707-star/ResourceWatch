@@ -209,6 +209,21 @@ html, body {
 .plot .is-missing { display: none; }
 .grid-lines path { fill: none; stroke: var(--grid); stroke-width: .6; vector-effect: non-scaling-stroke; }
 
+/* ---------------------------------------------------------------- per-core bars */
+.cpu-chart { display: grid; grid-template-columns: minmax(48px, 30%) minmax(0, 1fr); gap: 10px; }
+.core-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 70px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--track);
+  background: var(--chart-bg);
+  border-radius: 4px 4px 0 0;
+}
+.core-bars > span { flex: 1; min-width: 2px; height: 0; border-radius: 2px 2px 0 0; background: var(--cpu); transition: height .4s ease; }
+.core-bars > span.is-missing { height: 2px; background: var(--track); }
+
 /* ---------------------------------------------------------------- disks */
 .disk-list { display: grid; gap: 8px; margin-bottom: 10px; }
 .disk-row {

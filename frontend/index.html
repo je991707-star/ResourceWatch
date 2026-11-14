@@ -140,8 +140,11 @@
 
         <section class="card" aria-labelledby="cpuTitle">
           <h2 id="cpuTitle">處理器</h2>
-          <div class="chart-heading"><span>使用率</span><span data-bind="cpuUsage">--</span></div>
-          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div>
+          <div class="cpu-chart">
+            <div><div class="chart-heading"><span>核心</span></div><div class="core-bars" data-core-bars aria-label="各核心使用率"></div></div>
+            <div><div class="chart-heading"><span>使用率</span><span data-bind="cpuUsage">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div></div>
+          </div>
         </section>
 
         <section class="card" aria-labelledby="memoryTitle">
