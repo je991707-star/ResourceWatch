@@ -168,6 +168,7 @@
             <li><i class="dot" data-color="disk-read"></i>讀取<strong data-bind="diskReadNow">--</strong></li>
             <li><i class="dot" data-color="disk-write"></i>寫入<strong data-bind="diskWriteNow">--</strong></li>
           </ul>
+          <button type="button" class="more-link" data-goto="storage">顯示更多…</button>
         </section>
 
         <section class="card" aria-labelledby="memoryTitle">
@@ -235,6 +236,15 @@
           <h2>實體硬碟</h2>
           <div class="disk-list disk-list--detail" data-disk-list></div>
           <p class="empty-note" data-disk-empty>未偵測到實體硬碟</p>
+        </section>
+        <section class="card">
+          <h2>磁碟 I/O</h2>
+          <div class="chart-heading"><span>速度（所有硬碟）</span><span data-bind="diskIoMax">--</span></div>
+          <div class="plot plot--tall"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="磁碟讀寫速度歷史圖表"><g class="grid-lines"></g><g data-chart="diskWrite" data-color="disk-write"><path class="area"></path><path class="line"></path></g><g data-chart="diskRead" data-color="disk-read"><path class="area"></path><path class="line"></path></g></svg></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="disk-read"></i>讀取<strong data-bind="diskReadNow">--</strong></li>
+            <li><i class="dot" data-color="disk-write"></i>寫入<strong data-bind="diskWriteNow">--</strong></li>
+          </ul>
         </section>
       </section>
 

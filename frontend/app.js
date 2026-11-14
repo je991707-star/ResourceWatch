@@ -274,17 +274,32 @@
     if (inventory !== sensorInventory) {
       // Rebuilt only on startup / hardware refresh.
       sensorNodes = sensorLists.map((host) => {
-        const limit = host.dataset.sensorList === "all" ? Infinity : Number(host.dataset.sensorList);
-        const rows = list.slice(0, limit).map((x) => {
+        // "all" groups consecutive sensors of one hwmon chip under a heading; short lists inline the chip.
+        const grouped = host.dataset.sensorList === "all";
+        const limit = grouped ? Infinity : Number(host.dataset.sensorList);
+        const children = [];
+        const values = [];
+        let chip = null;
+        for (const x of list.slice(0, limit)) {
+          if (grouped && x.chip !== chip) {
+            chip = x.chip;
+            const head = document.createElement("div");
+            head.className = "sensor-group";
+            const dt = document.createElement("dt");
+            dt.textContent = text(chip);
+            head.append(dt);
+            children.push(head);
+          }
           const row = document.createElement("div");
           const dt = document.createElement("dt");
-          dt.textContent = dt.title = `${text(x.chip)} · ${text(x.label)}`;
+          dt.textContent = dt.title = grouped ? text(x.label) : `${text(x.chip)} · ${text(x.label)}`;
           const dd = document.createElement("dd");
           row.append(dt, dd);
-          return { row, dd };
-        });
-        host.replaceChildren(...rows.map((r) => r.row));
-        return rows.map((r) => r.dd);
+          children.push(row);
+          values.push(dd);
+        }
+        host.replaceChildren(...children);
+        return values;
       });
       for (const note of sensorEmptyNotes) note.hidden = list.length > 0;
       sensorInventory = inventory;
