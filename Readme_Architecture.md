@@ -1,7 +1,7 @@
 # ResourceWatch 架構說明
 
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。
-修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。
+修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。介面改版計畫見 `docs/UI_REDESIGN_PLAN.md`。
 
 > 目前狀態：桌面應用為 Rust + Tauri 2（`src-tauri/` + `frontend/`），由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
 > 設定儲存於使用者設定目錄。舊版「Plasma QML + Python + HTML」（v0.0.5）已從此分支移除，可由 `main`、`v0.0.5` Tag 或
