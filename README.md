@@ -33,6 +33,7 @@ cargo tauri build          # release 執行檔與 deb／rpm 套件
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
+- 安裝到使用者目錄（建置＋執行檔、啟動器、圖示）：`./install.sh`；解除安裝：`./install.sh uninstall`
 - release 執行檔：`src-tauri/target/release/resourcewatch`
 - **NVIDIA**：NVML（`libnvidia-ml.so.1`）由主機的驅動提供。在沒有整合 NVIDIA 的 distrobox 容器內執行時，GPU 使用率、溫度與 VRAM 會顯示 `--`；
   請在主機上執行 release 執行檔。
@@ -51,8 +52,9 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 ## 文件
 
-- [Readme_Architecture.md](Readme_Architecture.md)：各檔案職責、IPC 介面、快照 JSON 格式、資料來源
-- [REFACTOR_RUST_TAURI.md](REFACTOR_RUST_TAURI.md)：重構階段進度、測試證據、效能數據與已知限制
+- [Readme_Architecture.md](docs/Readme_Architecture.md)：各檔案職責、IPC 介面、快照 JSON 格式、資料來源
+- [REFACTOR_RUST_TAURI.md](docs/REFACTOR_RUST_TAURI.md)：重構階段進度、測試證據、效能數據與已知限制
+- [UI_REDESIGN_PLAN.md](docs/UI_REDESIGN_PLAN.md)：介面改版計畫
 
 ## 版本紀錄
 

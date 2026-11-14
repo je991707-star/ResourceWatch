@@ -1,7 +1,7 @@
 # ResourceWatch 架構說明
 
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。
-修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。介面改版計畫見 `UI_REDESIGN_PLAN.md`。所有文件（除 `CLAUDE.md`）集中在 `docs/`；安裝見根目錄 `install.sh`。
+修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。介面改版計畫見 `UI_REDESIGN_PLAN.md`。所有文件（除根目錄 `README.md`、`CLAUDE.md`）集中在 `docs/`；安裝見根目錄 `install.sh`。
 
 > 目前狀態：桌面應用為 Rust + Tauri 2（`src-tauri/` + `frontend/`），由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
 > 設定儲存於使用者設定目錄。舊版「Plasma QML + Python + HTML」（v0.0.5）已從此分支移除，可由 `main`、`v0.0.5` Tag 或
@@ -20,6 +20,16 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 ```
 
 ---
+
+## install.sh
+
+使用者空間安裝／更新／解除安裝，不需要 sudo、不分層、不重開機（適用 Bazzite 等不可變系統）。
+- `install`（預設）：有 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內執行 `cargo tauri build --no-bundle`，
+  否則用主機的 cargo-tauri；先 `pkill -x resourcewatch` 再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到
+  `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、啟動器到
+  `~/.local/share/applications/io.github.local.resourcewatch.desktop`（與舊版 Plasma Widget 啟動器同 ID，直接覆蓋）。
+  偵測到舊版 Plasma Widget 仍安裝時只印出移除指令，不自動移除。
+- `uninstall`：刪除上述三個檔案，保留 `~/.config/io.github.local.resourcewatch` 設定。
 
 ## frontend/
 
