@@ -4,7 +4,7 @@
 
 use super::{counter_rate, list_dir, read_trimmed, read_u64, Roots};
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// `/proc/diskstats` and `/sys/block/*/size` always count 512-byte sectors.
@@ -216,12 +216,199 @@ impl DiskCollector {
     }
 }
 
+/// One line of `/proc/self/mountinfo`: device number, mount point and
+/// mount source (after the ` - fstype` separator).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mount {
+    pub dev: (u32, u32),
+    pub mount_point: PathBuf,
+    pub source: String,
+}
+
+/// Mountinfo escapes space, tab, newline and backslash as `\ooo` octal.
+fn unescape_mount(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\'
+            && i + 3 < b.len()
+            && b[i + 1..i + 4].iter().all(|c| (b'0'..=b'7').contains(c))
+        {
+            out.push((b[i + 1] - b'0') * 64 + (b[i + 2] - b'0') * 8 + (b[i + 3] - b'0'));
+            i += 4;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+pub fn parse_mountinfo(text: &str) -> Vec<Mount> {
+    text.lines()
+        .filter_map(|line| {
+            let (left, right) = line.split_once(" - ")?;
+            let f: Vec<&str> = left.split_whitespace().collect();
+            let (maj, min) = f.get(2)?.split_once(':')?;
+            let source = right.split_whitespace().nth(1)?;
+            Some(Mount {
+                dev: (maj.parse().ok()?, min.parse().ok()?),
+                mount_point: PathBuf::from(unescape_mount(f.get(4)?)),
+                source: unescape_mount(source),
+            })
+        })
+        .collect()
+}
+
+/// Kernel block device name behind a mount. The source path is tried first
+/// because btrfs reports an anonymous device number (`0:N`); `/dev/mapper/*`
+/// symlinks resolve to `dm-N`.
+fn block_name(roots: &Roots, m: &Mount) -> Option<String> {
+    if let Some(rest) = m.source.strip_prefix("/dev/") {
+        let real = std::fs::canonicalize(&m.source).ok();
+        let name = real
+            .as_deref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or_else(|| rest.rsplit('/').next().unwrap_or(rest));
+        return Some(name.to_string());
+    }
+    if m.dev.0 == 0 {
+        return None; // virtual filesystem
+    }
+    let link = std::fs::read_link(roots.sys(&format!("dev/block/{}:{}", m.dev.0, m.dev.1))).ok()?;
+    Some(link.file_name()?.to_str()?.to_string())
+}
+
+/// Physical disk (from `disks`) that holds block device `name`: the disk
+/// itself, one of its partitions, or — for device-mapper (LUKS, LVM) — the
+/// disk under its first `slaves` entry.
+// shortcut: an LVM volume spanning several disks is counted on its first disk only; split by extent if that matters.
+fn owning_disk(roots: &Roots, disks: &[DiskDevice], name: &str, depth: u8) -> Option<String> {
+    if disks.iter().any(|d| d.name == name) {
+        return Some(name.to_string());
+    }
+    if let Some(d) = disks
+        .iter()
+        .find(|d| roots.sys(&format!("block/{}/{name}", d.name)).exists())
+    {
+        return Some(d.name.clone());
+    }
+    if depth == 0 {
+        return None;
+    }
+    list_dir(&roots.sys(&format!("block/{name}/slaves")), |_| true)
+        .iter()
+        .filter_map(|p| p.file_name()?.to_str())
+        .find_map(|slave| owning_disk(roots, disks, slave, depth - 1))
+}
+
+/// (used, total) bytes of a mounted filesystem, as `df` computes them.
+fn statvfs(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: zeroed POD struct filled by statvfs(3) on success.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+    let frsize = st.f_frsize as u64;
+    let total = (st.f_blocks as u64).checked_mul(frsize)?;
+    let used = (st.f_blocks as u64)
+        .checked_sub(st.f_bfree as u64)?
+        .checked_mul(frsize)?;
+    (total > 0).then_some((used, total))
+}
+
+/// Used / total bytes per disk over every mounted filesystem on it. Each
+/// block device is counted once even when mounted many times (btrfs
+/// subvolumes, bind mounts). Disks with nothing mounted are absent.
+pub fn usage(roots: &Roots, disks: &[DiskDevice]) -> BTreeMap<String, (u64, u64)> {
+    let mounts = std::fs::read_to_string(roots.proc("self/mountinfo"))
+        .map(|t| parse_mountinfo(&t))
+        .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let mut out: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    for m in &mounts {
+        let Some(dev) = block_name(roots, m) else {
+            continue;
+        };
+        let Some(disk) = owning_disk(roots, disks, &dev, 4) else {
+            continue;
+        };
+        if !seen.insert(dev) {
+            continue;
+        }
+        if let Some((used, total)) = statvfs(&m.mount_point) {
+            let e = out.entry(disk).or_default();
+            e.0 = e.0.saturating_add(used);
+            e.1 = e.1.saturating_add(total);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::collectors::testutil::{roots, temp_root, write};
     use std::os::unix::fs::symlink;
     use std::time::Duration;
+
+    #[test]
+    fn mountinfo_parsing_and_unescape() {
+        let text = "29 1 0:33 /root / rw,relatime shared:1 - btrfs /dev/nvme0n1p3 rw\n\
+                    40 29 8:1 / /run/media/a\\040b rw - ext4 /dev/sda1 rw\n\
+                    41 29 0:21 / /dev/mqueue rw - mqueue mqueue rw\n\
+                    garbage line\n";
+        let m = parse_mountinfo(text);
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[0].dev, (0, 33));
+        assert_eq!(m[0].source, "/dev/nvme0n1p3");
+        assert_eq!(m[1].mount_point, PathBuf::from("/run/media/a b"));
+    }
+
+    #[test]
+    fn usage_counts_each_device_once_per_disk() {
+        let r = temp_root("disk-usage");
+        let disk = |name: &str| DiskDevice {
+            name: name.to_string(),
+            model: None,
+            size_bytes: 1,
+            transport: "sata".into(),
+        };
+        let disks = [disk("fakea"), disk("fakeb")];
+        write(&r, "sys/block/fakea/fakea1/partition", "1");
+        write(&r, "sys/block/fakea/fakea2/partition", "2");
+        write(&r, "sys/block/dm-0/slaves/fakeb1", "");
+        write(&r, "sys/block/fakeb/fakeb1/partition", "1");
+        let mnt = r.join("mnt");
+        std::fs::create_dir_all(&mnt).unwrap();
+        let p = mnt.display();
+        // fakea1 mounted twice (btrfs subvolumes) is counted once; fakea2 adds
+        // to the same disk; dm-0 maps through slaves to fakeb; tmpfs is ignored.
+        write(
+            &r,
+            "proc/self/mountinfo",
+            &format!(
+                "1 0 0:33 / {p} rw - btrfs /dev/fakea1 rw\n\
+                 2 0 0:33 /home {p} rw - btrfs /dev/fakea1 rw\n\
+                 3 0 8:2 / {p} rw - ext4 /dev/fakea2 rw\n\
+                 4 0 253:0 / {p} rw - ext4 /dev/dm-0 rw\n\
+                 5 0 0:40 / {p} rw - tmpfs tmpfs rw\n"
+            ),
+        );
+        let u = usage(&roots(&r), &disks);
+        let (used, total) = statvfs(&mnt).unwrap();
+        // Totals are exact; "used" may move a little because other tests write
+        // to the same temporary filesystem between the statvfs calls.
+        assert_eq!((u["fakea"].1, u["fakeb"].1), (total * 2, total));
+        let near = |a: u64, b: u64| a.abs_diff(b) <= b / 100 + (64 << 20);
+        assert!(near(u["fakea"].0, used * 2) && near(u["fakeb"].0, used));
+        assert_eq!(u.len(), 2);
+        assert!(usage(&roots(&temp_root("no-mounts")), &disks).is_empty());
+    }
 
     #[test]
     fn classification_matches_legacy_filter() {

@@ -241,6 +241,15 @@ html, body {
 .disk-row .disk-model { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .disk-row .disk-rates { grid-column: 2; grid-row: 1 / span 2; align-self: center; display: grid; gap: 2px; text-align: right; white-space: nowrap; }
 .disk-rates span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--c); }
+.disk-row .disk-usage { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.disk-row .disk-usage .bar { height: 6px; }
+.summary-disk-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.summary-disk-head > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pager { display: flex; flex: none; gap: 2px; }
+.pager button { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+.pager button:hover { background: var(--nav-hover); color: var(--text); }
+.pager button:focus-visible { outline: 2px solid var(--focus); }
+.pager button[hidden] { display: none; }
 .disk-list--detail { gap: 12px; }
 .disk-list--detail .disk-row { padding-bottom: 12px; border-bottom: 1px solid var(--card-border); font-size: 13px; }
 .disk-list--detail .disk-row:last-child { padding-bottom: 0; border-bottom: 0; }

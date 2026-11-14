@@ -28,6 +28,9 @@ use std::time::{Duration, Instant};
 /// seconds (rates need two samples), then "unavailable".
 const GRACE: Duration = Duration::from_secs(5);
 
+/// Filesystem usage changes slowly; statvfs every cycle would be wasted work.
+const USAGE_INTERVAL: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Clone, Default)]
 struct Readings {
     cpu: CpuReading,
@@ -53,6 +56,9 @@ pub struct Monitor {
     machine_model: Option<String>,
     ram_speed: Option<String>,
     disks: Vec<DiskDevice>,
+    /// disk → (used, total) bytes of its mounted filesystems.
+    disk_usage: BTreeMap<String, (u64, u64)>,
+    usage_at: Instant,
     ip: Option<String>,
     last: Readings,
     history: HistoryBuffer,
@@ -91,12 +97,20 @@ impl Monitor {
             machine_model: system::machine_model(&roots),
             ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
             disks: disk::discover(&roots),
+            disk_usage: BTreeMap::new(),
+            usage_at: Instant::now(),
             ip: network::ipv4_address(&settings.net_interface),
             started: Instant::now(),
             last: Readings::default(),
             history: HistoryBuffer::default(),
             roots,
         }
+        .with_usage()
+    }
+
+    fn with_usage(mut self) -> Self {
+        self.disk_usage = disk::usage(&self.roots, &self.disks);
+        self
     }
 
     /// Reacts to `gpuIndex` / `netInterface` changes. Choosing another
@@ -121,6 +135,8 @@ impl Monitor {
                 self.disks = disk::discover(&self.roots);
                 self.disk_io.reset();
                 self.last.disks.clear();
+                self.disk_usage = disk::usage(&self.roots, &self.disks);
+                self.usage_at = Instant::now();
             }
             RefreshKind::Hardware => {
                 self.cpu_model = cpu::cpu_model(&self.roots);
@@ -137,6 +153,10 @@ impl Monitor {
     /// One monitoring cycle: reads every per-interval collector with the
     /// cycle's shared timestamp `now`, records history, returns a snapshot.
     pub fn sample(&mut self, now: Instant, s: &Settings) -> Snapshot {
+        if now.saturating_duration_since(self.usage_at) >= USAGE_INTERVAL {
+            self.disk_usage = disk::usage(&self.roots, &self.disks);
+            self.usage_at = now;
+        }
         self.last = Readings {
             cpu: self.cpu.sample(),
             mem: memory::sample(&self.roots),
@@ -258,6 +278,17 @@ impl Monitor {
                 })
                 .collect(),
             disk_rates,
+            disk_usage: self
+                .disks
+                .iter()
+                .filter_map(|d| {
+                    let (used, total) = self.disk_usage.get(&d.name)?;
+                    Some((
+                        d.name.clone(),
+                        Metric::pair(Some(*used as f64), Some(*total as f64)),
+                    ))
+                })
+                .collect(),
             net_has_interface: s.net_interface != "all",
             net_ip_available: self.ip.is_some(),
             net_ip: self.ip.clone().unwrap_or_else(|| MISSING.to_string()),

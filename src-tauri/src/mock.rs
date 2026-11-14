@@ -176,6 +176,17 @@ impl MockSource {
             swap: Metric::pair(Some(0.0), Some(7.8 * GIB)),
             disks: self.disks.clone(),
             disk_rates,
+            disk_usage: self
+                .disks
+                .iter()
+                .zip([0.62, 0.27])
+                .map(|(d, share)| {
+                    (
+                        d.name.clone(),
+                        Metric::pair(Some(share * 476.9 * GIB), Some(476.9 * GIB)),
+                    )
+                })
+                .collect(),
             net_has_interface,
             net_ip_available: self.ip.is_some(),
             net_ip: self.ip.clone().unwrap_or_else(|| "--".to_string()),

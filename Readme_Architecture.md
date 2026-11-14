@@ -28,7 +28,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
@@ -183,6 +183,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `memPressure` | number \| null | PSI `/proc/pressure/memory` `some avg10`（%），無 PSI 時 `null` |
 | `disks` | `{name, model, sizeText, transport}[]` | 只在清單變動時重建 DOM |
 | `diskRates` | `{[name]: {read: number\|null, write: number\|null}}` | B/s |
+| `diskUsage` | `{[name]: Metric}` | 該硬碟上所有已掛載檔案系統的已用／總量（pair）；未掛載的硬碟不出現；每 10 秒更新 |
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
@@ -260,6 +261,10 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
   transport：`nvmeXnY` → `nvme`，路徑含 `/ata` → `sata`，含 `end_device-`/`sas_` → `sas`，其餘 `sd*` → `scsi`。
   型號與 `lsblk` 相同規則：優先讀 udev 資料庫 `/run/udev/data/b<主>:<次>` 的 `ID_MODEL_ENC`（解碼 `\xHH`），沒有時才用 sysfs `device/model`
   （SCSI 的 sysfs 型號只有 16 字元，例如 `TOSHIBA DT01ABA2`，udev 為完整的 `TOSHIBA DT01ABA200V`）。只讀檔案，不啟動 `udevadm`。
+- 容量（`usage`）：解析 `/proc/self/mountinfo`（`parse_mountinfo`，還原 `\040` 等八進位跳脫）。裝置名稱優先取掛載來源 `/dev/...`（btrfs 的裝置號是匿名的 `0:N`；`/dev/mapper/*` 以 canonicalize 解析成 `dm-N`），否則以 `major:minor` 查 `/sys/dev/block`；
+  再對應到實體硬碟：硬碟本身、`/sys/block/<disk>/<分割區>`，或 device-mapper（LUKS／LVM）沿 `slaves` 往下找（跨多顆硬碟的 LVM 只算在第一顆）。
+  每個區塊裝置只計一次（btrfs 子卷、bind mount 重複掛載），以 `statvfs(3)` 取已用＝(f_blocks − f_bfree)×f_frsize、總量＝f_blocks×f_frsize（與 `df` 相同），依硬碟加總。
+  Monitor 在啟動、手動重新掃描硬碟時立即計算，之後每 10 秒一次（不在每個週期 statvfs）。實測與 `df -B1` 加總逐位相同。
 - 讀寫速率（每次取樣）：直接讀 `/proc/diskstats` 第 6／10 欄（512-byte sectors），先算 sectors/s 再乘 512（避免溢位）；
   第一次、裝置不在 diskstats、計數器倒退時為 `None`。`reset()` 用於重新掃描後。
 

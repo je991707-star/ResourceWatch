@@ -75,6 +75,7 @@ fn parsers_never_panic_on_garbage() {
             let _ = memory::parse_meminfo(text);
             let _ = memory::parse_pressure(text);
             let _ = disk::parse_diskstats(text);
+            let _ = disk::parse_mountinfo(text);
             let _ = disk::udev_unescape(text);
             let _ = network::parse_net_dev(text);
             let _ = gpu::pci_ids_lookup(text, 0x10de, 0x1cb6);

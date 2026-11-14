@@ -178,6 +178,9 @@ pub struct Snapshot {
     pub swap: Metric,
     pub disks: Vec<DiskInfo>,
     pub disk_rates: BTreeMap<String, DiskRate>,
+    /// Used / total of the filesystems mounted from each disk (pair Metric);
+    /// disks with nothing mounted are absent. Refreshed every 10 s.
+    pub disk_usage: BTreeMap<String, Metric>,
     pub net_has_interface: bool,
     pub net_ip_available: bool,
     pub net_ip: String,

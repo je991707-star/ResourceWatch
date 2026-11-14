@@ -261,15 +261,37 @@
       rates.append(v);
       return v;
     });
-    row.append(name, rates, model);
-    return { row, values };
+    // Capacity of the filesystems mounted from this disk.
+    const usage = document.createElement("span");
+    usage.className = "disk-usage";
+    const bar = document.createElement("span");
+    bar.className = "bar";
+    const fill = document.createElement("span");
+    fill.dataset.color = "ram";
+    bar.append(fill);
+    const usageText = document.createElement("span");
+    usageText.textContent = "--";
+    usage.append(bar, usageText);
+    row.append(name, rates, model, usage);
+    return { row, values: [...values, fill, usageText] };
+  }
+
+  const diskStepButtons = all("[data-disk-step]");
+  for (const b of diskStepButtons) {
+    b.addEventListener("click", () => {
+      const n = Array.isArray(state?.disks) ? state.disks.length : 0;
+      if (!n) return;
+      summaryDisk = (summaryDisk + Number(b.dataset.diskStep) + n) % n;
+      render();
+    });
   }
 
   // ---------------------------------------------------------------- render
   let state = null;
   let pendingRender = false;
   let lastDiskInventory = null;
-  let diskStatNodes = []; // per list: per disk: [readNode, writeNode]
+  let diskStatNodes = []; // per list: per disk: [read, write, usageFill, usageText]
+  let summaryDisk = 0; // disk shown in the summary card (‹ › buttons)
   let uptimeAnchorSeconds = null;
   let uptimeAnchorAt = 0;
   let lastObservedUptimeSeconds = null;
@@ -347,11 +369,24 @@
     disks.forEach((disk, i) => {
       const rate = s.diskRates?.[disk.name] || {};
       const read = formatRate(rate.read), write = formatRate(rate.write);
+      const usage = s.diskUsage?.[disk.name];
+      const usageText = usage ? `${text(usage.usedText)} / ${text(usage.totalText)}` : "未掛載";
+      const width = percentOf(usage).toFixed(1) + "%";
       for (const list of diskStatNodes) {
         writeText(list[i][0], read);
         writeText(list[i][1], write);
+        if (list[i][2].style.width !== width) list[i][2].style.width = width;
+        writeText(list[i][3], usageText);
       }
     });
+    summaryDisk = disks.length ? Math.min(summaryDisk, disks.length - 1) : 0;
+    const shown = disks[summaryDisk];
+    const shownUsage = shown && s.diskUsage?.[shown.name];
+    setText("sumDiskName", shown ? shown.name : "未偵測到硬碟");
+    setText("sumDiskUsed", shownUsage?.usedText);
+    setText("sumDiskTotal", shownUsage?.totalText);
+    setText("sumDiskPercent", shownUsage?.displayValue);
+    for (const b of diskStepButtons) b.hidden = disks.length < 2;
 
     const h = s.history || {};
     chartSeries("cpu", h.cpu);

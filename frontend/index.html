@@ -103,6 +103,18 @@
                 <div><dt>時脈</dt><dd data-bind="cpuSpeed">--</dd></div>
                 <div><dt>溫度</dt><dd data-bind="cpuTemp">--</dd></div>
               </dl>
+              <h3 class="summary-disk-head">
+                <span data-bind="sumDiskName">--</span>
+                <span class="pager">
+                  <button type="button" data-disk-step="-1" aria-label="上一顆硬碟" hidden>‹</button>
+                  <button type="button" data-disk-step="1" aria-label="下一顆硬碟" hidden>›</button>
+                </span>
+              </h3>
+              <dl class="kv">
+                <div><dt>已用</dt><dd data-bind="sumDiskUsed">--</dd></div>
+                <div><dt>總量</dt><dd data-bind="sumDiskTotal">--</dd></div>
+                <div class="kv-full"><dt>使用率</dt><dd data-bind="sumDiskPercent">--</dd></div>
+              </dl>
             </div>
           </div>
         </section>
