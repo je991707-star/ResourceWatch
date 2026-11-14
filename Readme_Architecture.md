@@ -24,16 +24,25 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
 Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
 
-- `index.html`：左側導覽「總覽」「桌面小工具」「設定」三頁。總覽沿用舊版卡片 DOM 與元素 ID；
-  「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗）。
-  資料來源為 mock 時顯示黃色提示列。
-- `styles.css`、`application.css`：源自舊版 v0.0.5 `package/contents/web/` 的卡片與應用外框樣式（已移除 Plasma 瀏覽器預覽用的 popover 規則）。
-  響應式：寬度 ≤1200 px 單欄、≤980 px 側欄變窄、≤790 px 側欄只剩圖示。
-- `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式。
+- `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，底部「設定」與淺色／深色主題切換按鈕。
+  頂部主機資訊列：CPU 型號、運作時間、GPU 名稱、RAM 總量與速度、即時／模擬狀態。
+  儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
+  處理器與記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗）。
+  資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
+  `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
+- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色）、卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
+  進度條、折線圖與硬碟列樣式。
+- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 300px` 排成由上而下的多欄卡片（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）。
+  響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤760 px 側欄只剩圖示並隱藏 GPU 資訊、≤420 px 摘要卡片改為上下排列。
+- `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
-  `setText()` 只在文字改變時寫入 DOM；SVG path 相同時不重設；硬碟卡片只在清單變動時重建（以 DOM API 建立，不用 innerHTML）；
-  總覽隱藏時只保存快照，切回總覽才繪製。Uptime 以快照 `uptimeSeconds` 為錨點、`performance.now()` 每秒更新一個文字節點，不呼叫 IPC。
+  主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
+  `setText(key)` 更新所有 `data-bind=key` 元素且只在文字改變時寫入 DOM；環形圖與進度條以 CSSOM（`el.style`）設定，因 CSP `style-src 'self'` 不允許行內 style 屬性，
+  百分比為 0 或缺失時隱藏環形弧線；SVG path 相同時不重設；硬碟列只在清單變動時重建（以 DOM API 建立，不用 innerHTML），每個 `data-disk-list` 各建一份；
+  網路上傳／下載兩條線共用同一個縱軸上限。目前頁面不是監控頁（`PAGES[].live`，即設定與桌面小工具）時只保存快照，切回監控頁才繪製。
+  Uptime 以快照 `uptimeSeconds` 為錨點、`performance.now()` 每秒更新文字，不呼叫 IPC。
   設定欄位 `change` 時先做前端範圍檢查，再呼叫 `update_settings`；錯誤依 `CommandError.field` 顯示在對應欄位下，
   寫檔失敗（`settingsWriteFailed`，`field` 為 `null`）顯示在剛修改的欄位下。欄位錯誤文字直接寫入（不經 `setText()`，以免空值顯示成 `--`）。
   設定頁底部顯示設定檔路徑；啟動時讀取設定檔有問題（`loadWarning`）時顯示紅色提示。

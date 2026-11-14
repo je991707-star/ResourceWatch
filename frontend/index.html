@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>ResourceWatch</title>
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./application.css">
@@ -12,142 +12,216 @@
   <script src="./app.js" defer></script>
 </head>
 
-<body class="application-mode">
-  <div class="app-shell" id="appShell">
+<body>
+  <div class="app-shell">
     <aside class="app-sidebar" aria-label="主選單">
       <div class="app-brand"><span class="app-brand-icon" aria-hidden="true">▥</span><span>ResourceWatch</span></div>
       <nav class="app-nav" aria-label="主導覽">
-        <button type="button" class="app-nav-item is-active" id="navOverview" data-page-target="overview" aria-current="page">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          <span>總覽</span>
+        <button type="button" class="app-nav-item" id="navOverview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4M8 17h8"/></svg>
+          <span>儀表板</span>
         </button>
-        <button type="button" class="app-nav-item" id="navWidgets" data-page-target="widgets">
+        <button type="button" class="app-nav-item" id="navStorage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h4"/><circle cx="16.5" cy="12" r="1"/></svg>
+          <span>儲存裝置</span>
+        </button>
+        <button type="button" class="app-nav-item" id="navNetwork">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+          <span>網路</span>
+        </button>
+        <button type="button" class="app-nav-item" id="navSensors">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0Z"/><path d="M12 9v7"/></svg>
+          <span>感測器</span>
+        </button>
+        <button type="button" class="app-nav-item" id="navWidgets">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
           <span>桌面小工具</span>
         </button>
       </nav>
       <div class="app-sidebar-bottom">
-        <button type="button" class="app-nav-item" id="navSettings" data-page-target="settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.8 2.6 2 .9 2.4-1.3 2.8 2.8-1.3 2.4.9 2L24 12l-2.6.8-.9 2 1.3 2.4-2.8 2.8-2.4-1.3-2 .9L14 22h-4l-.8-2.6-2-.9-2.4 1.3L2 17l1.3-2.4-.9-2L0 12l2.6-.8.9-2L2.2 6.8 5 4l2.4 1.3 2-.9Z" transform="translate(1 1) scale(.917)"/></svg>
-          <span>設定</span>
-        </button>
-        <span class="app-sidebar-version">ResourceWatch <span id="appVersion">--</span></span>
+        <div class="app-sidebar-row">
+          <button type="button" class="app-nav-item" id="navSettings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.8 2.6 2 .9 2.4-1.3 2.8 2.8-1.3 2.4.9 2L24 12l-2.6.8-.9 2 1.3 2.4-2.8 2.8-2.4-1.3-2 .9L14 22h-4l-.8-2.6-2-.9-2.4 1.3L2 17l1.3-2.4-.9-2L0 12l2.6-.8.9-2L2.2 6.8 5 4l2.4 1.3 2-.9Z" transform="translate(1 1) scale(.917)"/></svg>
+            <span>設定</span>
+          </button>
+          <button type="button" class="theme-toggle" id="themeToggle" aria-label="切換淺色／深色主題" title="切換淺色／深色主題">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="9" r="3.5"/><path d="M9 2v1.5M9 14.5V16M2 9h1.5M14.5 9H16M4 4l1 1M13 13l1 1M4 14l1-1M13 5l1-1"/><path d="M21 16.5A5.5 5.5 0 0 1 14.5 10a5.5 5.5 0 1 0 6.5 6.5Z"/></svg>
+          </button>
+        </div>
+        <span class="app-sidebar-version">ResourceWatch <span data-bind="version">--</span></span>
       </div>
     </aside>
 
     <div class="app-main">
       <header class="app-header">
-        <div><h1 id="appPageTitle">總覽</h1><p id="appPageSubtitle">CPU、GPU、記憶體、磁碟與網路狀態</p></div>
+        <h1 class="visually-hidden" data-bind="pageTitle">儀表板</h1>
+        <div class="host-block">
+          <svg class="host-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+          <div><strong data-bind="cpuName">--</strong><span>運作時間：<b data-bind="uptime">--</b></span></div>
+        </div>
+        <div class="host-block host-block--gpu">
+          <div><strong data-bind="gpuName">--</strong><span>RAM <b data-bind="ramTotal">--</b> · <b data-bind="ramSpeed">--</b></span></div>
+        </div>
         <span class="app-live-label" id="appLiveStatus" role="status">等待監控資料</span>
       </header>
 
-      <!-- Overview -->
-      <div class="app-page app-overview-page" id="overviewPage">
-        <p class="mock-banner" id="mockBanner" hidden>目前顯示的是<strong>模擬資料</strong>，不是本機硬體的實際量測值（硬體監控尚未實作）。</p>
-        <main class="resource-watch" id="resourceWatch" aria-label="Resource Watch 資源監控">
-          <div class="card-stack">
-            <!-- CPU -->
-            <section class="monitor-card" aria-label="CPU 監控" data-card="cpu">
-              <header class="card-heading"><h2>CPU</h2><span class="device-name" id="cpuName">--</span></header>
-              <div class="split-content">
-                <div class="stats-grid stats-grid--cpu">
-                  <div class="stat"><span class="stat-label">使用率</span><strong class="stat-value" id="cpuUsage">--</strong></div>
-                  <div class="stat"><span class="stat-label">速度</span><strong class="stat-value" id="cpuSpeed">--</strong></div>
-                  <div class="stat"><span class="stat-label">溫度</span><strong class="stat-value" id="cpuTemp">--</strong></div>
-                  <div class="stat stat--full"><span class="stat-label">運作時間</span><strong class="stat-value stat-value--uptime" id="cpuUptime">--</strong></div>
-                </div>
-                <div class="charts charts--single">
-                  <div class="chart" data-chart="cpu" data-color="cpu">
-                    <div class="chart-heading"><span>CPU 使用率</span><span id="cpuChartUsage">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg></div>
-                  </div>
-                </div>
-              </div>
-            </section>
+      <p class="mock-banner" id="mockBanner" hidden>目前顯示的是<strong>模擬資料</strong>，不是本機硬體的實際量測值。</p>
 
-            <!-- GPU -->
-            <section class="monitor-card" aria-label="GPU 監控" data-card="gpu">
-              <header class="card-heading"><h2 id="gpuHeading">GPU0</h2><span class="device-name" id="gpuName">--</span></header>
-              <div class="split-content">
-                <div class="stats-grid stats-grid--gpu">
-                  <div class="stat"><span class="stat-label">使用率</span><strong class="stat-value" id="gpuUsage">--</strong></div>
-                  <div class="stat"><span class="stat-label">溫度</span><strong class="stat-value" id="gpuTemp">--</strong></div>
-                  <div class="stat stat--full"><span class="stat-label">GPU 記憶體</span><strong class="stat-value" id="gpuVram">--</strong></div>
-                </div>
-                <div class="charts charts--gpu">
-                  <div class="chart" data-chart="gpu" data-color="gpu">
-                    <div class="chart-heading"><span>GPU 運算</span><span id="gpuChartUsage">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="GPU 使用率圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg></div>
-                  </div>
-                  <div class="chart" data-chart="encode" data-color="gpu">
-                    <div class="chart-heading"><span>編碼</span><span id="encoderLabel">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="GPU 編碼圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg><span class="no-data">N/A</span></div>
-                  </div>
-                  <div class="chart" data-chart="decode" data-color="gpu">
-                    <div class="chart-heading"><span>解碼</span><span id="decoderLabel">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="GPU 解碼圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg><span class="no-data">N/A</span></div>
-                  </div>
-                  <div class="chart" data-chart="vram" data-color="gpu">
-                    <div class="chart-heading"><span>VRAM</span><span id="vramGraphMax">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="VRAM 使用率圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg></div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- RAM -->
-            <section class="monitor-card" aria-label="RAM 監控" data-card="ram">
-              <header class="card-heading"><h2>RAM</h2><span class="device-name" id="ramSubtitle">--</span></header>
-              <div class="split-content">
-                <div class="stats-grid stats-grid--ram">
-                  <div class="stat"><span class="stat-label">使用率</span><strong class="stat-value" id="ramUsage">--</strong></div>
-                  <div class="stat"><span class="stat-label">速度</span><strong class="stat-value" id="ramSpeed">--</strong></div>
-                  <div class="stat"><span class="stat-label">SWAP 使用中</span><strong class="stat-value" id="swapUsed">--</strong></div>
-                </div>
-                <div class="charts charts--single">
-                  <div class="chart" data-chart="ram" data-color="ram">
-                    <div class="chart-heading"><span>RAM 使用率</span><span id="ramChartUsage">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="RAM 使用率圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg></div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Disk cards created from data -->
-            <div class="disks-grid" id="disksGrid" aria-label="實體硬碟監控"></div>
-
-            <!-- Network -->
-            <section class="monitor-card" aria-label="網路監控" data-card="network">
-              <header class="card-heading"><h2>網路</h2><span class="device-name" id="netSubtitle">--</span></header>
-              <div class="split-content">
-                <div class="stats-grid stats-grid--network">
-                  <div class="stat"><span class="stat-label">上傳</span><strong class="stat-value" id="netUp">--</strong></div>
-                  <div class="stat"><span class="stat-label">下載</span><strong class="stat-value" id="netDown">--</strong></div>
-                </div>
-                <div class="charts charts--single">
-                  <div class="chart" data-chart="network" data-color="network">
-                    <div class="chart-heading"><span>傳輸速度</span><span id="networkGraphMax">--</span></div>
-                    <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="網路傳輸速度歷史圖表"><g class="grid-lines"></g><path class="area"></path><path class="line"></path></svg></div>
-                  </div>
-                </div>
-              </div>
-            </section>
+      <!-- Dashboard -->
+      <main class="app-page dashboard" id="overviewPage" aria-label="儀表板">
+        <section class="card" aria-labelledby="summaryTitle">
+          <h2 id="summaryTitle">摘要</h2>
+          <div class="summary">
+            <div class="summary-gauge">
+              <svg class="rings" viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="54"/><circle class="ring-value" data-ring="ram" data-color="ram" cx="60" cy="60" r="54" pathLength="100"/>
+                <circle class="ring-track" cx="60" cy="60" r="43"/><circle class="ring-value" data-ring="cpu" data-color="cpu" cx="60" cy="60" r="43" pathLength="100"/>
+                <circle class="ring-track" cx="60" cy="60" r="32"/><circle class="ring-value" data-ring="gpu" data-color="gpu" cx="60" cy="60" r="32" pathLength="100"/>
+              </svg>
+              <ul class="legend">
+                <li><i class="dot" data-color="ram"></i>RAM<strong data-bind="ramUsage">--</strong></li>
+                <li><i class="dot" data-color="cpu"></i>CPU<strong data-bind="cpuUsage">--</strong></li>
+                <li><i class="dot" data-color="gpu"></i>GPU<strong data-bind="gpuUsage">--</strong></li>
+              </ul>
+            </div>
+            <div class="summary-info">
+              <h3>記憶體</h3>
+              <dl class="kv">
+                <div><dt>已用</dt><dd data-bind="ramUsed">--</dd></div>
+                <div><dt>總量</dt><dd data-bind="ramTotal">--</dd></div>
+                <div class="kv-full"><dt>SWAP</dt><dd data-bind="swapUsed">--</dd></div>
+              </dl>
+              <h3>處理器</h3>
+              <dl class="kv">
+                <div><dt>時脈</dt><dd data-bind="cpuSpeed">--</dd></div>
+                <div><dt>溫度</dt><dd data-bind="cpuTemp">--</dd></div>
+              </dl>
+            </div>
           </div>
-        </main>
-      </div>
+        </section>
+
+        <section class="card" aria-labelledby="sensorsTitle">
+          <h2 id="sensorsTitle">感測器</h2>
+          <dl class="rows">
+            <div><dt>CPU 溫度</dt><dd data-bind="cpuTemp">--</dd></div>
+            <div><dt>GPU 溫度</dt><dd data-bind="gpuTemp">--</dd></div>
+          </dl>
+          <button type="button" class="more-link" data-goto="sensors">顯示更多…</button>
+        </section>
+
+        <section class="card" aria-labelledby="graphicsTitle">
+          <h2 id="graphicsTitle">圖形處理器 <span class="card-tag" data-bind="gpuHeading">GPU0</span></h2>
+          <div class="graphics">
+            <div class="gauge">
+              <svg class="rings" viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track ring-track--thick" cx="60" cy="60" r="48"/><circle class="ring-value ring-value--thick" data-ring="gpu" data-color="gpu" cx="60" cy="60" r="48" pathLength="100"/>
+              </svg>
+              <strong class="gauge-label" data-bind="gpuUsage">--</strong>
+            </div>
+            <div class="graphics-info">
+              <strong class="device-name" data-bind="gpuName">--</strong>
+              <div class="bar-label"><span>VRAM</span><span data-bind="gpuVram">--</span></div>
+              <div class="bar"><span data-bar="vram" data-color="gpu"></span></div>
+              <dl class="kv kv--3">
+                <div><dt>溫度</dt><dd data-bind="gpuTemp">--</dd></div>
+                <div><dt>編碼</dt><dd data-bind="encoder">--</dd></div>
+                <div><dt>解碼</dt><dd data-bind="decoder">--</dd></div>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="cpuTitle">
+          <h2 id="cpuTitle">處理器</h2>
+          <div class="chart-heading"><span>使用率</span><span data-bind="cpuUsage">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div>
+        </section>
+
+        <section class="card" aria-labelledby="memoryTitle">
+          <h2 id="memoryTitle">記憶體</h2>
+          <div class="bar bar--wide"><span data-bar="ram" data-color="ram"></span></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="ram"></i>已用<strong data-bind="ramUsed">--</strong></li>
+            <li><i class="dot dot--track"></i>總量<strong data-bind="ramTotal">--</strong></li>
+            <li>速度<strong data-bind="ramSpeed">--</strong></li>
+          </ul>
+          <div class="chart-heading"><span>使用率歷史</span><span data-bind="ramUsage">--</span></div>
+          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="RAM 使用率圖表"><g class="grid-lines"></g><g data-chart="ram" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
+        </section>
+
+        <section class="card" aria-labelledby="disksTitle">
+          <h2 id="disksTitle">磁碟</h2>
+          <div class="disk-list" data-disk-list aria-label="實體硬碟"></div>
+          <p class="empty-note" data-disk-empty>未偵測到實體硬碟</p>
+          <button type="button" class="more-link" data-goto="storage">顯示更多…</button>
+        </section>
+
+        <section class="card" aria-labelledby="networkTitle">
+          <h2 id="networkTitle">網路</h2>
+          <dl class="rows"><div><dt>介面</dt><dd data-bind="netSubtitle">--</dd></div></dl>
+          <div class="chart-heading"><span>速度</span><span data-bind="netMax">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="網路傳輸速度歷史圖表"><g class="grid-lines"></g><g data-chart="netDown" data-color="net-down"><path class="area"></path><path class="line"></path></g><g data-chart="netUp" data-color="net-up"><path class="area"></path><path class="line"></path></g></svg></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="net-down"></i>下載<strong data-bind="netDown">--</strong></li>
+            <li><i class="dot" data-color="net-up"></i>上傳<strong data-bind="netUp">--</strong></li>
+          </ul>
+          <button type="button" class="more-link" data-goto="network">顯示更多…</button>
+        </section>
+      </main>
+
+      <!-- Storage -->
+      <section class="app-page" id="storagePage" hidden aria-label="儲存裝置">
+        <section class="card">
+          <h2>實體硬碟</h2>
+          <div class="disk-list disk-list--detail" data-disk-list></div>
+          <p class="empty-note" data-disk-empty>未偵測到實體硬碟</p>
+        </section>
+      </section>
+
+      <!-- Network -->
+      <section class="app-page" id="networkPage" hidden aria-label="網路">
+        <section class="card">
+          <h2>網路</h2>
+          <dl class="rows">
+            <div><dt>介面</dt><dd data-bind="netSubtitle">--</dd></div>
+            <div><dt>下載</dt><dd data-bind="netDown">--</dd></div>
+            <div><dt>上傳</dt><dd data-bind="netUp">--</dd></div>
+          </dl>
+          <div class="chart-heading"><span>速度</span><span data-bind="netMax">--</span></div>
+          <div class="plot plot--tall"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="網路傳輸速度歷史圖表"><g class="grid-lines"></g><g data-chart="netDown" data-color="net-down"><path class="area"></path><path class="line"></path></g><g data-chart="netUp" data-color="net-up"><path class="area"></path><path class="line"></path></g></svg></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="net-down"></i>下載</li>
+            <li><i class="dot" data-color="net-up"></i>上傳</li>
+          </ul>
+        </section>
+      </section>
+
+      <!-- Sensors -->
+      <section class="app-page" id="sensorsPage" hidden aria-label="感測器">
+        <section class="card">
+          <h2>溫度</h2>
+          <dl class="rows">
+            <div><dt>CPU（<span data-bind="cpuName">--</span>）</dt><dd data-bind="cpuTemp">--</dd></div>
+            <div><dt>GPU（<span data-bind="gpuName">--</span>）</dt><dd data-bind="gpuTemp">--</dd></div>
+          </dl>
+        </section>
+        <section class="card">
+          <h2>時脈</h2>
+          <dl class="rows"><div><dt>CPU 平均時脈</dt><dd data-bind="cpuSpeed">--</dd></div></dl>
+        </section>
+      </section>
 
       <!-- Desktop widget: reserved entry only -->
-      <section class="app-page app-widgets-page" id="widgetsPage" hidden aria-labelledby="widgetsTitle">
-        <div class="widget-info">
+      <section class="app-page" id="widgetsPage" hidden aria-labelledby="widgetsTitle">
+        <section class="card widget-info">
           <h2 id="widgetsTitle">桌面小工具</h2>
           <p>此頁面為預留入口。Plasma 桌面小工具將在後續階段實作；目前這個應用程式<strong>無法建立或控制</strong> Plasma 桌面小工具。</p>
           <p>舊版 Plasma 小工具仍可從 KDE 桌面「新增小工具」加入，它與本應用程式各自獨立運作。</p>
-        </div>
+        </section>
       </section>
 
       <!-- Settings -->
-      <section class="app-page app-settings-page" id="settingsPage" hidden aria-labelledby="settingsTitle">
-        <h2 class="visually-hidden" id="settingsTitle">設定</h2>
+      <section class="app-page app-settings-page" id="settingsPage" hidden aria-label="設定">
         <section class="settings-card" aria-labelledby="refreshHeading">
           <h3 id="refreshHeading">監控更新排程</h3>
           <p class="settings-explainer">所有即時監控、歷史圖表與畫面推送共用一組更新間隔。預設 500 ms，範圍 100–10000 ms、步進 50 ms；實際感測器更新率仍受硬體與驅動限制。</p>

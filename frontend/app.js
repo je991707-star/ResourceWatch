@@ -4,6 +4,10 @@
  *   commands: get_snapshot, get_settings, update_settings, reset_settings, refresh_devices
  *   events:   snapshot, settings-changed
  * This file never reads hardware, files, or the network.
+ *
+ * Markup binds to data by attribute, so one value can appear on several pages:
+ *   data-bind="key"  text   data-ring="key"  ring gauge (percent)
+ *   data-bar="key"   bar    data-chart="key" history line/area   data-disk-list  disk rows
  */
 (() => {
   "use strict";
@@ -12,14 +16,41 @@
   const tauri = window.__TAURI__;
   const invoke = tauri?.core?.invoke;
   const listen = tauri?.event?.listen;
+  const all = (selector) => Array.from(document.querySelectorAll(selector));
+  const groupBy = (attr) => {
+    const map = {};
+    for (const el of all(`[data-${attr}]`)) (map[el.dataset[attr]] ||= []).push(el);
+    return map;
+  };
+
+  // ---------------------------------------------------------------- theme
+  // Display preference only, kept in this browser profile (not in Rust Settings).
+  const THEME_KEY = "resourcewatch-theme";
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+  }
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem(THEME_KEY); } catch { /* storage blocked */ }
+  applyTheme(savedTheme === "light" || savedTheme === "dark" ? savedTheme
+    : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  $("themeToggle").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* storage blocked */ }
+  });
 
   // ---------------------------------------------------------------- pages
+  // live: page shows monitoring data, so snapshots are rendered while it is visible.
   const PAGES = {
-    overview: { host: "overviewPage", nav: "navOverview", title: "總覽", subtitle: "CPU、GPU、記憶體、磁碟與網路狀態" },
-    widgets: { host: "widgetsPage", nav: "navWidgets", title: "桌面小工具", subtitle: "預留入口，Plasma 桌面小工具尚未實作" },
-    settings: { host: "settingsPage", nav: "navSettings", title: "設定", subtitle: "更新間隔、監控裝置與手動刷新" },
+    overview: { host: "overviewPage", nav: "navOverview", title: "儀表板", live: true },
+    storage: { host: "storagePage", nav: "navStorage", title: "儲存裝置", live: true },
+    network: { host: "networkPage", nav: "navNetwork", title: "網路", live: true },
+    sensors: { host: "sensorsPage", nav: "navSensors", title: "感測器", live: true },
+    widgets: { host: "widgetsPage", nav: "navWidgets", title: "桌面小工具" },
+    settings: { host: "settingsPage", nav: "navSettings", title: "設定" },
   };
   let activePage = "overview";
+  const isLive = () => Boolean(PAGES[activePage].live);
 
   function switchPage(page) {
     if (!PAGES[page]) return;
@@ -32,26 +63,50 @@
       if (selected) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     }
-    setText("appPageTitle", PAGES[page].title);
-    setText("appPageSubtitle", PAGES[page].subtitle);
-    // Snapshots are not rendered while the overview is hidden; catch up now.
-    if (page === "overview" && pendingRender) render();
+    setText("pageTitle", PAGES[page].title);
+    // Snapshots are not rendered while no monitoring page is visible; catch up now.
+    if (isLive() && pendingRender) render();
   }
   for (const [key, def] of Object.entries(PAGES)) {
     $(def.nav).addEventListener("click", () => switchPage(key));
+  }
+  for (const link of all("[data-goto]")) {
+    link.addEventListener("click", () => switchPage(link.dataset.goto));
   }
 
   // ---------------------------------------------------------------- helpers
   const text = (value, fallback = "--") =>
     value === null || value === undefined || value === "" ? fallback : String(value);
   const metricText = (m) => text(m && m.displayValue);
+  const pairText = (m) => (m ? `${text(m.usedText)} / ${text(m.totalText)}` : "--");
 
   // Avoid layout/paint when a value has not changed.
-  function setText(id, value) {
-    const element = $(id);
-    if (!element) return;
+  function writeText(element, value) {
     const next = text(value);
     if (element.textContent !== next) element.textContent = next;
+  }
+  const bound = groupBy("bind");
+  function setText(key, value) {
+    for (const element of bound[key] || []) writeText(element, value);
+  }
+
+  const percentOf = (m) => (m && Number.isFinite(m.percent) ? Math.min(100, Math.max(0, m.percent)) : 0);
+  const rings = groupBy("ring");
+  function setRing(key, metric) {
+    const percent = percentOf(metric);
+    const dash = `${percent.toFixed(1)} 100`;
+    // A round line cap draws a dot even at 0 length; hide the arc instead.
+    const opacity = percent > 0 ? "" : "0";
+    for (const el of rings[key] || []) {
+      if (el.style.strokeDasharray !== dash) el.style.strokeDasharray = dash;
+      if (el.style.opacity !== opacity) el.style.opacity = opacity;
+    }
+  }
+  const bars = groupBy("bar");
+  function setBar(key, metric) {
+    // CSSOM is allowed by the CSP (style-src 'self'); inline style attributes are not.
+    const width = percentOf(metric).toFixed(1) + "%";
+    for (const el of bars[key] || []) if (el.style.width !== width) el.style.width = width;
   }
 
   function formatRate(value) {
@@ -79,94 +134,80 @@
   }
 
   // ---------------------------------------------------------------- charts
-  document.querySelectorAll(".plot svg").forEach((svg) => {
-    const g = svg.querySelector(".grid-lines");
-    if (!g) return;
+  for (const g of all(".plot .grid-lines")) {
     let d = "";
-    for (let y = 0; y <= 100; y += 20) d += `M0 ${y} H300 `;
-    for (let x = 0; x <= 300; x += 30) d += `M${x} 0 V100 `;
+    for (let y = 0; y <= 100; y += 25) d += `M0 ${y} H300 `;
+    for (let x = 0; x <= 300; x += 50) d += `M${x} 0 V100 `;
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("d", d);
     g.replaceChildren(path);
-  });
-
-  const chartNodes = Object.fromEntries(
-    Array.from(document.querySelectorAll("[data-chart]"), (chart) => [
-      chart.dataset.chart,
-      { root: chart, line: chart.querySelector(".line"), area: chart.querySelector(".area") },
-    ])
-  );
-
-  function clearChart(chart) {
-    chart.root.classList.add("is-missing");
-    if (chart.line.getAttribute("d")) chart.line.setAttribute("d", "");
-    if (chart.area.getAttribute("d")) chart.area.setAttribute("d", "");
   }
 
+  const chartNodes = Object.fromEntries(Object.entries(groupBy("chart")).map(([key, roots]) => [
+    key, roots.map((root) => ({ root, line: root.querySelector(".line"), area: root.querySelector(".area") })),
+  ]));
+
   // Missing samples (null) break the line instead of being drawn as 0.
-  function chartSeries(name, values, max = 100) {
-    const chart = chartNodes[name];
-    if (!chart) return;
-    if (!Array.isArray(values)) { clearChart(chart); return; }
+  function chartPaths(values, max) {
+    if (!Array.isArray(values)) return null;
     const last = Math.max(1, values.length - 1);
     const upper = max > 0 ? max : 1;
     const xs = [];
-    let path = "";
+    let line = "";
     for (let i = 0; i < values.length; i++) {
       const value = values[i];
       if (!Number.isFinite(value)) continue;
       const x = (i / last * 300).toFixed(2);
       const y = (100 - Math.min(1, Math.max(0, value) / upper) * 100).toFixed(2);
-      path += `${path ? " L" : "M"}${x} ${y}`;
+      line += `${line ? " L" : "M"}${x} ${y}`;
       xs.push(x);
     }
-    if (!xs.length) { clearChart(chart); return; }
-    chart.root.classList.remove("is-missing");
-    const areaPath = `M${xs[0]} 100 ${path.replace(/^M/, "L")} L${xs[xs.length - 1]} 100 Z`;
-    if (chart.line.getAttribute("d") !== path) chart.line.setAttribute("d", path);
-    if (chart.area.getAttribute("d") !== areaPath) chart.area.setAttribute("d", areaPath);
+    if (!xs.length) return null;
+    return { line, area: `M${xs[0]} 100 ${line.replace(/^M/, "L")} L${xs[xs.length - 1]} 100 Z` };
+  }
+
+  function chartSeries(name, values, max = 100) {
+    const paths = chartPaths(values, max);
+    for (const chart of chartNodes[name] || []) {
+      chart.root.classList.toggle("is-missing", !paths);
+      const line = paths ? paths.line : "", area = paths ? paths.area : "";
+      if ((chart.line.getAttribute("d") || "") !== line) chart.line.setAttribute("d", line);
+      if ((chart.area.getAttribute("d") || "") !== area) chart.area.setAttribute("d", area);
+    }
   }
 
   // ---------------------------------------------------------------- disks
-  function makeDiskCard(disk, idx) {
-    const card = document.createElement("section");
-    card.className = "monitor-card monitor-card--disk";
-    card.setAttribute("aria-label", "硬碟 " + (idx + 1));
-    const header = document.createElement("div");
-    header.className = "disk-header";
-    const h2 = document.createElement("h2");
-    h2.textContent = "硬碟" + (idx + 1);
+  const diskLists = all("[data-disk-list]");
+  const diskEmptyNotes = all("[data-disk-empty]");
+
+  function makeDiskRow(disk) {
+    const row = document.createElement("div");
+    row.className = "disk-row";
     const name = document.createElement("span");
     name.className = "disk-name";
     name.textContent = name.title = text(disk.name);
-    header.append(h2, name);
-    const model = document.createElement("div");
+    const model = document.createElement("span");
     model.className = "disk-model";
-    model.textContent = model.title = `${text(disk.model)} · ${text(disk.sizeText)}`;
-    const stats = document.createElement("div");
-    stats.className = "disk-stats";
-    const values = ["讀取速度", "寫入速度"].map((label) => {
-      const stat = document.createElement("div");
-      stat.className = "stat";
-      const l = document.createElement("span");
-      l.className = "stat-label";
-      l.textContent = label;
-      const v = document.createElement("strong");
-      v.className = "stat-value";
+    model.textContent = model.title = [disk.model, disk.sizeText, disk.transport?.toUpperCase()].map((v) => text(v)).join(" · ");
+    const rates = document.createElement("span");
+    rates.className = "disk-rates";
+    const values = [["disk-read", "讀取"], ["disk-write", "寫入"]].map(([color, label]) => {
+      const v = document.createElement("span");
+      v.dataset.color = color;
+      v.title = label;
       v.textContent = "--";
-      stat.append(l, v);
-      stats.append(stat);
+      rates.append(v);
       return v;
     });
-    card.append(header, model, stats);
-    return { card, values };
+    row.append(name, rates, model);
+    return { row, values };
   }
 
   // ---------------------------------------------------------------- render
   let state = null;
   let pendingRender = false;
   let lastDiskInventory = null;
-  let diskStatNodes = [];
+  let diskStatNodes = []; // per list: per disk: [readNode, writeNode]
   let uptimeAnchorSeconds = null;
   let uptimeAnchorAt = 0;
   let lastObservedUptimeSeconds = null;
@@ -174,10 +215,10 @@
   function refreshUptimeText() {
     if (uptimeAnchorSeconds === null) return;
     const elapsed = Math.max(0, (performance.now() - uptimeAnchorAt) / 1000);
-    setText("cpuUptime", uptimeFromSeconds(uptimeAnchorSeconds + elapsed));
+    setText("uptime", uptimeFromSeconds(uptimeAnchorSeconds + elapsed));
   }
   // One text update per second from a local monotonic clock; no IPC, no process.
-  setInterval(() => { if (activePage === "overview") refreshUptimeText(); }, 1000);
+  setInterval(() => { if (isLive()) refreshUptimeText(); }, 1000);
 
   function render() {
     pendingRender = false;
@@ -185,9 +226,9 @@
     if (!s) return;
     setText("cpuName", s.cpuName);
     setText("cpuUsage", metricText(s.cpu));
-    setText("cpuChartUsage", metricText(s.cpu));
     setText("cpuSpeed", s.cpuFreqText);
     setText("cpuTemp", s.cpuTempText);
+    setRing("cpu", s.cpu);
     if (Number.isFinite(s.uptimeSeconds)) {
       if (s.uptimeSeconds !== lastObservedUptimeSeconds) {
         lastObservedUptimeSeconds = s.uptimeSeconds;
@@ -197,69 +238,64 @@
       refreshUptimeText();
     } else {
       uptimeAnchorSeconds = null;
-      setText("cpuUptime", s.uptimeText);
+      setText("uptime", s.uptimeText);
     }
     setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
-    setText("gpuChartUsage", metricText(s.gpu));
     setText("gpuTemp", s.gpuTempText);
-    setText("gpuVram", s.vram ? `${text(s.vram.usedText)} / ${text(s.vram.totalText)}` : "--");
-    setText("vramGraphMax", s.vram?.totalText);
-    setText("encoderLabel", metricText(s.encoder));
-    setText("decoderLabel", metricText(s.decoder));
-    setText("ramSubtitle", s.ramSubtitle ?? s.ram?.totalText);
+    setText("gpuVram", pairText(s.vram));
+    setText("encoder", metricText(s.encoder));
+    setText("decoder", metricText(s.decoder));
+    setRing("gpu", s.gpu);
+    setBar("vram", s.vram);
+    setText("ramTotal", s.ramSubtitle ?? s.ram?.totalText);
     setText("ramUsage", metricText(s.ram));
-    setText("ramChartUsage", s.ram?.usedText);
+    setText("ramUsed", s.ram?.usedText);
     setText("ramSpeed", s.ramSpeedText);
-    setText("swapUsed", s.swap ? `${text(s.swap.usedText)} / ${text(s.swap.totalText)}` : "--");
+    setText("swapUsed", pairText(s.swap));
+    setRing("ram", s.ram);
+    setBar("ram", s.ram);
     setText("netSubtitle", (s.netHasInterface || s.netIpAvailable) ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
 
     const disks = Array.isArray(s.disks) ? s.disks : [];
-    const inventory = JSON.stringify(disks.map((d) => [d.name, d.model, d.sizeText]));
+    const inventory = JSON.stringify(disks.map((d) => [d.name, d.model, d.sizeText, d.transport]));
     if (inventory !== lastDiskInventory) {
       // Inventory changes only on startup / manual refresh.
-      const built = disks.map(makeDiskCard);
-      $("disksGrid").replaceChildren(...built.map((b) => b.card));
-      diskStatNodes = built.map((b) => b.values);
+      diskStatNodes = diskLists.map((list) => {
+        const built = disks.map(makeDiskRow);
+        list.replaceChildren(...built.map((b) => b.row));
+        return built.map((b) => b.values);
+      });
+      for (const note of diskEmptyNotes) note.hidden = disks.length > 0;
       lastDiskInventory = inventory;
     }
-    diskStatNodes.forEach((nodes, i) => {
-      const rate = s.diskRates?.[disks[i]?.name] || {};
+    disks.forEach((disk, i) => {
+      const rate = s.diskRates?.[disk.name] || {};
       const read = formatRate(rate.read), write = formatRate(rate.write);
-      if (nodes[0].textContent !== read) nodes[0].textContent = read;
-      if (nodes[1].textContent !== write) nodes[1].textContent = write;
+      for (const list of diskStatNodes) {
+        writeText(list[i][0], read);
+        writeText(list[i][1], write);
+      }
     });
 
     const h = s.history || {};
     chartSeries("cpu", h.cpu);
-    chartSeries("gpu", h.gpu);
-    chartSeries("vram", h.vram);
     chartSeries("ram", h.ram);
-    chartSeries("encode", h.encode);
-    chartSeries("decode", h.decode);
-    const up = Array.isArray(h.netUp) ? h.netUp : [];
-    const down = Array.isArray(h.netDown) ? h.netDown : [];
-    const net = [];
+    // Upload and download share one scale so the two lines are comparable.
     let max = 1;
-    for (let i = 0, n = Math.max(up.length, down.length); i < n; i++) {
-      const a = up[i], b = down[i];
-      if (!Number.isFinite(a) && !Number.isFinite(b)) { net.push(null); continue; }
-      const value = Math.max(0, Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
-      net.push(value);
-      if (value > max) max = value;
-    }
-    chartSeries("network", net.length ? net : null, max * 1.12);
-    setText("networkGraphMax", formatRate(max));
+    for (const v of [...(h.netUp || []), ...(h.netDown || [])]) if (Number.isFinite(v) && v > max) max = v;
+    chartSeries("netUp", h.netUp, max * 1.12);
+    chartSeries("netDown", h.netDown, max * 1.12);
+    setText("netMax", formatRate(max));
   }
 
   function setLiveStatus(label, kind) {
     const el = $("appLiveStatus");
-    setText("appLiveStatus", label);
+    writeText(el, label);
     el.classList.toggle("is-live", kind === "live");
-    el.classList.toggle("is-mock", kind === "mock");
   }
 
   function receiveSnapshot(snapshot) {
@@ -268,8 +304,8 @@
     const mock = snapshot.dataSource === "mock";
     $("mockBanner").hidden = !mock;
     setLiveStatus(mock ? "模擬資料 · 非實機" : "即時監控", mock ? "mock" : "live");
-    setText("appVersion", "v" + text(snapshot.version));
-    if (activePage === "overview") render();
+    setText("version", "v" + text(snapshot.version));
+    if (isLive()) render();
     else pendingRender = true;
   }
 
@@ -371,7 +407,7 @@
   async function showSettingsInfo() {
     try {
       const info = await invoke("get_settings_info");
-      setText("settingsPath", info.path ? `設定檔：${info.path}` : "設定目錄無法使用，設定只保存在記憶體中。");
+      writeText($("settingsPath"), info.path ? `設定檔：${info.path}` : "設定目錄無法使用，設定只保存在記憶體中。");
       const warning = $("settingsWarning");
       warning.hidden = !info.loadWarning;
       warning.textContent = info.loadWarning || "";
