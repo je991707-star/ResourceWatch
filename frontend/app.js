@@ -39,27 +39,31 @@
     try { localStorage.setItem(THEME_KEY, next); } catch { /* storage blocked */ }
   });
 
-  // Sidebar glass: needs the compositor blur (get_window_info) and the user's
-  // preference; otherwise the sidebar stays opaque.
-  const GLASS_KEY = "resourcewatch-glass";
-  let glassAvailable = false;
-  let glassWanted = true;
-  try { glassWanted = localStorage.getItem(GLASS_KEY) !== "off"; } catch { /* storage blocked */ }
+  // Sidebar glass = Settings.sidebarGlass. The backend reads it once when it
+  // creates the window (transparent + compositor blur), so a change applies on
+  // the next start; get_window_info.glass says whether this window has it.
+  let glassActive = false;
+  let glassSetting = true;
+  let glassAtStart = null;
   function applyGlass() {
-    document.documentElement.dataset.glass = glassAvailable && glassWanted ? "on" : "off";
-    const box = $("sidebarGlass");
-    box.checked = glassWanted;
-    box.disabled = !glassAvailable;
-    $("sidebarGlassHint").textContent = glassAvailable
-      ? "側欄半透明並模糊桌面背景"
-      : "目前桌面環境不支援視窗模糊（需要 KDE Plasma 的模糊特效），側欄維持不透明";
+    document.documentElement.dataset.glass = glassActive && glassSetting ? "on" : "off";
+    $("sidebarGlass").checked = glassSetting;
+    let hint;
+    if (glassSetting !== glassAtStart && glassAtStart !== null) {
+      hint = glassSetting ? "重新啟動後生效" : "重新啟動後改用不透明視窗（較省 CPU）";
+    } else if (!glassSetting) hint = "側欄與視窗不透明（較省 CPU）";
+    else if (glassActive) hint = "側欄半透明並模糊桌面背景（透明視窗較耗 CPU）";
+    else hint = "目前桌面環境不支援視窗模糊（需要 Wayland 上的 KDE Plasma 模糊特效），側欄維持不透明";
+    $("sidebarGlassHint").textContent = hint;
   }
-  $("sidebarGlass").addEventListener("change", (event) => {
-    glassWanted = event.target.checked;
-    try { localStorage.setItem(GLASS_KEY, glassWanted ? "on" : "off"); } catch { /* storage blocked */ }
-    applyGlass();
+  $("sidebarGlass").addEventListener("change", async (event) => {
+    try {
+      displaySettings(await invoke("update_settings", { patch: { sidebarGlass: event.target.checked } }));
+    } catch (e) {
+      console.warn("ResourceWatch: saving sidebarGlass failed", e);
+      applyGlass(); // back to the stored value
+    }
   });
-  applyGlass();
 
   // Sidebar collapse: user preference, forced icon-only below 760 px.
   const COLLAPSE_KEY = "resourcewatch-sidebar-collapsed";
@@ -583,6 +587,11 @@
     if (!settings || typeof settings !== "object") return;
     currentSettings = { ...currentSettings, ...settings };
     document.documentElement.dataset.motion = currentSettings.updateInterval >= 1000 ? "on" : "off";
+    if (typeof settings.sidebarGlass === "boolean") {
+      glassSetting = settings.sidebarGlass;
+      if (glassAtStart === null) glassAtStart = glassSetting;
+      applyGlass();
+    }
     syncSettingSelects();
     for (const [key, field] of Object.entries(fields)) {
       if (!(key in settings) || document.activeElement === field) continue;
@@ -682,7 +691,7 @@
       await listen("settings-changed", (event) => displaySettings(event.payload));
       displaySettings(await invoke("get_settings"));
       showSettingsInfo();
-      invoke("get_window_info").then((info) => { glassAvailable = Boolean(info?.glass); applyGlass(); })
+      invoke("get_window_info").then((info) => { glassActive = Boolean(info?.glass); applyGlass(); })
         .catch((e) => console.warn("ResourceWatch: window info unavailable", e));
       receiveSnapshot(await invoke("get_snapshot"));
     } catch (e) {

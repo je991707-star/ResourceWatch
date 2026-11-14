@@ -373,11 +373,14 @@ fn create_main_window<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     });
     #[cfg(not(target_os = "linux"))]
     let wayland = false;
+    // Opaque when the user turned the glass off: a transparent window costs
+    // the UI process ~2.5x CPU (measured while idle and while resizing).
+    let glass = wayland && app.state::<AppState>().settings().sidebar_glass;
     let window = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?
-        .transparent(wayland)
+        .transparent(glass)
         .build()?;
     #[cfg(target_os = "linux")]
-    if wayland {
+    if glass {
         match blur::enable(&window) {
             Ok(()) => app.state::<AppState>().glass.store(true, Ordering::Relaxed),
             Err(e) => eprintln!("ResourceWatch: sidebar blur unavailable: {e}"),

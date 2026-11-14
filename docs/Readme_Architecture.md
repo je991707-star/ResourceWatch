@@ -62,8 +62,8 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   卡片上的設定選單（`<select data-setting-select="netInterface|gpuIndex">`）：選項來自快照（`netInterfaces`、`gpus`），值來自目前設定（`settings-changed`／`get_settings`），
   選擇後呼叫 `update_settings`，被拒絕時回到已儲存的值；已儲存但不在清單中的值（例如拔除的網卡）會保留為選項。
   主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
-  側欄毛玻璃：啟動時呼叫 `get_window_info`，`glass` 為 true 且使用者偏好（`localStorage` `resourcewatch-glass`，預設開）為開時設 `<html data-glass="on">`；
-  不支援時設定頁的開關停用並說明原因。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
+  側欄毛玻璃：開關即後端設定 `sidebarGlass`（`update_settings`，失敗時回到已儲存值）；啟動時呼叫 `get_window_info`，本次視窗已套用模糊（`glass`）且設定為開時設 `<html data-glass="on">`
+  （關閉後側欄立即改為不透明；視窗本身要重新啟動才改為不透明）。提示文字依「設定值、啟動時的設定值、本次視窗是否有模糊」說明：重新啟動後生效／不透明較省 CPU／桌面環境不支援。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
   `setText(key)` 更新所有 `data-bind=key` 元素且只在文字改變時寫入 DOM；環形圖與進度條以 CSSOM（`el.style`）設定，因 CSP `style-src 'self'` 不允許行內 style 屬性，
   百分比為 0 或缺失時隱藏環形弧線；SVG path 相同時不重設；硬碟列只在清單變動時重建（以 DOM API 建立，不用 innerHTML），每個 `data-disk-list` 各建一份；
   網路上傳／下載兩條線共用同一個縱軸上限。目前頁面不是監控頁（`PAGES[].live`，即設定與桌面小工具）時只保存快照，切回監控頁才繪製。
@@ -99,8 +99,8 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 應用組裝與 IPC。`configure_with(builder, config_dir)` 註冊所有 Command，並在 Tauri `setup` 中：解析設定目錄
 （`None` → `app.path().app_config_dir()`，即 `$XDG_CONFIG_HOME/io.github.local.resourcewatch`，通常為 `~/.config/io.github.local.resourcewatch`；
 測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 建立主視窗 → 啟動唯一的排程器。
-`create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland 時才設為透明並呼叫
-`blur::enable()`，成功則 `AppState.glass = true`。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
+`create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland **且**設定 `sidebarGlass` 為開時才設為透明並呼叫
+`blur::enable()`，成功則 `AppState.glass = true`；`sidebarGlass` 關閉時建立不透明視窗、不請求模糊（透明視窗讓 UI 程序 CPU 約 2.5 倍，實測閒置與縮放時皆然）。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
 `run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
 `prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：GTK 後端為 X11／XWayland 且載入 NVIDIA 核心模組
 （`/sys/module/nvidia`）、使用者也沒有自行設定時，設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`，避免 WebKitGTK 的 DMA-BUF 繪製失敗造成空白視窗；
@@ -149,9 +149,9 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 ### src/settings.rs
 
-`Settings {updateInterval, historyPoints, gpuIndex, netInterface}`，預設與範圍沿用舊版 v0.0.5 的 KConfig `main.xml`：
+`Settings {updateInterval, historyPoints, gpuIndex, netInterface, sidebarGlass}`，預設與範圍沿用舊版 v0.0.5 的 KConfig `main.xml`：
 `updateInterval` 100–10000／步進 50、`historyPoints` 10–120／步進 10、`gpuIndex` 0–15、`netInterface` 為 `all`（空值亦視為 `all`）
-或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
+或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell；`sidebarGlass` 布林、預設 `true`，只在建立視窗時讀取（`lib.rs` `create_main_window`），改變後下次啟動生效。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
 持久化見 `src/settings_store.rs`。
 
 ### src/scheduler.rs
@@ -169,7 +169,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 ### src/settings_store.rs
 
-設定檔 `<設定目錄>/config.json`，格式即 `Settings` 的 JSON（`{"updateInterval":500,"historyPoints":30,"gpuIndex":0,"netInterface":"all"}`）。
+設定檔 `<設定目錄>/config.json`，格式即 `Settings` 的 JSON（`{"updateInterval":500,"historyPoints":30,"gpuIndex":0,"netInterface":"all","sidebarGlass":true}`；舊檔沒有 `sidebarGlass` 時用預設值）。
 - 載入：檔案不存在 → 預設值、無警告（首次啟動）；無法讀取 → 預設值＋警告，不動原檔；不是合法 JSON 或不是物件 →
   原檔改名為 `config.json.corrupt-<unix 秒>`（同秒重複時加序號）保留，使用預設值並警告；個別欄位無效或型別錯誤 → 該欄位用預設值、
   其餘有效欄位保留，並警告；未知欄位忽略；接受 `networkInterface` 作為 `netInterface` 的別名。

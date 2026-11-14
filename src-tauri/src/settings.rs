@@ -26,6 +26,9 @@ pub struct Settings {
     pub gpu_index: u32,
     /// `"all"` = aggregate of all interfaces.
     pub net_interface: String,
+    /// Transparent main window + compositor blur (sidebar glass). Read once
+    /// when the window is created, so a change applies on the next start.
+    pub sidebar_glass: bool,
 }
 
 impl Default for Settings {
@@ -35,6 +38,7 @@ impl Default for Settings {
             history_points: 30,
             gpu_index: 0,
             net_interface: "all".to_string(),
+            sidebar_glass: true,
         }
     }
 }
@@ -47,6 +51,7 @@ pub struct SettingsPatch {
     pub history_points: Option<u32>,
     pub gpu_index: Option<u32>,
     pub net_interface: Option<String>,
+    pub sidebar_glass: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -129,6 +134,9 @@ impl Settings {
         if let Some(v) = &patch.net_interface {
             next.net_interface = normalize_net_interface(v)?;
         }
+        if let Some(v) = patch.sidebar_glass {
+            next.sidebar_glass = v;
+        }
         Ok(next)
     }
 }
@@ -151,6 +159,12 @@ mod tests {
         assert_eq!(s.history_points, 30);
         assert_eq!(s.gpu_index, 0);
         assert_eq!(s.net_interface, "all");
+        assert!(s.sidebar_glass);
+        let off = SettingsPatch {
+            sidebar_glass: Some(false),
+            ..Default::default()
+        };
+        assert!(!s.apply(&off).unwrap().sidebar_glass);
     }
 
     #[test]

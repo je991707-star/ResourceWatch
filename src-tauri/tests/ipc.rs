@@ -136,7 +136,7 @@ fn settings_roundtrip_and_validation() {
     let s = invoke(&w, "get_settings", json!({})).unwrap();
     assert_eq!(
         s,
-        json!({"updateInterval": 500, "historyPoints": 30, "gpuIndex": 0, "netInterface": "all"})
+        json!({"updateInterval": 500, "historyPoints": 30, "gpuIndex": 0, "netInterface": "all", "sidebarGlass": true})
     );
 
     let s = invoke(
@@ -257,7 +257,7 @@ fn settings_persist_across_restart_and_report_path() {
         .unwrap();
         assert_eq!(
             read_config(&dir),
-            json!({"updateInterval": 1500, "historyPoints": 90, "gpuIndex": 0, "netInterface": "lo"})
+            json!({"updateInterval": 1500, "historyPoints": 90, "gpuIndex": 0, "netInterface": "lo", "sidebarGlass": true})
         );
     }
     // "Restart": a new app instance on the same directory loads the file.
@@ -265,7 +265,7 @@ fn settings_persist_across_restart_and_report_path() {
     let s = invoke(&w, "get_settings", json!({})).unwrap();
     assert_eq!(
         s,
-        json!({"updateInterval": 1500, "historyPoints": 90, "gpuIndex": 0, "netInterface": "lo"})
+        json!({"updateInterval": 1500, "historyPoints": 90, "gpuIndex": 0, "netInterface": "lo", "sidebarGlass": true})
     );
     std::thread::sleep(Duration::from_millis(50));
     let stats = invoke(&w, "get_scheduler_stats", json!({})).unwrap();

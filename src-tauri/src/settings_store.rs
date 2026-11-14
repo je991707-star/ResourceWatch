@@ -88,6 +88,15 @@ pub fn parse_stored(value: &Value) -> Result<(Settings, Vec<String>), String> {
             }),
         );
     }
+    if let Some(v) = obj.get("sidebarGlass") {
+        apply(
+            "sidebarGlass",
+            v.as_bool().map(|b| SettingsPatch {
+                sidebar_glass: Some(b),
+                ..Default::default()
+            }),
+        );
+    }
     Ok((settings, problems))
 }
 
@@ -227,6 +236,7 @@ mod tests {
             history_points: 60,
             gpu_index: 1,
             net_interface: "enp3s0".into(),
+            sidebar_glass: false,
         };
         store.save(&s).unwrap();
         assert_eq!(
@@ -239,7 +249,7 @@ mod tests {
         let v: Value = serde_json::from_str(&fs::read_to_string(store.path()).unwrap()).unwrap();
         assert_eq!(
             v,
-            serde_json::json!({"updateInterval": 1250, "historyPoints": 60, "gpuIndex": 1, "netInterface": "enp3s0"})
+            serde_json::json!({"updateInterval": 1250, "historyPoints": 60, "gpuIndex": 1, "netInterface": "enp3s0", "sidebarGlass": false})
         );
         let leftovers: Vec<_> = fs::read_dir(&dir)
             .unwrap()
@@ -254,7 +264,7 @@ mod tests {
         let dir = temp_root("cfg-invalid");
         fs::write(
             dir.join(FILE_NAME),
-            r#"{"updateInterval": 125, "historyPoints": 60, "gpuIndex": 99, "networkInterface": "wlp2s0", "future": true}"#,
+            r#"{"updateInterval": 125, "historyPoints": 60, "gpuIndex": 99, "networkInterface": "wlp2s0", "sidebarGlass": "yes", "future": true}"#,
         )
         .unwrap();
         let l = SettingsStore::new(&dir).load();
@@ -262,9 +272,10 @@ mod tests {
         assert_eq!(l.settings.history_points, 60, "valid kept");
         assert_eq!(l.settings.gpu_index, 0);
         assert_eq!(l.settings.net_interface, "wlp2s0", "alias accepted");
+        assert!(l.settings.sidebar_glass, "wrong type → default");
         let w = l.warning.unwrap();
         assert!(
-            w.contains("updateInterval") && w.contains("gpuIndex"),
+            w.contains("updateInterval") && w.contains("gpuIndex") && w.contains("sidebarGlass"),
             "{w}"
         );
 
