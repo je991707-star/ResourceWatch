@@ -28,7 +28,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
@@ -179,13 +179,15 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `ram`, `swap` | Metric | 含 used/total |
 | `ramSubtitle` | string | 目前等於 `ram.totalText` |
 | `ramSpeedText` | string | 例如 `"1600 MT/s"`，缺失 `"--"` |
+| `ramBreakdown` | `{app, cache, free}`: Metric | MemTotal 的組成（used/total pair，三者相加＝總量） |
+| `memPressure` | number \| null | PSI `/proc/pressure/memory` `some avg10`（%），無 PSI 時 `null` |
 | `disks` | `{name, model, sizeText, transport}[]` | 只在清單變動時重建 DOM |
 | `diskRates` | `{[name]: {read: number\|null, write: number\|null}}` | B/s |
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
 | `netUp`, `netDown` | Metric | `rawValue` 為 B/s |
-| `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown}: (number\|null)[]` | 最多 120 點，缺失保留 `null` |
+| `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown, memPressure}: (number\|null)[]` | 最多 120 點，缺失保留 `null` |
 
 Metric 子物件：`{displayValue: string, percent: number|null, rawValue: number|null, status: string, usedText: string, totalText: string}`。
 
@@ -217,7 +219,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 
 ### src/history.rs
 
-`HistoryBuffer`：八條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown），每條最多 `historyPoints`（至少 2）點，
+`HistoryBuffer`：九條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown、memPressure），每條最多 `historyPoints`（至少 2）點，
 `historyPoints` 縮小時捨棄最舊的點；非有限值存成 `None`。Monitor 與 MockSource 共用。
 
 ### src/collectors/mod.rs
@@ -239,6 +241,8 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 ### src/collectors/memory.rs
 
 `/proc/meminfo`：RAM used = `MemTotal − MemAvailable`、Swap used = `SwapTotal − SwapFree`（與 KSystemStats 舊版數值逐位元組相同）。
+組成：應用程式＝MemTotal − MemFree − 快取、快取＝Buffers + Cached + SReclaimable（舊核心無 SReclaimable 時視為 0）、可用＝MemFree，三者相加＝總量；
+數字矛盾（快取大於總量等）時三者皆為 `None`。記憶體壓力：`/proc/pressure/memory` 的 `some avg10`（0–100，超出範圍或無 PSI 為 `None`）。
 `SwapTotal` 為 0 時保留 0（UI 顯示「0 B / --」且無百分比），欄位缺失或矛盾（Available > Total）時為 `None`。
 
 ### src/collectors/system.rs

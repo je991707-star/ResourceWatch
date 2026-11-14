@@ -76,6 +76,8 @@ html, body {
 [data-color="ram"] { --c: var(--ram); }
 [data-color="net-down"] { --c: var(--net-down); }
 [data-color="net-up"] { --c: var(--net-up); }
+[data-color="mem-cache"] { --c: var(--gpu); }
+[data-color="mem-free"] { --c: var(--net-down); }
 [data-color="disk-read"] { --c: var(--disk-read); }
 [data-color="disk-write"] { --c: var(--disk-write); }
 
@@ -183,6 +185,9 @@ html, body {
 .bar { height: 8px; overflow: hidden; border-radius: 4px; background: var(--track); }
 .bar > span { display: block; width: 0; height: 100%; border-radius: 4px; background: var(--c); transition: width .4s ease; }
 .bar--wide { height: 10px; border-radius: 5px; }
+.bar--stack { display: flex; }
+.bar--stack > span { border-radius: 0; }
+.legend--stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* ---------------------------------------------------------------- charts */
 .chart-heading {

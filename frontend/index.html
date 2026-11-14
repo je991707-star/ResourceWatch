@@ -149,14 +149,18 @@
 
         <section class="card" aria-labelledby="memoryTitle">
           <h2 id="memoryTitle">記憶體</h2>
-          <div class="bar bar--wide"><span data-bar="ram" data-color="ram"></span></div>
-          <ul class="legend legend--row">
-            <li><i class="dot" data-color="ram"></i>已用<strong data-bind="ramUsed">--</strong></li>
+          <div class="bar bar--wide bar--stack" role="img" aria-label="記憶體組成">
+            <span data-bar="ramApp" data-color="ram"></span><span data-bar="ramCache" data-color="mem-cache"></span><span data-bar="ramFree" data-color="mem-free"></span>
+          </div>
+          <ul class="legend legend--row legend--stack">
+            <li><i class="dot" data-color="ram"></i>應用程式<strong data-bind="ramApp">--</strong></li>
+            <li><i class="dot" data-color="mem-cache"></i>快取<strong data-bind="ramCache">--</strong></li>
+            <li><i class="dot" data-color="mem-free"></i>可用<strong data-bind="ramFree">--</strong></li>
             <li><i class="dot dot--track"></i>總量<strong data-bind="ramTotal">--</strong></li>
-            <li>速度<strong data-bind="ramSpeed">--</strong></li>
           </ul>
-          <div class="chart-heading"><span>使用率歷史</span><span data-bind="ramUsage">--</span></div>
-          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="RAM 使用率圖表"><g class="grid-lines"></g><g data-chart="ram" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
+          <dl class="rows"><div><dt>速度</dt><dd data-bind="ramSpeed">--</dd></div></dl>
+          <div class="chart-heading"><span>壓力（PSI，10 秒平均）</span><span data-bind="memPressure">--</span></div>
+          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="記憶體壓力圖表"><g class="grid-lines"></g><g data-chart="memPressure" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
         </section>
 
         <section class="card" aria-labelledby="disksTitle">

@@ -73,6 +73,7 @@ fn parsers_never_panic_on_garbage() {
             let _ = cpu::parse_stat(text);
             let _ = cpu::parse_topology(text);
             let _ = memory::parse_meminfo(text);
+            let _ = memory::parse_pressure(text);
             let _ = disk::parse_diskstats(text);
             let _ = disk::udev_unescape(text);
             let _ = network::parse_net_dev(text);

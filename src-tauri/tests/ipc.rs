@@ -91,6 +91,8 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "ram",
         "ramSubtitle",
         "ramSpeedText",
+        "ramBreakdown",
+        "memPressure",
         "swap",
         "disks",
         "diskRates",
@@ -104,7 +106,15 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         assert!(snap.get(key).is_some(), "snapshot missing {key}");
     }
     for key in [
-        "cpu", "gpu", "encode", "decode", "vram", "ram", "netUp", "netDown",
+        "cpu",
+        "gpu",
+        "encode",
+        "decode",
+        "vram",
+        "ram",
+        "netUp",
+        "netDown",
+        "memPressure",
     ] {
         assert!(snap["history"][key].is_array(), "history missing {key}");
     }

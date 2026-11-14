@@ -14,6 +14,7 @@ pub struct HistorySample {
     pub ram: Option<f64>,
     pub net_up: Option<f64>,
     pub net_down: Option<f64>,
+    pub mem_pressure: Option<f64>,
 }
 
 #[derive(Debug, Default)]
@@ -26,6 +27,7 @@ pub struct HistoryBuffer {
     ram: VecDeque<Option<f64>>,
     net_up: VecDeque<Option<f64>>,
     net_down: VecDeque<Option<f64>>,
+    mem_pressure: VecDeque<Option<f64>>,
 }
 
 fn push(buf: &mut VecDeque<Option<f64>>, value: Option<f64>, limit: usize) {
@@ -52,6 +54,7 @@ impl HistoryBuffer {
         push(&mut self.ram, s.ram, n);
         push(&mut self.net_up, s.net_up, n);
         push(&mut self.net_down, s.net_down, n);
+        push(&mut self.mem_pressure, s.mem_pressure, n);
     }
 
     pub fn to_history(&self) -> History {
@@ -64,6 +67,7 @@ impl HistoryBuffer {
             ram: vec(&self.ram),
             net_up: vec(&self.net_up),
             net_down: vec(&self.net_down),
+            mem_pressure: vec(&self.mem_pressure),
         }
     }
 }

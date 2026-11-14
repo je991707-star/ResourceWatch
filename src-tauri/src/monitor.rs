@@ -17,7 +17,8 @@ use crate::format::{clamp_percent, format_bytes, MISSING};
 use crate::history::{HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, Snapshot,
+    format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, RamBreakdown,
+    Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -35,6 +36,7 @@ struct Readings {
     disks: BTreeMap<String, DiskRateReading>,
     net: NetReading,
     uptime: Option<f64>,
+    mem_pressure: Option<f64>,
 }
 
 pub struct Monitor {
@@ -142,6 +144,7 @@ impl Monitor {
             disks: self.disk_io.sample_at(&self.disks, now),
             net: self.net.sample_at(now),
             uptime: system::uptime_seconds(&self.roots),
+            mem_pressure: memory::pressure(&self.roots),
         };
         let mut snap = self.build(s);
         self.history.push(
@@ -154,6 +157,7 @@ impl Monitor {
                 ram: snap.ram.percent,
                 net_up: snap.net_up.raw_value,
                 net_down: snap.net_down.raw_value,
+                mem_pressure: snap.mem_pressure,
             },
             s.history_points,
         );
@@ -233,6 +237,12 @@ impl Monitor {
                 .ram_speed
                 .clone()
                 .unwrap_or_else(|| MISSING.to_string()),
+            ram_breakdown: RamBreakdown {
+                app: g(Metric::pair(r.mem.ram_app, r.mem.ram_total)),
+                cache: g(Metric::pair(r.mem.ram_cache, r.mem.ram_total)),
+                free: g(Metric::pair(r.mem.ram_free, r.mem.ram_total)),
+            },
+            mem_pressure: r.mem_pressure,
             swap: g(Metric::pair(r.mem.swap_used, r.mem.swap_total)),
             disks: self
                 .disks

@@ -6,7 +6,9 @@
 
 use crate::history::{HistoryBuffer, HistorySample};
 use crate::settings::Settings;
-use crate::snapshot::{format_uptime, DataSource, DiskInfo, DiskRate, Metric, Snapshot};
+use crate::snapshot::{
+    format_uptime, DataSource, DiskInfo, DiskRate, Metric, RamBreakdown, Snapshot,
+};
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -82,6 +84,8 @@ impl MockSource {
         let up = (850_000.0 + 360_000.0 * (t * 0.4).sin()).max(0.0);
         let down = (24_000.0 + 15_000.0 * (t * 0.31).cos()).max(0.0);
 
+        let ram_cache = ram_total * 0.31;
+        let pressure = (1.5 + 1.5 * (t * 0.27).sin()).max(0.0);
         let cpu_m = Metric::percent(Some(cpu));
         let gpu_m = Metric::percent(Some(gpu));
         let enc_m = Metric::percent(Some(enc));
@@ -102,6 +106,7 @@ impl MockSource {
                     ram: ram_m.percent,
                     net_up: net_up.raw_value,
                     net_down: net_down.raw_value,
+                    mem_pressure: Some(pressure),
                 },
                 settings.history_points,
             );
@@ -156,6 +161,15 @@ impl MockSource {
             ram: ram_m,
             // Mock: RAM speed unknown, to exercise the missing-value path.
             ram_speed_text: "--".to_string(),
+            ram_breakdown: RamBreakdown {
+                app: Metric::pair(Some(ram_used * 0.9), Some(ram_total)),
+                cache: Metric::pair(Some(ram_cache), Some(ram_total)),
+                free: Metric::pair(
+                    Some(ram_total - ram_used * 0.9 - ram_cache),
+                    Some(ram_total),
+                ),
+            },
+            mem_pressure: Some(pressure),
             swap: Metric::pair(Some(0.0), Some(7.8 * GIB)),
             disks: self.disks.clone(),
             disk_rates,

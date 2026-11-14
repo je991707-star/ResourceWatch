@@ -124,6 +124,15 @@ pub struct History {
     pub ram: Vec<Option<f64>>,
     pub net_up: Vec<Option<f64>>,
     pub net_down: Vec<Option<f64>>,
+    pub mem_pressure: Vec<Option<f64>>,
+}
+
+/// Parts of RAM as used/total pairs of `MemTotal` (see `collectors::memory`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RamBreakdown {
+    pub app: Metric,
+    pub cache: Metric,
+    pub free: Metric,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -160,6 +169,9 @@ pub struct Snapshot {
     pub ram: Metric,
     pub ram_subtitle: String,
     pub ram_speed_text: String,
+    pub ram_breakdown: RamBreakdown,
+    /// PSI `some avg10` (0–100 %), `null` without PSI.
+    pub mem_pressure: Option<f64>,
     pub swap: Metric,
     pub disks: Vec<DiskInfo>,
     pub disk_rates: BTreeMap<String, DiskRate>,

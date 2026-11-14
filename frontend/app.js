@@ -322,7 +322,12 @@
     setText("ramSpeed", s.ramSpeedText);
     setText("swapUsed", pairText(s.swap));
     setRing("ram", s.ram);
-    setBar("ram", s.ram);
+    const parts = s.ramBreakdown || {};
+    for (const [key, metric] of [["ramApp", parts.app], ["ramCache", parts.cache], ["ramFree", parts.free]]) {
+      setText(key, metric?.usedText);
+      setBar(key, metric);
+    }
+    setText("memPressure", Number.isFinite(s.memPressure) ? s.memPressure.toFixed(2) + "%" : "--");
     setText("netSubtitle", (s.netHasInterface || s.netIpAvailable) ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
@@ -350,7 +355,10 @@
 
     const h = s.history || {};
     chartSeries("cpu", h.cpu);
-    chartSeries("ram", h.ram);
+    // Pressure is usually near 0: scale to the recent peak (at least 10%) so changes are visible.
+    let pressureMax = 10;
+    for (const v of h.memPressure || []) if (Number.isFinite(v) && v > pressureMax) pressureMax = v;
+    chartSeries("memPressure", h.memPressure, pressureMax);
     // Upload and download share one scale so the two lines are comparable.
     let max = 1;
     for (const v of [...(h.netUp || []), ...(h.netDown || [])]) if (Number.isFinite(v) && v > max) max = v;
