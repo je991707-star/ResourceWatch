@@ -8,7 +8,8 @@ use crate::collectors::sensors::SensorKind;
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, GpuInfo, Metric, RamBreakdown, Sensor, Snapshot,
+    format_uptime, BatteryInfo, DataSource, DiskInfo, DiskRate, GpuInfo, Metric, RamBreakdown,
+    Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -195,6 +196,16 @@ impl MockSource {
                     )
                 })
                 .collect(),
+            battery: Some(BatteryInfo {
+                percent: Some(61.0),
+                status: "discharging".to_string(),
+                cycles: Some(283),
+                health: Some(62.0 / 65.0 * 100.0),
+                now_text: "38.0 Wh".to_string(),
+                full_text: "62.0 Wh".to_string(),
+                design_text: "65.0 Wh".to_string(),
+                time_text: "2 小時 17 分".to_string(),
+            }),
             sensors: [
                 (
                     "coretemp",

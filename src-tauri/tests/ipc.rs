@@ -99,6 +99,7 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "diskRates",
         "diskUsage",
         "sensors",
+        "battery",
         "netHasInterface",
         "netIpAvailable",
         "netIp",

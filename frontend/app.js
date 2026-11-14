@@ -418,6 +418,23 @@
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
 
+    const battery = s.battery;
+    $("batteryCard").hidden = !battery;
+    if (battery) {
+      const percent = Number.isFinite(battery.percent) ? battery.percent : null;
+      setText("batteryPercent", percent === null ? null : `${Math.round(percent)}%`);
+      setBar("battery", { percent });
+      const status = { charging: "充電中", discharging: "使用電池", full: "已充滿", notCharging: "未充電" }[battery.status] || "未知";
+      setText("batteryStatus", status);
+      const prefix = { charging: "充滿還需 ", discharging: "剩餘 " }[battery.status];
+      setText("batteryTime", prefix && battery.timeText !== "--" ? prefix + battery.timeText : "--");
+      setText("batteryHealth", Number.isFinite(battery.health) ? `${battery.health.toFixed(0)}%` : null);
+      setText("batteryCycles", battery.cycles);
+      setText("batteryNow", battery.nowText);
+      setText("batteryFull", battery.fullText);
+      setText("batteryDesign", battery.designText);
+    }
+
     const disks = Array.isArray(s.disks) ? s.disks : [];
     const inventory = JSON.stringify(disks.map((d) => [d.name, d.model, d.sizeText, d.transport]));
     if (inventory !== lastDiskInventory) {

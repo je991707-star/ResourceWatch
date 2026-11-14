@@ -29,6 +29,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路卡片：介面選單、使用中介面、IPv4、MAC、閘道與上傳／下載雙線圖；圖形處理器卡片標題列有 GPU 選單），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  電池卡片（`#batteryCard`，`battery` 為 `null` 時隱藏）：百分比、狀態、剩餘／充滿時間、進度條、健康度、循環次數與容量。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`）；兩處都有 °C／°F 切換（`data-temp-unit`）。
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
@@ -190,6 +191,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `disks` | `{name, model, sizeText, transport}[]` | 只在清單變動時重建 DOM |
 | `diskRates` | `{[name]: {read: number\|null, write: number\|null}}` | B/s |
 | `diskUsage` | `{[name]: Metric}` | 該硬碟上所有已掛載檔案系統的已用／總量（pair）；未掛載的硬碟不出現；每 10 秒更新 |
+| `battery` | object \| null | 筆電電池 `{percent, status, cycles, health, nowText, fullText, designText, timeText}`；`status` 為 `charging`／`discharging`／`full`／`notCharging`／`unknown`；沒有電池時 `null` |
 | `sensors` | `{chip, label, kind: "temp"\|"fan", value: number\|null}[]` | 所有 hwmon 溫度（°C）與風扇（RPM），依晶片順序 |
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
@@ -203,7 +205,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 
 `status`：`ready` / `loading`（啟動後 5 秒內缺失）/ `unavailable`。百分比型 Metric 沒有 used/total（為 `"--"`），速率型 `percent` 為 `null`。
 
-`Metric::percent / pair / rate` 建構子負責把缺失、非有限值、負值與總量 0 轉成 `null` / `"--"` / `status: "unavailable"`，不轉成 0。`format_uptime()` 對應舊版 `uptimeFromSeconds`。
+`Metric::percent / pair / rate` 建構子負責把缺失、非有限值、負值與總量 0 轉成 `null` / `"--"` / `status: "unavailable"`，不轉成 0。`format_uptime()` 對應舊版 `uptimeFromSeconds`；`format_duration()` 輸出電池剩餘時間（`2 小時 17 分`）。
 
 ### src/format.rs
 
@@ -247,6 +249,13 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
   `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。
 - 型號：`/proc/cpuinfo` 的 `model name`（或 `Hardware`），啟動與手動重新偵測時讀取。
 - 核心／執行緒（`parse_topology`）：同一份 cpuinfo，邏輯 CPU 數＝`processor` 項目數，實體核心數＝不重複的（`physical id`, `core id`）組合（多插槽時 core id 會重複）；沒有 core id（許多 ARM）時核心數為 `None`。
+
+### src/collectors/battery.rs
+
+啟動與硬體重新偵測時找出第一個 `type` = `Battery` 且 `scope` ≠ `Device`（排除滑鼠、耳機等週邊電池）的 `/sys/class/power_supply/*`；每次取樣讀取：
+`capacity`（沒有時以 now／full 推算）、`status`、`cycle_count`（0 代表驅動不追蹤 → `None`）、`energy_now/full/full_design`（µWh → Wh）＋`power_now`，
+或驅動只提供電荷時的 `charge_*`（µAh → Ah）＋`current_now`。剩餘時間：放電＝now／rate，充電＝(full − now)／rate，超過 96 小時視為不可靠。健康度＝full／design。
+本機為桌機，以假 `/sys` 測試（含 µWh 與 µAh 兩種驅動、週邊電池排除）。
 
 ### src/collectors/sensors.rs
 

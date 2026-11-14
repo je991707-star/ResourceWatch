@@ -130,6 +130,24 @@ pub struct GpuInfo {
     pub vendor: String,
 }
 
+/// Laptop battery; absent (`null`) on machines without one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryInfo {
+    pub percent: Option<f64>,
+    /// `charging` | `discharging` | `full` | `notCharging` | `unknown`
+    pub status: String,
+    pub cycles: Option<u32>,
+    /// full / design × 100
+    pub health: Option<f64>,
+    /// e.g. `"38.0 Wh"`, `"--"` when missing
+    pub now_text: String,
+    pub full_text: String,
+    pub design_text: String,
+    /// Time to empty / to full, e.g. `"2 小時 17 分"`, `"--"` when unknown.
+    pub time_text: String,
+}
+
 /// History series; missing samples stay `null`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -201,6 +219,7 @@ pub struct Snapshot {
     /// Used / total of the filesystems mounted from each disk (pair Metric);
     /// disks with nothing mounted are absent. Refreshed every 10 s.
     pub disk_usage: BTreeMap<String, Metric>,
+    pub battery: Option<BatteryInfo>,
     /// Every hwmon temperature and fan input, in chip order.
     pub sensors: Vec<Sensor>,
     pub net_has_interface: bool,
@@ -215,6 +234,18 @@ pub struct Snapshot {
     pub net_up: Metric,
     pub net_down: Metric,
     pub history: History,
+}
+
+/// `"2 小時 17 分"` / `"45 分"`; `"--"` when missing.
+pub fn format_duration(seconds: Option<f64>) -> String {
+    let Some(s) = format::valid(seconds).filter(|s| *s >= 0.0) else {
+        return MISSING.to_string();
+    };
+    let minutes = (s / 60.0).round() as u64;
+    match minutes / 60 {
+        0 => format!("{} 分", minutes % 60),
+        h => format!("{h} 小時 {} 分", minutes % 60),
+    }
 }
 
 /// Formats seconds as `H:MM:SS` / `N天 HH:MM:SS` (legacy app.js `uptimeFromSeconds`).
@@ -282,6 +313,13 @@ mod tests {
         assert_eq!(v["status"], "ready");
         let h = serde_json::to_value(History::default()).unwrap();
         assert!(h.get("netUp").is_some() && h.get("netDown").is_some());
+    }
+
+    #[test]
+    fn duration_format() {
+        assert_eq!(format_duration(Some(8220.0)), "2 小時 17 分");
+        assert_eq!(format_duration(Some(2700.0)), "45 分");
+        assert_eq!(format_duration(None), "--");
     }
 
     #[test]

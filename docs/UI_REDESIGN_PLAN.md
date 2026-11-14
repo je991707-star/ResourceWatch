@@ -68,7 +68,7 @@
 | 3.7 ✅ | 感測器清單＋風扇 | 掃描所有 hwmon `temp*_input`／`fan*_input`＋`*_label`（擴充 `collectors/cpu.rs` 既有掃描） | `sensors: {chip, label, kind: "temp"\|"fan", value}[]` | 感測器卡片（前 10 筆＋顯示更多）、°C／°F 切換（前端） |
 | 3.8 ✅ | 網路細節＋介面清單 | `/sys/class/net/<if>/address`（MAC）、`/proc/net/route`（預設閘道）、`getifaddrs`（本機 IP）、實體介面清單 | `netInterfaceName`, `netMac`, `netGateway`, `netInterfaces[]` | 網路卡片與網路頁；介面下拉選單寫入既有 `netInterface` 設定 |
 | 3.9 ✅ | GPU 清單 | `collectors/gpu` 既有 `discover` 結果 | `gpus: {index, name, vendor}[]` | 圖形處理器卡片下拉選單寫入既有 `gpuIndex` 設定 |
-| 3.10 | 電池 | `/sys/class/power_supply/BAT*`：`capacity`、`status`、`cycle_count`、`energy_*`／`charge_*`（full、full_design、now）、剩餘時間估算 | `battery: {...} \| null` | 電池卡片（無電池時隱藏；本機為桌機，以假 `/sys` 測試） |
+| 3.10 ✅ | 電池 | `/sys/class/power_supply/BAT*`：`capacity`、`status`、`cycle_count`、`energy_*`／`charge_*`（full、full_design、now）、剩餘時間估算 | `battery: {...} \| null` | 電池卡片（無電池時隱藏；本機為桌機，以假 `/sys` 測試） |
 
 不做：公網 IP（需連外）、藍牙（需 BlueZ D-Bus）、螢幕解析度（需合成器 API）。
 

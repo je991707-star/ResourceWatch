@@ -106,6 +106,7 @@
 /* Masonry-like dashboard: cards flow top-to-bottom through as many columns as fit. */
 .dashboard { columns: 3 300px; column-gap: 14px; }
 /* inline-block keeps each card's bottom margin with it instead of carrying it to the next column's top. */
+.dashboard > .card[hidden] { display: none; }
 .dashboard > .card { display: inline-block; width: 100%; margin-bottom: 14px; vertical-align: top; break-inside: avoid; }
 
 .widget-info p { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.7; }

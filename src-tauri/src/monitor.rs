@@ -6,6 +6,7 @@
 //!   disk list, IPv4
 
 use crate::collectors::{
+    battery::{self, BatteryReading},
     cpu::{self, CpuCollector, CpuReading},
     disk::{self, DiskCollector, DiskDevice, DiskRateReading},
     gpu::{GpuCollector, GpuReading},
@@ -18,8 +19,8 @@ use crate::format::{clamp_percent, format_bytes, MISSING};
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, GpuInfo, History, Metric, MetricStatus,
-    RamBreakdown, Sensor, Snapshot,
+    format_duration, format_uptime, BatteryInfo, DataSource, DiskInfo, DiskRate, GpuInfo, History,
+    Metric, MetricStatus, RamBreakdown, Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -43,6 +44,7 @@ struct Readings {
     mem_pressure: Option<f64>,
     /// Same order as `Monitor::sensors`.
     sensors: Vec<Option<f64>>,
+    battery: Option<BatteryReading>,
 }
 
 pub struct Monitor {
@@ -60,6 +62,7 @@ pub struct Monitor {
     ram_speed: Option<String>,
     disks: Vec<DiskDevice>,
     sensors: Vec<SensorInput>,
+    battery: Option<std::path::PathBuf>,
     /// disk → (used, total) bytes of its mounted filesystems.
     disk_usage: BTreeMap<String, (u64, u64)>,
     usage_at: Instant,
@@ -103,6 +106,7 @@ impl Monitor {
             ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
             disks: disk::discover(&roots),
             sensors: sensors::discover(&roots),
+            battery: battery::discover(&roots),
             disk_usage: BTreeMap::new(),
             usage_at: Instant::now(),
             ip: network::ipv4_address(&settings.net_interface),
@@ -158,6 +162,7 @@ impl Monitor {
                     system::ram_speed_text(&self.roots, system::ram_cache_path().as_deref());
                 self.gpu.rediscover();
                 self.sensors = sensors::discover(&self.roots);
+                self.battery = battery::discover(&self.roots);
                 self.last.sensors.clear();
             }
         }
@@ -179,6 +184,7 @@ impl Monitor {
             uptime: system::uptime_seconds(&self.roots),
             mem_pressure: memory::pressure(&self.roots),
             sensors: self.sensors.iter().map(sensors::read).collect(),
+            battery: self.battery.as_deref().map(battery::read),
         };
         let mut snap = self.build(s);
         let (disk_read, disk_write) = disk_totals(snap.disk_rates.values());
@@ -314,6 +320,21 @@ impl Monitor {
                     ))
                 })
                 .collect(),
+            battery: r.battery.as_ref().map(|b| {
+                let cap = |v: Option<f64>| {
+                    v.map_or_else(|| MISSING.to_string(), |v| format!("{v:.1} {}", b.unit))
+                };
+                BatteryInfo {
+                    percent: b.percent,
+                    status: b.status.to_string(),
+                    cycles: b.cycles,
+                    health: b.full.zip(b.design).map(|(f, d)| f / d * 100.0),
+                    now_text: cap(b.now),
+                    full_text: cap(b.full),
+                    design_text: cap(b.design),
+                    time_text: format_duration(b.time_seconds),
+                }
+            }),
             sensors: self
                 .sensors
                 .iter()
@@ -361,6 +382,7 @@ mod tests {
         assert_eq!(snap.cpu_name, "--");
         assert_eq!(snap.gpu_source, "unavailable");
         assert!(snap.gpus.is_empty());
+        assert_eq!(snap.battery, None, "desktop: no battery card");
         assert!(snap.disks.is_empty());
         assert_eq!(snap.history.cpu, vec![None]);
     }

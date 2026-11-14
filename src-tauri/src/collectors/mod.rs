@@ -5,6 +5,7 @@
 //! `/proc` + `/sys` tree. Missing files, unreadable files and malformed
 //! values yield `None`, never `0`.
 
+pub mod battery;
 pub mod cpu;
 pub mod disk;
 pub mod gpu;

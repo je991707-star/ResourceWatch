@@ -210,6 +210,23 @@
           </ul>
           <button type="button" class="more-link" data-goto="network">顯示更多…</button>
         </section>
+
+        <section class="card" id="batteryCard" aria-labelledby="batteryTitle" hidden>
+          <h2 id="batteryTitle">電池</h2>
+          <div class="battery-head">
+            <strong class="battery-badge" data-bind="batteryPercent">--</strong>
+            <span data-bind="batteryTime">--</span>
+            <span class="battery-status" data-bind="batteryStatus">--</span>
+          </div>
+          <div class="bar bar--wide"><span data-bar="battery" data-color="mem-free"></span></div>
+          <dl class="kv kv--3">
+            <div><dt>健康度</dt><dd data-bind="batteryHealth">--</dd></div>
+            <div><dt>循環次數</dt><dd data-bind="batteryCycles">--</dd></div>
+            <div><dt>目前容量</dt><dd data-bind="batteryNow">--</dd></div>
+            <div><dt>充滿容量</dt><dd data-bind="batteryFull">--</dd></div>
+            <div><dt>設計容量</dt><dd data-bind="batteryDesign">--</dd></div>
+          </dl>
+        </section>
       </main>
 
       <!-- Storage -->
