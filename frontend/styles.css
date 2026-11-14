@@ -206,7 +206,6 @@ html, body {
   stroke: var(--c);
   stroke-linecap: round;
   stroke-dasharray: 0 100;
-  transition: stroke-dasharray .4s ease;
 }
 .ring-track--thick, .ring-value--thick { stroke-width: 10; }
 
@@ -224,7 +223,7 @@ html, body {
 /* ---------------------------------------------------------------- bars */
 .bar-label { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0 4px; color: var(--muted); font-size: 11px; }
 .bar { height: 8px; overflow: hidden; border-radius: 4px; background: var(--track); }
-.bar > span { display: block; width: 0; height: 100%; border-radius: 4px; background: var(--c); transition: width .4s ease; }
+.bar > span { display: block; width: 0; height: 100%; border-radius: 4px; background: var(--c); }
 .bar--wide { height: 10px; border-radius: 5px; }
 .bar--stack { display: flex; }
 .bar--stack > span { border-radius: 0; }
@@ -267,7 +266,11 @@ html, body {
   background: var(--chart-bg);
   border-radius: 4px 4px 0 0;
 }
-.core-bars > span { flex: 1; min-width: 2px; height: 0; border-radius: 2px 2px 0 0; background: var(--cpu); transition: height .4s ease; }
+.core-bars > span { flex: 1; min-width: 2px; height: 0; border-radius: 2px 2px 0 0; background: var(--cpu); }
+/* Transitions are non-composited (relayout/repaint every frame); at short intervals they would never stop. app.js sets data-motion. */
+[data-motion="on"] .ring-value { transition: stroke-dasharray .4s ease; }
+[data-motion="on"] .bar > span { transition: width .4s ease; }
+[data-motion="on"] .core-bars > span { transition: height .4s ease; }
 .core-bars > span.is-missing { height: 2px; background: var(--track); }
 
 /* ---------------------------------------------------------------- disks */

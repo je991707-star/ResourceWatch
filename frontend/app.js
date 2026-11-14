@@ -582,6 +582,7 @@
   function displaySettings(settings) {
     if (!settings || typeof settings !== "object") return;
     currentSettings = { ...currentSettings, ...settings };
+    document.documentElement.dataset.motion = currentSettings.updateInterval >= 1000 ? "on" : "off";
     syncSettingSelects();
     for (const [key, field] of Object.entries(fields)) {
       if (!(key in settings) || document.activeElement === field) continue;
