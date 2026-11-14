@@ -14,7 +14,8 @@ src-tauri/src/lib.rs ── AppState{settings(+SettingsStore → config.json), s
         │   source: Source::Live(Monitor) ─ collectors/{cpu,memory,system,disk,network,gpu(+nvml)}
         │           Source::Mock(MockSource)（RESOURCEWATCH_MOCK=1）
         ▲ commands: get_snapshot / get_settings / get_settings_info / update_settings / reset_settings /
-        │           refresh_devices / get_scheduler_stats
+        │           refresh_devices / get_scheduler_stats / get_window_info
+        │   blur.rs: 主視窗於 setup 建立（Wayland 才透明）→ 合成器模糊（側欄毛玻璃）
 frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 ```
 
@@ -24,21 +25,26 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
 Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
 
-- `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，底部「設定」與淺色／深色主題切換按鈕。
+- `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：CPU 型號、運作時間、GPU 名稱、RAM 總量與速度、即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器與記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
-  儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗）。
+  儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
-- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色）、卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
+- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；`--sidebar-glass` 為毛玻璃側欄的半透明色）。
+  視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
+  其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
   進度條、折線圖與硬碟列樣式。
 - `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 300px` 排成由上而下的多欄卡片（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）。
-  響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤760 px 側欄只剩圖示並隱藏 GPU 資訊、≤420 px 摘要卡片改為上下排列。
+  側欄收合：`.app-shell.is-collapsed` 只剩圖示（58 px），由使用者按鈕或寬度 ≤760 px 觸發（≤760 px 時隱藏收合按鈕與頂部 GPU 資訊）。
+  響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤420 px 摘要卡片改為上下排列。
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
   主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
+  側欄毛玻璃：啟動時呼叫 `get_window_info`，`glass` 為 true 且使用者偏好（`localStorage` `resourcewatch-glass`，預設開）為開時設 `<html data-glass="on">`；
+  不支援時設定頁的開關停用並說明原因。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
   `setText(key)` 更新所有 `data-bind=key` 元素且只在文字改變時寫入 DOM；環形圖與進度條以 CSSOM（`el.style`）設定，因 CSP `style-src 'self'` 不允許行內 style 屬性，
   百分比為 0 或缺失時隱藏環形弧線；SVG path 相同時不重設；硬碟列只在清單變動時重建（以 DOM API 建立，不用 innerHTML），每個 `data-disk-list` 各建一份；
   網路上傳／下載兩條線共用同一個縱軸上限。目前頁面不是監控頁（`PAGES[].live`，即設定與桌面小工具）時只保存快照，切回監控頁才繪製。
@@ -57,8 +63,12 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 - 套件 `resourcewatch` 0.1.0（Tauri 版自己的版號，與 Plasma 套件 0.0.5 分開；rpm 版號不允許 `-`）；lib 名稱 `resourcewatch_lib`。
   依賴：`tauri`、`serde`、`serde_json`、`libloading`（執行期載入 NVML，不在連結時依賴 NVIDIA）、`libc`（`getifaddrs`）；
+  Linux 專用：`gtk`、`gdkwayland-sys`（取得 GTK 視窗的 `wl_display`／`wl_surface`，兩者原本就在 Tauri 依賴樹內）、
+  `wayland-client`＋`wayland-backend`（`client_system`，接手 GTK 既有的 Wayland 連線）、`wayland-protocols`（`staging`，ext-background-effect-v1）、
+  `wayland-protocols-plasma`（舊版 KWin 的 `org_kde_kwin_blur`），皆只供 `blur.rs` 使用；
   dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。`rust-version = 1.85`。
 - `tauri.conf.json`：identifier `io.github.local.resourcewatch`；視窗 `main` 初始 1220×790、最小 640×480、可自由縮放、不設最大值；
+  `"create": false`：不由設定檔自動建立，而由 `lib.rs` `create_main_window()` 以這份設定建立（透明與否依顯示後端決定）；
   CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
 - `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
 - `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。
@@ -67,7 +77,9 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 應用組裝與 IPC。`configure_with(builder, config_dir)` 註冊所有 Command，並在 Tauri `setup` 中：解析設定目錄
 （`None` → `app.path().app_config_dir()`，即 `$XDG_CONFIG_HOME/io.github.local.resourcewatch`，通常為 `~/.config/io.github.local.resourcewatch`；
-測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 啟動唯一的排程器。`configure(builder)` = `configure_with(builder, None)`。
+測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 建立主視窗 → 啟動唯一的排程器。
+`create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland 時才設為透明並呼叫
+`blur::enable()`，成功則 `AppState.glass = true`。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
 `run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
 `prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：GTK 後端為 X11／XWayland 且載入 NVIDIA 核心模組
 （`/sys/module/nvidia`）、使用者也沒有自行設定時，設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`，避免 WebKitGTK 的 DMA-BUF 繪製失敗造成空白視窗；
@@ -82,6 +94,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證並**已寫入磁碟**的 `Settings`，並發出 `settings-changed` | `invalidSetting`（含 `field`）；`settingsWriteFailed`（`field: null`，記憶體／排程器／磁碟皆不變）；型別錯誤為 Tauri 反序列化錯誤字串 |
 | `reset_settings` | — | 預設 `Settings`（已寫入磁碟），並發出 `settings-changed` | `settingsWriteFailed` |
 | `get_scheduler_stats` | — | `SchedulerStats`（間隔、週期數、略過數、panic 數、耗時與延遲） | — |
+| `get_window_info` | — | `{glass: bool}`：合成器已對主視窗套用背景模糊（前端據此決定側欄是否半透明） | — |
 | `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}`：IPv4／硬碟清單／CPU 型號＋RAM 速度＋GPU 清單與名稱 | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
 
 | Event | Payload | 時機 |
@@ -90,7 +103,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `settings-changed` | `Settings` | 設定更新或恢復預設後 |
 
 `AppState` 分成獨立的鎖（中毒時復原而非崩潰）：`settings`（目前設定 `Arc<Settings>`、`SettingsStore`、載入警告）、`source`（Monitor／Mock）、
-`latest`（最新快照）與 `scheduler`（`OnceLock`，只能設定一次 → 不會有第二個排程器）。鎖順序固定為 settings → source；
+`latest`（最新快照）、`scheduler`（`OnceLock`，只能設定一次 → 不會有第二個排程器）與 `glass`（`AtomicBool`，只在 setup 寫入）。鎖順序固定為 settings → source；
 排程週期只先短暫取 settings（複製 `Arc`）再取 source，不會巢狀，因此不會死結。命令不再等待整個取樣持有的大鎖。
 
 排程週期（`start_scheduler`）：`source.sample(now, &settings)`（只持有 source 鎖）→ `emit("snapshot")`（以參考序列化，不複製快照）→
@@ -100,6 +113,17 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 寫入 `config.json`（失敗即回傳錯誤，不套用任何變更）→ `Source::apply_settings`（切換 GPU／網路介面）→ 更新記憶體 →
 間隔有變才 `Scheduler::set_interval` → 發出 `settings-changed`。因此磁碟、記憶體與排程器不會長期不一致。
 手動刷新在呼叫端執行緒進行，以 source 鎖與排程週期互斥，不重啟排程器。
+
+### src/blur.rs（Linux）
+
+主視窗的合成器背景模糊（側欄毛玻璃），只用於原生 Wayland。透過 `gdk_wayland_display_get_wl_display`／`gdk_wayland_window_get_wl_surface`
+取得 GTK 的連線與 surface，以 `Backend::from_foreign_display` 共用同一連線（不另開連線）：
+- 優先 `ext_background_effect_manager_v1`（KWin 6.8 起提供，舊協定已不再公開）：綁定後 roundtrip 讀取 `capabilities`，含 `blur` 才建立
+  `ext_background_effect_surface_v1` 並以涵蓋整個 surface 的 `wl_region` 呼叫 `set_blur_region`（合成器會裁切到 surface 大小）。
+- 沒有新協定時使用 `org_kde_kwin_blur_manager`（僅在 KWin 模糊特效載入時公開），不設 region 即整個 surface。（舊版 KWin 路徑 NOT TESTED）
+- 兩者都是 double-buffered，於 GTK 下一次 `wl_surface.commit`（每次重繪）生效。顯示區不透明，因此整個 surface 模糊只會從側欄透出。
+- 事件佇列刻意洩漏（`mem::forget`），避免之後的 capability 事件送到已釋放的佇列；因此執行中關閉 KWin 模糊特效後，前端不會得知（側欄仍半透明但不模糊）。
+- 回傳 `Err(原因)` 時於 stderr 輸出 `sidebar blur unavailable: …`，前端保持不透明側欄。
 
 ### src/settings.rs
 

@@ -32,25 +32,26 @@
 
 目標：側欄半透明並模糊桌面背景；右側顯示區（頂部資訊列＋卡片）維持不透明底色，確保數字可讀。
 
-### 2.1 透明視窗（`tauri.conf.json`、`styles.css`、`application.css`）
-- [ ] 視窗 `main` 設 `"transparent": true`（保留系統標題列）。
-- [ ] `html, body` 背景改透明；`.app-main` 使用不透明 `--bg`；`.app-sidebar` 使用半透明 token
-      `--sidebar-glass`（深色約 `rgba(58,42,54,.55)`、淺色約 `rgba(240,230,236,.55)`），加細邊線分隔。
-- [ ] 確認 NVIDIA＋X11 時既有的 `WEBKIT_DISABLE_DMABUF_RENDERER` 解法下透明仍正常（`lib.rs` `prepare_environment()`）。
+### 2.1 透明視窗（`tauri.conf.json`、`lib.rs`、`styles.css`、`application.css`）
+- [x] 主視窗改為 `"create": false`，由 `lib.rs` `create_main_window()` 建立：**只有原生 Wayland 才透明**（保留系統標題列）。
+- [x] `html, body` 背景透明；`.app-main` 不透明 `--bg`；`.app-sidebar` 在 `data-glass="on"` 時用半透明 `--sidebar-glass`
+      （深色 `rgba(52,34,46,.68)`、淺色 `rgba(246,236,242,.72)`；.5 時背景文字會干擾導覽文字），加細邊線分隔。
+- [x] NVIDIA＋X11（`WEBKIT_DISABLE_DMABUF_RENDERER`）實測：透明視窗下側欄整塊沒有繪製（關閉模糊、加 `will-change`、改捲動容器皆無效），
+      因此 X11／XWayland 改為不透明視窗、不提供毛玻璃。
 
-### 2.2 KWin 模糊（新檔 `src-tauri/src/blur.rs`，在 `lib.rs` 的 `setup` 呼叫）
-- [ ] X11／XWayland：對視窗設定 `_KDE_NET_WM_BLUR_BEHIND_REGION`（CARDINAL 陣列，空值＝整個視窗；
-      或只給側欄矩形，視窗縮放時更新）。取得 X window：Tauri `WebviewWindow::gtk_window()` → GDK X11 window XID。
-- [ ] Wayland 原生：`org_kde_kwin_blur_manager` 協定（`wayland-client`＋`wayland-protocols-plasma`），
-      對 GTK 視窗的 `wl_surface` 建立 blur 並 `commit`。
-- [ ] 偵測：非 KDE（`XDG_CURRENT_DESKTOP` 不含 KDE）或協定不存在 → 不設定模糊，前端收到 `glass: false`，
-      側欄改用不透明 `--sidebar`（以 `<html data-glass>` 切換）。
-- [ ] 設定頁新增「側欄毛玻璃」開關（`Settings.sidebarGlass`，預設開；關閉時同上退回不透明）。
-- 新依賴只在確定需要時加入（Wayland 部分），並在 Readme 依賴清單說明原因。
+### 2.2 合成器模糊（`src-tauri/src/blur.rs`）
+- [x] Wayland：KWin 6.8 已不再公開 `org_kde_kwin_blur_manager`，改用標準的 `ext_background_effect_manager_v1`
+      （`wayland-protocols` `staging`），以 `capabilities` 確認 blur 可用；找不到時才退回 `org_kde_kwin_blur_manager`（舊版 KWin，NOT TESTED）。
+- [x] ~~X11 `_KDE_NET_WM_BLUR_BEHIND_REGION`~~：X11 視窗不透明（見 2.1），不需要。
+- [x] 偵測：協定不存在或 blur 關閉 → `get_window_info` 回傳 `glass: false`，側欄維持不透明 `--sidebar`。
+- [x] 設定頁「外觀 → 側欄毛玻璃」開關：改存 `localStorage`（`resourcewatch-glass`，預設開），與主題一樣屬於顯示偏好，不放進 Rust `Settings`；
+      不支援時開關停用並說明原因。
+- [x] 新依賴與原因寫入 Readme（`gtk`、`gdkwayland-sys`、`wayland-client`、`wayland-backend`、`wayland-protocols`、`wayland-protocols-plasma`）。
+- 已知限制：執行中關閉 KWin 模糊特效時前端不會得知（側欄仍半透明但不模糊）；非 KDE 的 Wayland 合成器若支援 ext-background-effect-v1 也會生效（NOT TESTED）。
 
 ### 2.3 頂部資訊列對齊參考圖
-- [ ] 左：電腦圖示＋主機名稱＋運作時間；右：機型（DMI `product_name`）＋CPU 型號（需 Phase 3.1 資料）。
-- [ ] 側欄頂部加收合按鈕（只剩圖示，偏好存 `localStorage`）。
+- [ ] 左：電腦圖示＋主機名稱＋運作時間；右：機型（DMI `product_name`）＋CPU 型號——等 Phase 3.1 提供 `hostname`／`machineModel` 後一起完成。
+- [x] 側欄頂部獨立一列的收合按鈕（只剩圖示，偏好存 `localStorage` `resourcewatch-sidebar-collapsed`；≤760 px 自動收合並隱藏按鈕）。
 
 ---
 

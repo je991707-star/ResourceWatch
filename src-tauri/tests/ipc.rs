@@ -181,6 +181,17 @@ fn refresh_devices_kinds() {
 }
 
 #[test]
+fn window_info_reports_no_glass_without_compositor_blur() {
+    // The mock runtime has no Wayland surface, so blur is never requested and
+    // the frontend must keep the sidebar opaque.
+    let (_app, w) = app("window-info");
+    assert_eq!(
+        invoke(&w, "get_window_info", json!({})).unwrap(),
+        json!({"glass": false})
+    );
+}
+
+#[test]
 fn settings_persist_across_restart_and_report_path() {
     let dir = temp_dir("persist");
     {

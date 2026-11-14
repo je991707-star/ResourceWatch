@@ -17,6 +17,8 @@
   background: var(--sidebar);
   color: var(--sidebar-text);
 }
+/* KWin blurs the desktop behind the window; only the sidebar lets it through. */
+[data-glass="on"] .app-sidebar { background: var(--sidebar-glass); border-right: 1px solid var(--card-border); }
 
 .app-brand {
   display: flex;
@@ -26,6 +28,7 @@
   font-size: 16px;
   font-weight: 600;
 }
+.sidebar-top { display: flex; justify-content: flex-end; margin: -12px 0 4px; }
 .app-brand-icon {
   display: grid;
   place-items: center;
@@ -60,7 +63,7 @@
 
 .app-sidebar-bottom { display: grid; gap: 10px; margin-top: auto; }
 .app-sidebar-row { display: flex; align-items: center; gap: 4px; }
-.theme-toggle {
+.theme-toggle, .sidebar-toggle {
   display: grid;
   place-items: center;
   flex: none;
@@ -72,11 +75,11 @@
   color: inherit;
   cursor: pointer;
 }
-.theme-toggle:hover { background: var(--nav-hover); }
+.theme-toggle:hover, .sidebar-toggle:hover { background: var(--nav-hover); }
 .app-sidebar-version { padding: 0 10px; opacity: .6; font-size: 10px; }
 
 /* ---------------------------------------------------------------- main */
-.app-main { min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.app-main { min-width: 0; overflow-x: hidden; overflow-y: auto; background: var(--bg); }
 
 .app-header {
   display: flex;
@@ -112,13 +115,17 @@
   .app-shell { grid-template-columns: 170px minmax(0, 1fr); }
   .app-header, .app-page { padding-left: 18px; padding-right: 18px; }
 }
+/* Icon-only sidebar: user collapsed it, or app.js sets it below 760 px. */
+.app-shell.is-collapsed { grid-template-columns: 58px minmax(0, 1fr); }
+.is-collapsed .app-sidebar { padding: 18px 8px 12px; }
+.is-collapsed .app-brand { justify-content: center; padding: 4px 0 20px; }
+.is-collapsed .sidebar-top { justify-content: center; }
+.is-collapsed .app-brand > span:last-child, .is-collapsed .app-nav-item span, .is-collapsed .app-sidebar-version { display: none; }
+.is-collapsed .app-nav-item { justify-content: center; padding: 8px 0; }
+.is-collapsed .app-sidebar-row { flex-direction: column; }
+.is-collapsed .sidebar-toggle svg { transform: scaleX(-1); }
 @media (max-width: 760px) {
-  .app-shell { grid-template-columns: 58px minmax(0, 1fr); }
-  .app-sidebar { padding: 18px 8px 12px; }
-  .app-brand { justify-content: center; padding: 4px 0 20px; }
-  .app-brand > span:last-child, .app-nav-item span, .app-sidebar-version { display: none; }
-  .app-nav-item { justify-content: center; padding: 8px 0; }
-  .app-sidebar-row { flex-direction: column; }
+  .sidebar-toggle { display: none; }
   .host-block--gpu { display: none; }
 }
 @media (max-width: 420px) {

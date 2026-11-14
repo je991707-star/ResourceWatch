@@ -1,9 +1,12 @@
 /* ResourceWatch design tokens and dashboard cards — UI only, no system access.
- * Theme: <html data-theme="dark|light"> (set by app.js); dark is the default. */
+ * Theme: <html data-theme="dark|light"> (set by app.js); dark is the default.
+ * The Tauri window is transparent: html/body stay transparent, the display area
+ * (.app-main) is opaque and the sidebar is translucent only with data-glass="on". */
 :root {
   color-scheme: dark;
   --bg: #26272b;
   --sidebar: #3a2a36;
+  --sidebar-glass: rgba(52, 34, 46, .68);
   --sidebar-text: #e6dde3;
   --nav-hover: rgba(255, 255, 255, .07);
   --nav-active: rgba(255, 255, 255, .13);
@@ -32,6 +35,7 @@
   color-scheme: light;
   --bg: #ecedf0;
   --sidebar: #e4d7df;
+  --sidebar-glass: rgba(246, 236, 242, .72);
   --sidebar-text: #3b2f37;
   --nav-hover: rgba(0, 0, 0, .05);
   --nav-active: rgba(0, 0, 0, .1);
@@ -61,7 +65,7 @@ html, body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums;

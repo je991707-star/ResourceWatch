@@ -1,7 +1,7 @@
 /* ResourceWatch Tauri frontend — display only.
  *
  * All values come from the Rust backend through Tauri IPC:
- *   commands: get_snapshot, get_settings, update_settings, reset_settings, refresh_devices
+ *   commands: get_snapshot, get_settings, get_settings_info, get_window_info, update_settings, reset_settings, refresh_devices
  *   events:   snapshot, settings-changed
  * This file never reads hardware, files, or the network.
  *
@@ -38,6 +38,48 @@
     applyTheme(next);
     try { localStorage.setItem(THEME_KEY, next); } catch { /* storage blocked */ }
   });
+
+  // Sidebar glass: needs the compositor blur (get_window_info) and the user's
+  // preference; otherwise the sidebar stays opaque.
+  const GLASS_KEY = "resourcewatch-glass";
+  let glassAvailable = false;
+  let glassWanted = true;
+  try { glassWanted = localStorage.getItem(GLASS_KEY) !== "off"; } catch { /* storage blocked */ }
+  function applyGlass() {
+    document.documentElement.dataset.glass = glassAvailable && glassWanted ? "on" : "off";
+    const box = $("sidebarGlass");
+    box.checked = glassWanted;
+    box.disabled = !glassAvailable;
+    $("sidebarGlassHint").textContent = glassAvailable
+      ? "側欄半透明並模糊桌面背景"
+      : "目前桌面環境不支援視窗模糊（需要 KDE Plasma 的模糊特效），側欄維持不透明";
+  }
+  $("sidebarGlass").addEventListener("change", (event) => {
+    glassWanted = event.target.checked;
+    try { localStorage.setItem(GLASS_KEY, glassWanted ? "on" : "off"); } catch { /* storage blocked */ }
+    applyGlass();
+  });
+  applyGlass();
+
+  // Sidebar collapse: user preference, forced icon-only below 760 px.
+  const COLLAPSE_KEY = "resourcewatch-sidebar-collapsed";
+  const narrow = matchMedia("(max-width: 760px)");
+  let collapsedWanted = false;
+  try { collapsedWanted = localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { /* storage blocked */ }
+  function applyCollapse() {
+    const collapsed = narrow.matches || collapsedWanted;
+    $("appShell").classList.toggle("is-collapsed", collapsed);
+    const toggle = $("sidebarToggle");
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.title = toggle.ariaLabel = collapsed ? "展開側欄" : "收合側欄";
+  }
+  $("sidebarToggle").addEventListener("click", () => {
+    collapsedWanted = !collapsedWanted;
+    try { localStorage.setItem(COLLAPSE_KEY, collapsedWanted ? "1" : "0"); } catch { /* storage blocked */ }
+    applyCollapse();
+  });
+  narrow.addEventListener("change", applyCollapse);
+  applyCollapse();
 
   // ---------------------------------------------------------------- pages
   // live: page shows monitoring data, so snapshots are rendered while it is visible.
@@ -428,6 +470,8 @@
       await listen("settings-changed", (event) => displaySettings(event.payload));
       displaySettings(await invoke("get_settings"));
       showSettingsInfo();
+      invoke("get_window_info").then((info) => { glassAvailable = Boolean(info?.glass); applyGlass(); })
+        .catch((e) => console.warn("ResourceWatch: window info unavailable", e));
       receiveSnapshot(await invoke("get_snapshot"));
     } catch (e) {
       console.error("ResourceWatch: backend connection failed", e);

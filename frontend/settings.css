@@ -62,6 +62,11 @@
 .app-settings-page input:invalid,
 .app-settings-page input[aria-invalid="true"] { border-color: var(--danger); }
 
+.toggle-field { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.toggle-field > span { display: grid; gap: 3px; }
+.toggle-field strong { font-size: 14px; font-weight: 500; }
+.app-settings-page .toggle-field input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; padding: 0; accent-color: var(--gpu); }
+.toggle-field input:disabled + span { opacity: .6; }
 .input-unit { display: flex; align-items: center; gap: 8px; }
 .input-unit > span { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 

@@ -11,6 +11,8 @@
 //!   `get_scheduler_stats`
 //! - Events:   `snapshot` (Snapshot), `settings-changed` (Settings)
 
+#[cfg(target_os = "linux")]
+mod blur;
 mod collectors;
 mod format;
 mod history;
@@ -31,6 +33,7 @@ use settings_store::SettingsStore;
 use snapshot::Snapshot;
 use source::{RefreshKind, Source};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State};
@@ -70,6 +73,8 @@ pub struct AppState {
     /// without touching hardware.
     latest: Mutex<Option<Snapshot>>,
     scheduler: OnceLock<Scheduler>,
+    /// KWin blur was requested for the main window (`blur.rs`).
+    glass: AtomicBool,
 }
 
 impl AppState {
@@ -93,6 +98,7 @@ impl AppState {
             }),
             latest: Mutex::new(None),
             scheduler: OnceLock::new(),
+            glass: AtomicBool::new(false),
         }
     }
 
@@ -185,6 +191,20 @@ fn get_settings_info(state: State<'_, AppState>) -> SettingsInfo {
     SettingsInfo {
         path: cell.store.as_ref().map(|s| s.path().display().to_string()),
         load_warning: cell.load_warning.clone(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct WindowInfo {
+    /// Compositor blurs behind the transparent window; otherwise the
+    /// frontend paints an opaque sidebar.
+    glass: bool,
+}
+
+#[tauri::command]
+fn get_window_info(state: State<'_, AppState>) -> WindowInfo {
+    WindowInfo {
+        glass: state.glass.load(Ordering::Relaxed),
     }
 }
 
@@ -313,6 +333,7 @@ pub fn configure_with<R: Runtime>(
                 ),
             };
             app.manage(AppState::new(store, warning));
+            create_main_window(app)?;
             start_scheduler(app.handle())?;
             Ok(())
         })
@@ -320,11 +341,41 @@ pub fn configure_with<R: Runtime>(
             get_snapshot,
             get_settings,
             get_settings_info,
+            get_window_info,
             update_settings,
             reset_settings,
             refresh_devices,
             get_scheduler_stats
         ])
+}
+
+/// The main window has `"create": false` in `tauri.conf.json` and is built
+/// here from that config, so transparency can depend on the display backend:
+/// WebKitGTK on X11 leaves parts of the page unpainted in a transparent window,
+/// so only native Wayland gets a transparent window and the sidebar glass.
+fn create_main_window<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
+    // The test runtime's config has no windows.
+    let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main") else {
+        return Ok(());
+    };
+    #[cfg(target_os = "linux")]
+    let wayland = gtk::gdk::Display::default().is_some_and(|d| {
+        use gtk::glib::object::ObjectExt;
+        d.type_().name() == "GdkWaylandDisplay"
+    });
+    #[cfg(not(target_os = "linux"))]
+    let wayland = false;
+    let window = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?
+        .transparent(wayland)
+        .build()?;
+    #[cfg(target_os = "linux")]
+    if wayland {
+        match blur::enable(&window) {
+            Ok(()) => app.state::<AppState>().glass.store(true, Ordering::Relaxed),
+            Err(e) => eprintln!("ResourceWatch: sidebar blur unavailable: {e}"),
+        }
+    }
+    Ok(())
 }
 
 pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {

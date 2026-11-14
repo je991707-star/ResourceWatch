@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "ResourceWatch",
         "width": 1220,
         "height": 790,
