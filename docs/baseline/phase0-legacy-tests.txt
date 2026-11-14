@@ -1,0 +1,57 @@
+# Phase 0 baseline test run
+# date: 2026-11-14T18:20:19+08:00
+# branch: refactor/rust-tauri  HEAD: 314620e7dc24a5436c0d7b31ec8c5b74e1daebce (v0.0.5-2-g314620e)
+# python: Python 3.15.0  node: v26.13.1
+
+## bash tests/static_check.sh
+PASS  metadata.json 可解析
+PASS  package ID 穩定
+PASS  KPackageStructure
+PASS  無 Qt5 式版本 import
+PASS  QtWebEngine 主視圖已整合
+PASS  HTML 資源已隨套件附帶
+PASS  HTML 只有一份正式來源
+PASS  安裝腳本不複製舊 web/
+PASS  CPU/GPU/RAM 圖表即時使用率 ID
+PASS  JS 更新 CPU/GPU/RAM 圖表標題
+PASS  QtWebChannel 感測器快照
+PASS  無網路請求
+PASS  main.xml 可解析
+PASS  設定頁檔案齊全
+PASS  main.qml 讀取的設定都在 main.xml
+PASS  無寫死裝置名稱 sensorId
+PASS  NVIDIA 查詢僅在隔離 GPU 後端
+PASS  GPU 後端隨套件安裝
+PASS  NVENC/NVDEC 快照與歷史資料
+PASS  CPU 名稱與 RAM 速度資訊探針
+PASS  executable 僅允許 SensorManager 使用
+PASS  install.sh 不使用 sudo 指令
+PASS  單一刷新間隔已設定
+PASS  設定頁手動刷新按鈕
+PASS  統一排程器：一個間隔控制全部群組、重新排程、睡眠恢復不補採樣
+PASS  FormatUtils 單元測試
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+OK
+NOT TESTED  qmllint 未安裝
+exit=0
+
+## python3 -m unittest tests/application_layout_test.py
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+exit=0
