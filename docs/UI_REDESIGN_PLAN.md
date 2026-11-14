@@ -72,6 +72,18 @@
 
 不做：公網 IP（需連外）、藍牙（需 BlueZ D-Bus）、螢幕解析度（需合成器 API）。
 
+實作與表格的差異：
+- 3.3 原本的 `parse_stat_line` 併入 `parse_stat`（讀整個 `/proc/stat`，`cpuN` 依標籤對應）。
+- 3.4 記憶體卡片的歷史圖改為壓力圖；快照欄位為 `ramBreakdown {app, cache, free}`（皆為 Metric）與 `memPressure`。
+- 3.6 改讀 `/proc/self/mountinfo`（需要 device number 與 btrfs 的掛載來源）；欄位為獨立的 `diskUsage: {[name]: Metric}`，摘要卡片加上硬碟切換（‹ ›）。
+- 3.7 感測器頁目前是平面清單（`chip · label`），依晶片分組留給 Phase 4。
+- 3.8 與 3.9 共用卡片上的設定選單機制，合併為一個 commit。
+
+未實機驗證（NOT TESTED）：
+- 電池（本機為桌機）、風扇（本機 hwmon 沒有 fan 輸入）：只以假 `/sys` 單元測試與 mock 畫面確認。
+- 跨多顆硬碟的 LVM 容量（只算在第一顆）。
+- °C／°F 切換按鈕、卡片上的介面／GPU 選單：沒有實際點擊；畫面與選項正確，寫入走既有並已測試的 `update_settings`。
+
 ---
 
 ## Phase 4：詳細頁充實
