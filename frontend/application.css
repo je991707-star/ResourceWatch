@@ -1,5 +1,5 @@
 /* Tauri application shell: sidebar, header, pages and responsive overview.
- * Copied from the legacy package/contents/web/application.css. */
+ * Derived from the legacy v0.0.5 package/contents/web/application.css (removed from this branch). */
 .app-shell[hidden], .app-page[hidden] { display: none !important; }
 
 .application-mode {

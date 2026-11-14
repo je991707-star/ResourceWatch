@@ -1,5 +1,5 @@
 /* ResourceWatch monitor cards — UI only, no system access.
- * Copied from the legacy package/contents/web/styles.css. */
+ * Derived from the legacy v0.0.5 package/contents/web/styles.css (removed from this branch). */
 :root {
   color-scheme: dark;
   --surface: #24272c;

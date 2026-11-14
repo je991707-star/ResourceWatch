@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 分支 | `refactor/rust-tauri` |
-| 狀態 | Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2），由統一排程器驅動、設定可持久化（Phase 3），並完成功能對等與效能驗證（Phase 4，實機睡眠恢復與執行中改縮放未驗證）；**舊版 Plasma QML + Python + HTML 仍保留，刪除待確認** |
+| 狀態 | Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2），由統一排程器驅動、設定可持久化（Phase 3），並完成功能對等與效能驗證（Phase 4，實機睡眠恢復與執行中改縮放未驗證）；舊版 Plasma QML + Python + HTML 已從此分支移除（可由 `main`／`v0.0.5`／`legacy/plasma-qml` 取回） |
 | 基礎 | ResourceWatch v0.0.5 系列的監控功能與 HTML 介面 |
 | 專案路徑 | `/var/home/h97m/Projects/ResourceWatch` |
 | 相關文件 | 執行規則：`CLAUDE.md`；檔案職責、JSON 契約、新舊來源對照：`Readme_Architecture.md` |
@@ -291,7 +291,7 @@ utime+stime（解析度 10 ms），各只量一次、未重複取平均；RSS �
 - 設定目錄無法解析時只保存在記憶體（設定頁會顯示），此情況未在實機發生過
 - 設定檔格式損壞時會改名保留後使用預設值；若改名本身失敗（目錄不可寫），之後的儲存也會失敗，不會覆蓋原檔
 
-### Phase 4 — 功能對等與效能驗證（刪除舊版路徑待確認）
+### Phase 4 — 功能對等與效能驗證 ✅（實機睡眠恢復等項目仍 NOT TESTED）
 
 - [x] 核對舊版每項監控數值與新後端輸出（同時執行舊版 `gpu_backend.py`、`hardware_info.py`、KSystemStats、`lsblk`、`ip` 與新版 `examples/sample`）
 
@@ -335,7 +335,13 @@ utime+stime（解析度 10 ms），各只量一次、未重複取平均；RSS �
   - `src-tauri/src/robustness.rs`：隨機垃圾輸入（3000 組）、極大計數器、執行中裝置消失與恢復、權限不足、SMBIOS 無權限 → 皆無 panic，數值為缺失
   - 修正：`/proc/stat` 加總改用檢查過的整數運算（異常極大值原本會溢位）
   - `NOT TESTED`：實體熱插拔（拔除 USB 網卡／硬碟）；NVML 執行期回傳錯誤只能以「載入失敗」路徑驗證（容器內執行 IPC 測試即走此路徑）
-- [ ] 成功後才刪除不再使用的 QML／Python 桌面應用路徑 → **待使用者確認**（另有 Phase 3 實機睡眠恢復 `NOT TESTED`）
+- [x] 刪除不再使用的 QML／Python 桌面應用路徑 → 經使用者確認刪除整個舊版：`package/`（QML、Python、舊 HTML）、
+  只測試舊版的 `tests/`（7 個檔案）、`install.sh`（Plasmoid 安裝）、`packaging/io.github.local.resourcewatch.desktop`（`plasmawindowed` 啟動器）；
+  主 `README.md` 改寫為 Tauri 版說明。舊版可由 `main`、`v0.0.5` Tag、`legacy/plasma-qml` 分支取回；`docs/baseline/` 保留 Phase 0 測試紀錄
+  - 使用者電腦上已安裝的舊版 Plasmoid（`~/.local/share/plasma/plasmoids/io.github.local.resourcewatch`）與啟動器
+    （`~/.local/share/applications/io.github.local.resourcewatch.desktop`）不屬於 repo，未變動
+  - 刪除時 Phase 3 的實機睡眠恢復仍為 `NOT TESTED`（使用者知情並選擇刪除）
+  - Plasma 桌面小工具在 Phase 5 完成前不可用
 
 **測試證據（2026-11-14）**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo check` 通過；
 `cargo test` 單元測試 70/70、IPC 9/9；`node --check frontend/app.js` 通過；舊版測試仍通過。
