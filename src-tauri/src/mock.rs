@@ -133,6 +133,8 @@ impl MockSource {
             hostname: "mock-host".to_string(),
             machine_model: "Mock Machine".to_string(),
             cpu_name: "Mock CPU（模擬資料）".to_string(),
+            cpu_cores: Some(4),
+            cpu_threads: Some(8),
             cpu: cpu_m,
             cpu_freq_text: format!("{:.2} GHz", 3.0 + 0.4 * (t * 0.23).sin()),
             cpu_temp_text: format!("{:.1} °C", 46.0 + 3.0 * (t * 0.11).sin()),

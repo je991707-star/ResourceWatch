@@ -141,6 +141,34 @@ pub fn cpu_model(roots: &Roots) -> Option<String> {
     })
 }
 
+/// (physical cores, logical CPUs) from `/proc/cpuinfo`: logical = number of
+/// `processor` entries, physical = distinct (`physical id`, `core id`) pairs.
+/// Cores are `None` when the kernel gives no core ids (many ARM systems).
+pub fn parse_topology(text: &str) -> (Option<u32>, Option<u32>) {
+    let mut threads = 0u32;
+    let mut cores = std::collections::BTreeSet::new();
+    let mut package = String::new();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        match key.trim() {
+            "processor" => threads += 1,
+            "physical id" => package = value.trim().to_string(),
+            "core id" => {
+                cores.insert((package.clone(), value.trim().to_string()));
+            }
+            _ => {}
+        }
+    }
+    let n = |v: usize| u32::try_from(v).ok().filter(|v| *v > 0);
+    (n(cores.len()), n(threads as usize))
+}
+
+pub fn cpu_topology(roots: &Roots) -> (Option<u32>, Option<u32>) {
+    std::fs::read_to_string(roots.proc("cpuinfo")).map_or((None, None), |t| parse_topology(&t))
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct CpuReading {
     pub usage: Option<f64>,
@@ -203,6 +231,24 @@ impl CpuCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn topology_counts_cores_and_threads() {
+        let block = |p: u32, pkg: u32, core: u32| {
+            format!("processor\t: {p}\nphysical id\t: {pkg}\ncore id\t\t: {core}\n\n")
+        };
+        // 4 cores / 8 threads (Hyper-Threading): core ids repeat.
+        let ht: String = (0..8).map(|p| block(p, 0, p % 4)).collect();
+        assert_eq!(parse_topology(&ht), (Some(4), Some(8)));
+        // Two sockets reuse core ids: (package, core) pairs stay distinct.
+        let dual: String = (0..4).map(|p| block(p, p / 2, p % 2)).collect();
+        assert_eq!(parse_topology(&dual), (Some(4), Some(4)));
+        assert_eq!(
+            parse_topology("processor : 0\nprocessor : 1\n"),
+            (None, Some(2))
+        );
+        assert_eq!(parse_topology(""), (None, None));
+    }
     use crate::collectors::testutil::{roots, temp_root, write};
 
     #[test]

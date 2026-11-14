@@ -71,6 +71,8 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "hostname",
         "machineModel",
         "cpuName",
+        "cpuCores",
+        "cpuThreads",
         "cpu",
         "cpuFreqText",
         "cpuTempText",

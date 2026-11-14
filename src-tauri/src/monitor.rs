@@ -46,6 +46,7 @@ pub struct Monitor {
     gpu: GpuCollector,
     net_interface: String,
     cpu_model: Option<String>,
+    cpu_topology: (Option<u32>, Option<u32>),
     hostname: Option<String>,
     machine_model: Option<String>,
     ram_speed: Option<String>,
@@ -83,6 +84,7 @@ impl Monitor {
             gpu: GpuCollector::new(&roots, settings.gpu_index),
             net_interface: settings.net_interface.clone(),
             cpu_model: cpu::cpu_model(&roots),
+            cpu_topology: cpu::cpu_topology(&roots),
             hostname: system::hostname(&roots),
             machine_model: system::machine_model(&roots),
             ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
@@ -120,6 +122,7 @@ impl Monitor {
             }
             RefreshKind::Hardware => {
                 self.cpu_model = cpu::cpu_model(&self.roots);
+                self.cpu_topology = cpu::cpu_topology(&self.roots);
                 self.hostname = system::hostname(&self.roots);
                 self.machine_model = system::machine_model(&self.roots);
                 self.ram_speed =
@@ -203,6 +206,8 @@ impl Monitor {
                 .cpu_model
                 .clone()
                 .unwrap_or_else(|| MISSING.to_string()),
+            cpu_cores: self.cpu_topology.0,
+            cpu_threads: self.cpu_topology.1,
             cpu: g(Metric::percent(r.cpu.usage)),
             cpu_freq_text: freq_text(r.cpu.freq_mhz),
             cpu_temp_text: temp_text(r.cpu.temp_c, 1),

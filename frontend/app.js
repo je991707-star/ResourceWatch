@@ -271,6 +271,8 @@
     setText("cpuName", s.cpuName);
     setText("cpuUsage", metricText(s.cpu));
     setText("cpuSpeed", s.cpuFreqText);
+    setText("cpuCores", s.cpuCores);
+    setText("cpuThreads", s.cpuThreads);
     setText("cpuTemp", s.cpuTempText);
     setRing("cpu", s.cpu);
     if (Number.isFinite(s.uptimeSeconds)) {

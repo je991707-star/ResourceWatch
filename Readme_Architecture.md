@@ -165,6 +165,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `version` | string | 應用版本 |
 | `hostname`, `machineModel` | string | 主機名稱、機型（DMI）；啟動與硬體重新偵測時讀取，缺失 `"--"` |
 | `cpuName` | string | 缺失為 `"--"` |
+| `cpuCores`, `cpuThreads` | number \| null | 實體核心數、邏輯 CPU 數；啟動與硬體重新偵測時讀取 |
 | `cpu` | Metric | 見下方 Metric 子物件 |
 | `cpuFreqText`, `cpuTempText`, `uptimeText` | string | 已格式化文字，缺失 `"--"` |
 | `uptimeSeconds` | number \| null | 供 HTML 本地每秒內插 |
@@ -231,6 +232,7 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 - 溫度：啟動時掃描 hwmon。`coretemp` 取所有 `Core N` 平均（與 KSystemStats `averageTemperature` 相同，不含 Package），沒有則用 `Package id`；
   `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。
 - 型號：`/proc/cpuinfo` 的 `model name`（或 `Hardware`），啟動與手動重新偵測時讀取。
+- 核心／執行緒（`parse_topology`）：同一份 cpuinfo，邏輯 CPU 數＝`processor` 項目數，實體核心數＝不重複的（`physical id`, `core id`）組合（多插槽時 core id 會重複）；沒有 core id（許多 ARM）時核心數為 `None`。
 
 ### src/collectors/memory.rs
 

@@ -71,6 +71,7 @@ fn parsers_never_panic_on_garbage() {
         let tok = r.tokens();
         for text in [&raw, &tok] {
             let _ = cpu::parse_stat_line(text);
+            let _ = cpu::parse_topology(text);
             let _ = memory::parse_meminfo(text);
             let _ = disk::parse_diskstats(text);
             let _ = disk::udev_unescape(text);

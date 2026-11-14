@@ -135,6 +135,9 @@ pub struct Snapshot {
     pub hostname: String,
     pub machine_model: String,
     pub cpu_name: String,
+    /// Physical cores / logical CPUs; `null` when unknown.
+    pub cpu_cores: Option<u32>,
+    pub cpu_threads: Option<u32>,
     pub cpu: Metric,
     pub cpu_freq_text: String,
     pub cpu_temp_text: String,
