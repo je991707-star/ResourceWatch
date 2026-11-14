@@ -16,6 +16,8 @@ mod format;
 mod history;
 mod mock;
 mod monitor;
+#[cfg(test)]
+mod robustness;
 mod scheduler;
 mod settings;
 mod settings_store;
@@ -345,6 +347,37 @@ pub fn sample_live(count: usize, interval: Duration) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// WebKitGTK's DMA-BUF renderer fails on X11/XWayland with the NVIDIA
+/// proprietary driver ("Failed to create GBM buffer", blank window). Native
+/// Wayland works. Returns whether the workaround variable should be set:
+/// only when the user has not set it, the GTK backend is X11, and the NVIDIA
+/// kernel module is loaded.
+fn needs_dmabuf_workaround(
+    var: impl Fn(&str) -> Option<String>,
+    nvidia_module_loaded: bool,
+) -> bool {
+    if var("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() || !nvidia_module_loaded {
+        return false;
+    }
+    let present = |k: &str| var(k).is_some_and(|v| !v.is_empty());
+    let x11 = match var("GDK_BACKEND").as_deref() {
+        Some(b) if b.starts_with("x11") => true,
+        Some(b) if b.starts_with("wayland") => false,
+        _ => !present("WAYLAND_DISPLAY") && present("DISPLAY"),
+    };
+    x11
+}
+
+/// Must be called at the very start of `main`, before any thread exists
+/// (`std::env::set_var` is not thread-safe).
+pub fn prepare_environment() {
+    let nvidia = std::path::Path::new("/sys/module/nvidia").exists();
+    if needs_dmabuf_workaround(|k| std::env::var(k).ok(), nvidia) {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        eprintln!("ResourceWatch: X11 + NVIDIA detected, set WEBKIT_DISABLE_DMABUF_RENDERER=1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     configure(tauri::Builder::default())
@@ -357,4 +390,46 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod env_tests {
+    use super::needs_dmabuf_workaround;
+    use std::collections::HashMap;
+
+    fn check(vars: &[(&str, &str)], nvidia: bool) -> bool {
+        let m: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        needs_dmabuf_workaround(|k| m.get(k).cloned(), nvidia)
+    }
+
+    #[test]
+    fn dmabuf_workaround_decision() {
+        assert!(check(
+            &[("GDK_BACKEND", "x11"), ("WAYLAND_DISPLAY", "wayland-1")],
+            true
+        ));
+        assert!(check(&[("DISPLAY", ":0")], true), "plain X11 session");
+        assert!(
+            !check(&[("WAYLAND_DISPLAY", "wayland-1"), ("DISPLAY", ":0")], true),
+            "native Wayland"
+        );
+        assert!(!check(
+            &[("GDK_BACKEND", "wayland"), ("DISPLAY", ":0")],
+            true
+        ));
+        assert!(!check(&[("GDK_BACKEND", "x11")], false), "no NVIDIA driver");
+        assert!(
+            !check(
+                &[
+                    ("GDK_BACKEND", "x11"),
+                    ("WEBKIT_DISABLE_DMABUF_RENDERER", "0")
+                ],
+                true
+            ),
+            "user choice wins"
+        );
+    }
 }

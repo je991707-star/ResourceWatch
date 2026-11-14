@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 分支 | `refactor/rust-tauri` |
-| 狀態 | 架構遷移規劃／逐步實作。Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2），並由正式統一排程器驅動、設定可持久化（Phase 3，實機睡眠恢復未驗證）；功能對等驗證尚未完成，**舊版 Plasma QML + Python + HTML 仍保留** |
+| 狀態 | Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2），由統一排程器驅動、設定可持久化（Phase 3），並完成功能對等與效能驗證（Phase 4，實機睡眠恢復與執行中改縮放未驗證）；**舊版 Plasma QML + Python + HTML 仍保留，刪除待確認** |
 | 基礎 | ResourceWatch v0.0.5 系列的監控功能與 HTML 介面 |
 | 專案路徑 | `/var/home/h97m/Projects/ResourceWatch` |
 | 相關文件 | 執行規則：`CLAUDE.md`；檔案職責、JSON 契約、新舊來源對照：`Readme_Architecture.md` |
@@ -291,13 +291,54 @@ utime+stime（解析度 10 ms），各只量一次、未重複取平均；RSS �
 - 設定目錄無法解析時只保存在記憶體（設定頁會顯示），此情況未在實機發生過
 - 設定檔格式損壞時會改名保留後使用預設值；若改名本身失敗（目錄不可寫），之後的儲存也會失敗，不會覆蓋原檔
 
-### Phase 4 — 功能對等與效能驗證
+### Phase 4 — 功能對等與效能驗證（刪除舊版路徑待確認）
 
-- [ ] 核對舊版每項監控數值與新後端輸出
-- [ ] Bazzite KDE Wayland：實際啟動、縮放、設定持久化、關閉流程
-- [ ] 比較閒置與不同更新間隔下的 CPU、RAM、程序數、事件頻率
-- [ ] 外部資料錯誤、裝置離線、權限不足時不崩潰
-- [ ] 成功後才刪除不再使用的 QML／Python 桌面應用路徑
+- [x] 核對舊版每項監控數值與新後端輸出（同時執行舊版 `gpu_backend.py`、`hardware_info.py`、KSystemStats、`lsblk`、`ip` 與新版 `examples/sample`）
+
+| 指標 | 舊版 | 新版 | 結果 |
+|---|---|---|---|
+| CPU 使用率 | KSystemStats 同 6 秒平均 6.96% | 6.99% | 一致（單次比較的差異來自取樣時間點） |
+| CPU 時脈／溫度 | KSystemStats 範圍內 | 範圍內 | 一致 |
+| CPU 型號 | `hardware_info.py`：Xeon E3-1231 v3 @ 3.40GHz | 相同 | 一致 |
+| RAM／Swap 已用 | KSystemStats | 多筆數值逐位元組相同 | 一致 |
+| RAM 速度 | `hardware_info.py`：1600 MT/s | 1600 MT/s | 一致 |
+| GPU 使用率／NVENC／NVDEC | `gpu_backend.py`：10／41／0 | 10／41／0 | 一致 |
+| GPU 溫度 | 60 °C | 60 °C | 一致 |
+| VRAM 已用 | KSystemStats ≈1502 MiB、`nvidia-smi` 1512 MiB | 修正前 ≈1562 MiB → **修正後 1511 MiB** | 已修正（NVML v1 含 59 MiB 保留記憶體，改用 v2） |
+| 硬碟型號 | `lsblk`：`TOSHIBA DT01ABA200V` | 修正前 `TOSHIBA DT01ABA2` → **修正後相同** | 已修正（改讀 udev `ID_MODEL_ENC`） |
+| 硬碟清單／容量／順序 | sda、nvme0n1 | 相同 | 一致 |
+| IPv4 | `ip`：192.168.50.212 | 相同 | 一致 |
+| 網路、uptime | KSystemStats | 範圍內 | 一致 |
+
+- [x] 驗證 Bazzite KDE Wayland 實際啟動、縮放、設定持久化與關閉流程
+  - 原生 Wayland（螢幕 2560×1440、**分數縮放 1.3**）：正常啟動與更新；以 KWin 腳本要求縮成 300×200，內容區域維持最小 640×480，
+    640×480 下側欄收合、內容可捲動；以預先寫入 750 ms 的設定檔啟動，排程器 `interval_ms=750`（載入成功）；
+    以 KWin `closeWindow()`（等同按 ✕）關閉 → `scheduler stopped`、程序結束、沒有殘留的 WebKit 程序
+  - 設定頁輸入與存檔：原生 Wayland 下無法模擬鍵盤（ydotool 未啟用），已在 XWayland 下以實際鍵盤操作驗證（Phase 3）
+  - XWayland＋NVIDIA 空白畫面：已修正，程式自動設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`（截圖確認，原生 Wayland 不設定）
+  - `NOT TESTED`：執行中改變螢幕縮放比例（會改動使用者螢幕設定）
+- [x] 比較閒置與不同更新間隔下的 CPU、RAM、程序數、事件頻率
+  - 新版 100／500／10000 ms：見 Phase 3 效能表
+  - 新舊版比較（500 ms，舊版預設值；視窗顯示中；各量 60 秒；以程序樹計算，含已結束子程序的 CPU 時間）：
+
+| | 舊版（plasmawindowed＋QtWebEngine＋Python） | 新版（Tauri） |
+|---|---|---|
+| 程序樹 CPU（單核 %） | 17.52% | 3.38% |
+| 60 秒內新建程序（全系統 fork 數，基準 304–307） | 668（約 +361） | 314（約 +7，誤差內） |
+| 程序樹 RSS | 734 MiB | 512 MiB |
+| 出現過的程序 | plasmawindowed、QtWebEngineProcess、python3 | resourcewatch、WebKitWebProcess、WebKitNetworkProcess |
+| 快照推送頻率 | 2 次／秒 | 2 次／秒 |
+
+  - 限制：各只量一次；舊版的 KSystemStats 常駐服務（`ksystemstats`）不在其程序樹內，舊版成本實際上被低估；
+    只比較了 500 ms（改動舊版間隔需修改使用者的 Plasma 設定）；兩者的網頁引擎不同（QtWebEngine 與 WebKitGTK）
+- [x] 確認外部資料錯誤、裝置離線及權限不足時不會導致程式崩潰
+  - `src-tauri/src/robustness.rs`：隨機垃圾輸入（3000 組）、極大計數器、執行中裝置消失與恢復、權限不足、SMBIOS 無權限 → 皆無 panic，數值為缺失
+  - 修正：`/proc/stat` 加總改用檢查過的整數運算（異常極大值原本會溢位）
+  - `NOT TESTED`：實體熱插拔（拔除 USB 網卡／硬碟）；NVML 執行期回傳錯誤只能以「載入失敗」路徑驗證（容器內執行 IPC 測試即走此路徑）
+- [ ] 成功後才刪除不再使用的 QML／Python 桌面應用路徑 → **待使用者確認**（另有 Phase 3 實機睡眠恢復 `NOT TESTED`）
+
+**測試證據（2026-11-14）**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo check` 通過；
+`cargo test` 單元測試 70/70、IPC 9/9；`node --check frontend/app.js` 通過；舊版測試仍通過。
 
 ### Phase 5 — Plasma Widget（本分支後續或獨立分支）
 

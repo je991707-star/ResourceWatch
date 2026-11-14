@@ -24,8 +24,9 @@ pub fn parse_stat_line(line: &str) -> Option<CpuTimes> {
         return None;
     }
     let get = |i: usize| v.get(i).copied().unwrap_or(0);
-    let idle = get(3) + get(4);
-    let total = v.iter().sum();
+    // Checked arithmetic: malformed / hostile input must not overflow.
+    let idle = get(3).checked_add(get(4))?;
+    let total = v.iter().try_fold(0u64, |acc, x| acc.checked_add(*x))?;
     Some(CpuTimes { total, idle })
 }
 
@@ -222,6 +223,11 @@ mod tests {
         assert_eq!(usage_between(b, a), None, "counter went backwards");
         assert!(parse_stat_line("cpu0 1 2 3 4").is_none());
         assert!(parse_stat_line("cpu x y z").is_none());
+        let max = u64::MAX;
+        assert!(
+            parse_stat_line(&format!("cpu {max} {max} 0 0")).is_none(),
+            "overflow rejected"
+        );
     }
 
     #[test]

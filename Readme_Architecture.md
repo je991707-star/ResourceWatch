@@ -230,6 +230,9 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 （`None` → `app.path().app_config_dir()`，即 `$XDG_CONFIG_HOME/io.github.local.resourcewatch`，通常為 `~/.config/io.github.local.resourcewatch`；
 測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 啟動唯一的排程器。`configure(builder)` = `configure_with(builder, None)`。
 `run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
+`prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：GTK 後端為 X11／XWayland 且載入 NVIDIA 核心模組
+（`/sys/module/nvidia`）、使用者也沒有自行設定時，設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`，避免 WebKitGTK 的 DMA-BUF 繪製失敗造成空白視窗；
+原生 Wayland 不設定。判斷邏輯 `needs_dmabuf_workaround()` 為純函式並有單元測試。
 `sample_live(count, interval)` 不開視窗、直接用 `Monitor` 取樣並回傳 JSON，供 `examples/sample.rs` 與系統工具交叉比對。
 
 | Command | 輸入 | 輸出 | 錯誤 |
@@ -322,12 +325,13 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 ### src/collectors/mod.rs
 
-collector 共用工具。`Roots {proc_dir, sys_dir}`（預設 `/proc`、`/sys`，測試時指向假目錄樹）、`read_trimmed`／`read_u64`／`read_i64`／`read_first_line`、
+collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`、`/sys`、`/run`，測試時指向假目錄樹）、`read_trimmed`／`read_u64`／`read_i64`／`read_first_line`、
 `list_dir`（自然排序，`card10` 在 `card9` 後）、`counter_rate`（計數器倒退或時間差 ≤ 0 回傳 `None`）。collector 只讀資料，不決定何時讀、不格式化文字。
 
 ### src/collectors/cpu.rs
 
 - 使用率：只讀 `/proc/stat` 第一行；total = user+nice+system+idle+iowait+irq+softirq+steal，idle = idle+iowait，取前後兩次差值；第一次、計數器倒退時為 `None`。
+  加總使用檢查過的整數運算，異常的極大值會被拒絕（`None`）而不會溢位。同一時段實測與 KSystemStats 平均值一致（6.99% 對 6.96%）。
 - 時脈：啟動時找出各 `cpuN/cpufreq/scaling_cur_freq`，每次取平均（kHz → MHz）。
 - 溫度：啟動時掃描 hwmon。`coretemp` 取所有 `Core N` 平均（與 KSystemStats `averageTemperature` 相同，不含 Package），沒有則用 `Package id`；
   `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。
@@ -349,7 +353,9 @@ collector 共用工具。`Roots {proc_dir, sys_dir}`（預設 `/proc`、`/sys`�
 
 - 清單（啟動與手動刷新）：掃描 `/sys/block`，依 `dev` 主次號排序（與 `lsblk` 相同，硬碟編號與舊版一致）。
   排除 `/virtual/`（loop、zram、dm、md）、USB、SCSI type ≠ 0（光碟）、容量 0（空讀卡機）、`vd*`／`mmcblk*` 等；
-  transport：`nvmeXnY` → `nvme`，路徑含 `/ata` → `sata`，含 `end_device-`/`sas_` → `sas`，其餘 `sd*` → `scsi`。型號取 `device/model`。
+  transport：`nvmeXnY` → `nvme`，路徑含 `/ata` → `sata`，含 `end_device-`/`sas_` → `sas`，其餘 `sd*` → `scsi`。
+  型號與 `lsblk` 相同規則：優先讀 udev 資料庫 `/run/udev/data/b<主>:<次>` 的 `ID_MODEL_ENC`（解碼 `\xHH`），沒有時才用 sysfs `device/model`
+  （SCSI 的 sysfs 型號只有 16 字元，例如 `TOSHIBA DT01ABA2`，udev 為完整的 `TOSHIBA DT01ABA200V`）。只讀檔案，不啟動 `udevadm`。
 - 讀寫速率（每次取樣）：直接讀 `/proc/diskstats` 第 6／10 欄（512-byte sectors），先算 sectors/s 再乘 512（避免溢位）；
   第一次、裝置不在 diskstats、計數器倒退時為 `None`。`reset()` 用於重新掃描後。
 
@@ -373,7 +379,9 @@ collector 共用工具。`Roots {proc_dir, sys_dir}`（預設 `/proc`、`/sys`�
 ### src/collectors/gpu/nvml.rs
 
 以 `libloading` 在執行期載入 `libnvidia-ml.so.1`（或 `.so`），只綁定 9 個函式（init、shutdown、依 PCI 取 handle、名稱、使用率、
-encoder／decoder 使用率、溫度、memory info v1）。`nvmlInit_v2` 成功後才建立物件，`Drop` 時 `nvmlShutdown`。整個程式生命週期只初始化一次。
+encoder／decoder 使用率、溫度、memory info v1），另外選擇性載入 `nvmlDeviceGetMemoryInfo_v2`。
+VRAM 優先用 v2：其 `used` 不含驅動保留記憶體，與 `nvidia-smi` 及舊版一致（v1 的 `used` 含保留部分，本機約多 59 MiB）；
+v2 不存在（R510 以前的驅動）或失敗時退回 v1。`nvmlInit_v2` 成功後才建立物件，`Drop` 時 `nvmlShutdown`。整個程式生命週期只初始化一次。
 回傳碼非成功（含 `NOT_SUPPORTED`，例如無 NVENC 的 GT 1030）或數值不合理時為 `None`。
 
 ### src/mock.rs
@@ -381,6 +389,13 @@ encoder／decoder 使用率、溫度、memory info v1）。`nvmlInit_v2` 成功�
 mock 資料來源（`RESOURCEWATCH_MOCK=1`）：以正弦波產生數值，名稱一律帶 `Mock`，IPv4 使用文件保留位址 `192.0.2.10`，RAM 速度刻意為 `--` 以測試缺失顯示；
 不讀硬體、不啟動程序。`sample()` 推進時間並寫入歷史（共用 `HistoryBuffer`），`peek()` 不推進。
 `refresh(Disks)` 後第一個樣本的硬碟速率為 `null`（模擬舊版計數器差值行為）。
+
+### src/robustness.rs（僅測試）
+
+容錯測試：以固定種子的 xorshift 亂數產生 3000 組隨機位元組與類真實檔案的 token，餵給所有解析器（`/proc/stat`、meminfo、diskstats、
+net/dev、SMBIOS、pci.ids、udev 解碼、設定檔 JSON），確認不會 panic；極大計數器值（溢位、回捲）；執行中硬碟、網卡、hwmon 消失
+以及 `/proc` 檔案變成垃圾或不存在後，數值變為 `None`／`--`（歷史保留空缺），裝置恢復後數值也恢復；檔案權限不足（chmod 000）時為缺失值；
+SMBIOS 無權限且沒有快取時 RAM 速度為未知。
 
 ### examples/sample.rs
 
@@ -407,12 +422,12 @@ mock 資料來源（`RESOURCEWATCH_MOCK=1`）：以正弦波產生數值，名�
 | GPU 使用率（NVIDIA） | `gpu_backend.py` NVML（每間隔一次 Python） | NVML（只初始化一次，以 PCI 位址對應） | 更新間隔 | `nvidia-smi` |
 | NVENC / NVDEC | `gpu_backend.py` NVML | NVML；不支援為 `None` | 更新間隔 | `nvidia-smi` |
 | GPU 溫度 | KSystemStats `gpu/gpuN/temperature` | NVIDIA：NVML；其他：DRM 裝置 hwmon | 更新間隔 | `nvidia-smi`、`kstatsviewer` |
-| VRAM | KSystemStats `usedVram/totalVram` | NVIDIA：NVML memory v1；其他：`mem_info_vram_*`（若有） | 更新間隔 | `nvidia-smi` |
+| VRAM | KSystemStats `usedVram/totalVram` | NVIDIA：NVML memory v2（不含保留，缺少時 v1）；其他：`mem_info_vram_*`（若有） | 更新間隔 | `nvidia-smi`、KSystemStats |
 | GPU 使用率（AMD/Intel） | KSystemStats `gpu/gpuN/usage` | AMD：`gpu_busy_percent`；Intel：不支援（sysfs 無此指標） | 更新間隔 | NOT TESTED（無硬體） |
 | GPU 名稱／廠牌 | KSystemStats name + DRM PCI vendor | NVML 名稱／`pci.ids` + DRM PCI vendor | 啟動／手動 | 舊版輸出 |
 | RAM / Swap | KSystemStats `memory/*` | `/proc/meminfo`（MemTotal − MemAvailable；SwapTotal − SwapFree） | 更新間隔 | `kstatsviewer`（逐位元組相同） |
 | RAM 速度 | `hardware_info.py` SMBIOS Type 17 / 使用者快取 | 相同來源與快取檔，權限不足顯示未知 | 啟動／手動 | 舊版輸出 |
-| 硬碟清單 | `lsblk` JSON + 篩選 | `/sys/block/*`，依主次號排序，不啟動 `lsblk` | 啟動／手動按鈕 | `lsblk` |
+| 硬碟清單 | `lsblk` JSON + 篩選 | `/sys/block/*`，依主次號排序；型號取 udev `ID_MODEL_ENC`；不啟動 `lsblk` | 啟動／手動按鈕 | `lsblk` |
 | 硬碟讀寫 | 每間隔 `cat /proc/diskstats` | 程序內直接讀 `/proc/diskstats` | 更新間隔 | `kstatsviewer disk/*` |
 | 網路上下行 | KSystemStats `network/*` | `/proc/net/dev` 差值（`all` 只計實體介面） | 更新間隔 | `kstatsviewer` |
 | IPv4 | `ip -j -4 address show` + KSystemStats `ipv4address` | `getifaddrs(3)` | 啟動／手動按鈕／切換介面 | `kstatsviewer` |

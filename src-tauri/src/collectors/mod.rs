@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 pub struct Roots {
     pub proc_dir: PathBuf,
     pub sys_dir: PathBuf,
+    /// `/run` (udev database `/run/udev/data`).
+    pub run_dir: PathBuf,
 }
 
 impl Default for Roots {
@@ -28,6 +30,7 @@ impl Default for Roots {
         Self {
             proc_dir: PathBuf::from("/proc"),
             sys_dir: PathBuf::from("/sys"),
+            run_dir: PathBuf::from("/run"),
         }
     }
 }
@@ -35,6 +38,9 @@ impl Default for Roots {
 impl Roots {
     pub fn proc(&self, rel: &str) -> PathBuf {
         self.proc_dir.join(rel)
+    }
+    pub fn run(&self, rel: &str) -> PathBuf {
+        self.run_dir.join(rel)
     }
     pub fn sys(&self, rel: &str) -> PathBuf {
         self.sys_dir.join(rel)
@@ -122,6 +128,7 @@ pub mod testutil {
         super::Roots {
             proc_dir: root.join("proc"),
             sys_dir: root.join("sys"),
+            run_dir: root.join("run"),
         }
     }
 }

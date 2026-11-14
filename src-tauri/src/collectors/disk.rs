@@ -68,6 +68,43 @@ fn dev_number(dir: &Path) -> (u32, u32) {
         .unwrap_or((u32::MAX, u32::MAX))
 }
 
+/// Decodes udev's `\xHH` escapes (e.g. `ID_MODEL_ENC=TOSHIBA\x20DT01ABA200V`).
+pub fn udev_unescape(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 4 <= b.len() && b[i + 1] == b'x' {
+            if let Some(v) = std::str::from_utf8(&b[i + 2..i + 4])
+                .ok()
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                out.push(v);
+                i += 4;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Full model name as `lsblk` shows it: udev `ID_MODEL_ENC` (the SCSI sysfs
+/// `device/model` is truncated to 16 characters), else sysfs `device/model`.
+/// Reads the udev database file directly; no `udevadm` process.
+fn disk_model(roots: &Roots, dir: &Path, (major, minor): (u32, u32)) -> Option<String> {
+    let udev = std::fs::read_to_string(roots.run(&format!("udev/data/b{major}:{minor}")))
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .find_map(|l| l.strip_prefix("E:ID_MODEL_ENC=").map(udev_unescape))
+        });
+    udev.or_else(|| read_trimmed(&dir.join("device/model")))
+        .map(|m| m.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|m| !m.is_empty())
+}
+
 /// Physical disks in `lsblk` order (by device number), so "硬碟1" is the
 /// same device as in the legacy widget.
 pub fn discover(roots: &Roots) -> Vec<DiskDevice> {
@@ -88,8 +125,7 @@ pub fn discover(roots: &Roots) -> Vec<DiskDevice> {
             if size_bytes == 0 {
                 return None; // empty card reader slot etc.
             }
-            let model = read_trimmed(&dir.join("device/model"))
-                .map(|m| m.split_whitespace().collect::<Vec<_>>().join(" "));
+            let model = disk_model(roots, &dir, dev_number(&dir));
             Some(DiskDevice {
                 name,
                 model,
@@ -244,6 +280,12 @@ mod tests {
         );
         let empty = mk("ata5/host4/block/sdc", "0", "Card", Some("0"));
         std::fs::write(sda.join("dev"), "8:0\n").unwrap();
+        // Full model from the udev database overrides the truncated sysfs one.
+        write(
+            &r,
+            "run/udev/data/b8:0",
+            "S:disk/by-id/x\nE:ID_MODEL=TOSHIBA_DT01ABA200V\nE:ID_MODEL_ENC=TOSHIBA\\x20DT01ABA200V\\x20\\x20\n",
+        );
         std::fs::write(nvme.join("dev"), "259:0\n").unwrap();
         std::fs::create_dir_all(r.join("sys/block")).unwrap();
         for (n, d) in [
@@ -261,8 +303,24 @@ mod tests {
             .map(|d| (d.name.as_str(), d.transport.as_str()))
             .collect();
         assert_eq!(names, [("sda", "sata"), ("nvme0n1", "nvme")], "lsblk order");
-        assert_eq!(disks[0].model.as_deref(), Some("TOSHIBA DT01ABA2"));
+        assert_eq!(disks[0].model.as_deref(), Some("TOSHIBA DT01ABA200V"));
+        assert_eq!(
+            disks[1].model.as_deref(),
+            Some("Micron_2400_MTFDKBA512QFM"),
+            "no udev entry: sysfs model, like lsblk"
+        );
         assert_eq!(disks[0].size_bytes, 3907029168 * 512);
+    }
+
+    #[test]
+    fn udev_escapes() {
+        assert_eq!(
+            udev_unescape("TOSHIBA\\x20DT01ABA200V\\x20"),
+            "TOSHIBA DT01ABA200V "
+        );
+        assert_eq!(udev_unescape("a\\x2"), "a\\x2", "truncated escape kept");
+        assert_eq!(udev_unescape("a\\xZZb"), "a\\xZZb", "invalid hex kept");
+        assert_eq!(udev_unescape("plain"), "plain");
     }
 
     #[test]

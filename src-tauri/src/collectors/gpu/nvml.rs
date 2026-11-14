@@ -37,6 +37,23 @@ type FnUtil = unsafe extern "C" fn(Handle, *mut Utilization) -> c_int;
 type FnCodec = unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int;
 type FnTemp = unsafe extern "C" fn(Handle, c_int, *mut c_uint) -> c_int;
 type FnMem = unsafe extern "C" fn(Handle, *mut Memory) -> c_int;
+type FnMemV2 = unsafe extern "C" fn(Handle, *mut MemoryV2) -> c_int;
+
+/// nvmlMemory_v2_t: `used` excludes driver-reserved memory, matching
+/// `nvidia-smi` memory.used (v1 `used` includes the reserved part).
+#[repr(C)]
+#[derive(Default)]
+struct MemoryV2 {
+    version: c_uint,
+    total: c_ulonglong,
+    reserved: c_ulonglong,
+    /// Required for the C layout; not used.
+    _free: c_ulonglong,
+    used: c_ulonglong,
+}
+
+/// NVML_STRUCT_VERSION(Memory, 2) = sizeof(nvmlMemory_v2_t) | (2 << 24)
+const NVML_MEMORY_V2: c_uint = std::mem::size_of::<MemoryV2>() as c_uint | (2 << 24);
 
 /// NVML device handle. NVML is documented as thread-safe, and the handle is
 /// only used while the owning [`Nvml`] (and its library) is alive.
@@ -54,6 +71,8 @@ pub struct Nvml {
     decoder: FnCodec,
     temp: FnTemp,
     mem: FnMem,
+    /// Optional: drivers older than R510 lack it; v1 is used then.
+    mem_v2: Option<FnMemV2>,
     // Must outlive the function pointers above; dropped after `Drop::drop`.
     _lib: Library,
 }
@@ -84,6 +103,10 @@ impl Nvml {
             let decoder: FnCodec = sym!("nvmlDeviceGetDecoderUtilization");
             let temp: FnTemp = sym!("nvmlDeviceGetTemperature");
             let mem: FnMem = sym!("nvmlDeviceGetMemoryInfo");
+            let mem_v2: Option<FnMemV2> = lib
+                .get::<FnMemV2>(b"nvmlDeviceGetMemoryInfo_v2\0")
+                .ok()
+                .map(|s| *s);
             // Initialise before building `Nvml`, so `Drop` (nvmlShutdown) only
             // ever runs after a successful init.
             let rc = init();
@@ -99,6 +122,7 @@ impl Nvml {
                 decoder,
                 temp,
                 mem,
+                mem_v2,
                 _lib: lib,
             };
             Ok(nvml)
@@ -158,8 +182,23 @@ impl Nvml {
         (ok && t <= 150).then_some(f64::from(t))
     }
 
-    /// (used, total) VRAM in bytes (nvmlMemory_t v1).
+    /// (used, total) VRAM in bytes. Prefers nvmlMemory_v2 (used without the
+    /// driver-reserved part, same as `nvidia-smi` and the legacy widget);
+    /// falls back to v1 when v2 is missing or fails.
     pub fn memory(&self, d: NvDevice) -> Option<(f64, f64)> {
+        if let Some(f) = self.mem_v2 {
+            let mut m = MemoryV2 {
+                version: NVML_MEMORY_V2,
+                ..Default::default()
+            };
+            // SAFETY: valid out-pointer with the version field set as NVML requires.
+            if unsafe { f(d.0, &mut m) } == NVML_SUCCESS
+                && m.total > 0
+                && m.used.saturating_add(m.reserved) <= m.total
+            {
+                return Some((m.used as f64, m.total as f64));
+            }
+        }
         let mut m = Memory::default();
         // SAFETY: valid out-pointer.
         let ok = unsafe { (self.mem)(d.0, &mut m) } == NVML_SUCCESS;
@@ -180,6 +219,12 @@ impl Drop for Nvml {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn memory_v2_layout_matches_nvml_h() {
+        // nvml.h: nvmlMemory_v2 == 0x02000028 on 64-bit Linux.
+        assert_eq!(super::NVML_MEMORY_V2, 0x0200_0028);
+    }
+
     #[test]
     fn load_does_not_crash_without_driver() {
         // Either loads (NVIDIA host) or returns an error; never panics.
