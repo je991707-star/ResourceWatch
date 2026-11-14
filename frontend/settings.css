@@ -1,0 +1,106 @@
+/* In-app settings page and Tauri-specific additions.
+ * Monitor cards: styles.css; application shell: application.css. */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.app-live-label.is-mock::before { background: #e3b867; }
+
+.mock-banner {
+  margin: 0 0 17px;
+  padding: 10px 14px;
+  border: 1px solid #6b5a33;
+  border-radius: 10px;
+  background: #3a3426;
+  color: #f0dcae;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mock-banner[hidden] { display: none; }
+
+.app-widgets-page .widget-info p + p { margin-top: 10px; }
+
+.app-settings-page {
+  display: grid;
+  gap: 14px;
+  max-width: 860px;
+}
+
+.app-settings-page .settings-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #393f48;
+  border-radius: 12px;
+  background: #30343b;
+}
+
+.app-settings-page h3 { margin: 0 0 15px; font-size: 15px; font-weight: 550; }
+
+.settings-explainer { margin: -7px 0 15px; color: #adb7c5; font-size: 12px; line-height: 1.55; }
+
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
+
+.field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
+.field-label { font-size: 14px; font-weight: 500; }
+.field-hint { min-height: 28px; color: #b2bac5; font-size: 11px; line-height: 1.4; }
+.field-error { min-height: 15px; color: #f0a19f; font-size: 11px; }
+
+.app-settings-page input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 10px 12px;
+  border: 1px solid #555e6b;
+  border-radius: 8px;
+  background: #24272c;
+  color: #f4f5f8;
+  font: inherit;
+  font-size: 14px;
+}
+.app-settings-page input:focus-visible { outline: 2px solid #77aff5; outline-offset: 1px; }
+.app-settings-page input:invalid,
+.app-settings-page input[aria-invalid="true"] { border-color: #e48b89; }
+
+.input-unit { display: flex; align-items: center; gap: 8px; }
+.input-unit > span { flex-shrink: 0; color: #b5bdc8; font-size: 12px; }
+
+.refresh-actions { margin-top: 17px; padding-top: 14px; border-top: 1px solid #4b505a; }
+.refresh-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 10px 0; }
+.refresh-action strong { font-size: 13px; font-weight: 500; }
+.refresh-action p { margin: 3px 0 0; color: #b2bac5; font-size: 11px; line-height: 1.5; }
+
+.refresh-action button,
+.secondary-button {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid #597d9f;
+  border-radius: 8px;
+  background: #3c5e80;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.refresh-action button:hover { background: #456f98; }
+.refresh-action button:disabled { opacity: .55; cursor: progress; }
+.refresh-action button:focus-visible,
+.secondary-button:focus-visible { outline: 2px solid #8cc0ff; outline-offset: 2px; }
+.refresh-feedback { min-height: 16px; margin: 8px 0 0; color: #b4d9c0; font-size: 11px; }
+.refresh-feedback.is-error { color: #f0a19f; }
+
+.settings-footer { display: flex; align-items: center; gap: 14px; color: #aab1bc; font-size: 11px; line-height: 1.5; }
+.settings-footer p { margin: 0; }
+.secondary-button { border-color: #5b616b; background: #3a3f47; }
+.secondary-button:hover { background: #454b54; }
+
+@media (max-width: 620px) {
+  .field-grid { grid-template-columns: 1fr; gap: 14px; }
+  .field-hint { min-height: 0; }
+  .refresh-action, .settings-footer { flex-direction: column; align-items: flex-start; }
+}

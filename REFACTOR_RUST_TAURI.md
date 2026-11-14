@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 分支 | `refactor/rust-tauri` |
-| 狀態 | 架構遷移規劃／逐步實作。**舊版 Plasma QML + Python + HTML 仍是唯一可用實作** |
+| 狀態 | 架構遷移規劃／逐步實作。Tauri 骨架已建立但只顯示 mock 資料；**實際硬體監控仍只有舊版 Plasma QML + Python + HTML** |
 | 基礎 | ResourceWatch v0.0.5 系列的監控功能與 HTML 介面 |
 | 專案路徑 | `/var/home/h97m/Projects/ResourceWatch` |
 | 相關文件 | 執行規則：`CLAUDE.md`；檔案職責、JSON 契約、新舊來源對照：`Readme_Architecture.md` |
@@ -117,7 +117,7 @@ Future: Plasma Widget (QML shell + optional HTML view)
   - → `Readme_Architecture.md` 的 `HtmlView.qml`（快照契約、Metric 子物件）、`SensorManager.qml`（指標與來源、排程）、
     `main.xml`（設定鍵）、`configGeneral.qml`（設定頁 WebChannel 介面）章節
 - [x] 建立新舊來源對照表，避免改名造成前端讀不到值
-  - → `Readme_Architecture.md`「Rust 後端（src-tauri/，尚未建立）」章節
+  - → `Readme_Architecture.md`「Rust 後端：新舊資料來源對照」章節
 
 **Phase 0 發現的舊版行為（遷移時處理）**
 
@@ -132,16 +132,41 @@ Future: Plasma Widget (QML shell + optional HTML view)
 
 **已知環境限制**
 
-- `BLOCKED`：本機未安裝 `cargo`／`rustc`。Bazzite 為 immutable 系統，需選擇安裝方式
-  （`rustup` 裝在使用者目錄、toolbox／distrobox、或 Homebrew），另需 Tauri 2 Linux 依賴（WebKitGTK 4.1、libsoup3 等）。
+- ~~`BLOCKED`：本機未安裝 `cargo`／`rustc`~~ → 已由使用者在 distrobox `resourcewatch-dev` 建立環境（Phase 1 解除）。
 
-### Phase 1 — Tauri 桌面應用骨架
+### Phase 1 — Tauri 桌面應用骨架 ✅
 
-- [ ] 安裝 Rust toolchain 與 Tauri 2 依賴（見 Phase 0 BLOCKED）
-- [ ] 初始化 Rust + Tauri 2 專案
-- [ ] 移植 HTML 總覽與設定頁，建立前端與 Rust 的基本通訊
-- [ ] 設定正常視窗尺寸、最小尺寸及 Wayland 下的縮放行為
-- [ ] 暫以 mock 資料呈現；**不宣稱已完成硬體監控**
+- [x] 安裝 Rust toolchain 與 Tauri 2 依賴
+  - distrobox `resourcewatch-dev`（Fedora 44）：rustc／cargo 1.100.0、tauri-cli 2.12.4、WebKitGTK 4.1 2.54.2、libsoup 3.6.6。容器內無 Node（前端不需打包）
+- [x] 初始化 Rust + Tauri 2 專案 → `src-tauri/`（`Cargo.toml`、`tauri.conf.json`、`capabilities/default.json`、`src/`、`icons/`）
+- [x] 移植 HTML 總覽與設定頁，建立前端與 Rust 的基本通訊
+  - 前端 `frontend/`：沿用舊版卡片 DOM／樣式，移除 QtWebChannel，設定頁改為應用內第三頁，「桌面小工具」為預留說明頁
+  - IPC：Commands `get_snapshot`、`get_settings`、`update_settings`、`reset_settings`、`refresh_devices`；
+    Events `snapshot`、`settings-changed`（定義見 `Readme_Architecture.md`「src/lib.rs」）
+- [x] 設定正常視窗尺寸、最小尺寸及 Wayland 下的縮放行為
+  - 初始 1220×790、最小 640×480、可自由縮放、無最大值；尺寸為邏輯像素，由 GTK 依螢幕縮放比例換算
+- [x] 暫以 mock 資料呈現；**不宣稱已完成硬體監控**
+  - `src/mock.rs`，快照 `dataSource: "mock"`，名稱帶 `Mock`，畫面顯示「模擬資料 · 非實機」與提示列
+
+**測試證據（2026-11-14，distrobox `resourcewatch-dev`）**
+
+- `cargo fmt --check` 通過；`cargo clippy --all-targets -- -D warnings` 無警告；`cargo check` 通過
+- `cargo test`：單元測試 18/18（format、settings 驗證、snapshot 缺失值與 JSON 欄位名、mock 歷史長度／刷新）、
+  IPC 整合測試 3/3（`tests/ipc.rs`，Tauri mock runtime）
+- `node --check frontend/app.js` 通過（主機 Node v26.13.1）
+- `cargo tauri build`：release 執行檔與 `ResourceWatch_0.1.0_amd64.deb`、`ResourceWatch-0.1.0-1.x86_64.rpm` 產生成功
+- 實機啟動（Bazzite KDE Wayland，從 distrobox 執行 debug 版）：視窗正常顯示，以 `spectacle` 截圖確認總覽、mock 標示、
+  圖表與硬碟卡片皆有繪製並持續更新；執行 12 秒無崩潰
+- 舊版測試未受影響：`tests/static_check.sh` exit 0、`application_layout_test.py` OK
+
+**已知限制／未驗證**
+
+- `NOT TESTED`：設定頁的實際點擊操作、縮小到最小尺寸時的響應式版面、HiDPI 縮放比例變更、視窗關閉流程（只做了截圖與 IPC 自動測試）
+- 容器內缺少 NVIDIA EGL 使用者端函式庫，啟動時出現 `MESA-EGL: failed to create dri2 screen` 警告，目前仍可正常繪製（可能退回軟體繪製）；
+  若之後出現白畫面，可嘗試 `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+- Wayland 下視窗圖示顯示為通用圖示（未安裝 `.desktop` 檔，app_id 無對應），打包安裝後再確認
+- 設定只存在記憶體（持久化屬 Phase 3）；mock 迴圈是暫時實作，統一排程器屬 Phase 3
+- deb／rpm 只確認可產生，未安裝測試
 
 ### Phase 2 — Rust 硬體監控
 

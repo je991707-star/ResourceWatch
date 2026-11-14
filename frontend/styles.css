@@ -1,0 +1,568 @@
+/* ResourceWatch monitor cards — UI only, no system access.
+ * Copied from the legacy package/contents/web/styles.css. */
+:root {
+  color-scheme: dark;
+  --surface: #24272c;
+  --card: #303338;
+  --text: #f0f1f3;
+  --muted: #a5a7ad;
+  --chart-bg: #34383f;
+  --grid: rgba(255, 255, 255, .09);
+  --cpu: #4487ba;
+  --gpu: #9161c9;
+  --ram: #4f75c2;
+  --network: #c44d7e;
+  --radius: 10px;
+  --card-gap: 14px;
+  --card-pad: 15px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  background: var(--surface);
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  min-height: 100%;
+  color: var(--text);
+  background: var(--surface);
+  font-family: "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-watch {
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 8px 16px 6px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 36px;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+
+.demo-label {
+  font-size: 10px;
+  letter-spacing: .02em;
+  color: #8f9da9;
+  opacity: .8;
+}
+
+.demo-label.is-live {
+  color: #a3d4ac;
+}
+
+.icon-button {
+  border: none;
+  color: #f3f3f3;
+  background: transparent;
+  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: rgba(255, 255, 255, .09);
+}
+
+.icon-button:focus-visible,
+.settings-popover input:focus-visible {
+  outline: 2px solid #8ebfe5;
+  outline-offset: 2px;
+}
+
+.icon-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.settings-popover {
+  z-index: 10;
+  position: absolute;
+  right: 15px;
+  top: 44px;
+  width: min(290px, calc(100% - 30px));
+  padding: 16px;
+  background: #393e45;
+  border: 1px solid #555c65;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px #0008;
+  font-size: 13px;
+}
+
+.settings-popover[hidden] {
+  display: none;
+}
+
+.settings-heading {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 13px;
+}
+
+.settings-note {
+  margin-top: 13px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 9px 0;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: #69a8d6;
+}
+
+.card-stack {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--card-gap);
+}
+
+.monitor-card {
+  min-width: 0;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: var(--card-pad);
+  overflow: hidden;
+}
+
+.card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.card-heading h2 {
+  margin: 0;
+  line-height: 1.18;
+  font-size: 20px;
+  letter-spacing: -.02em;
+  font-weight: 300;
+  flex: none;
+}
+
+.device-name {
+  min-width: 0;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ededee;
+  line-height: 1.3;
+  font-size: clamp(12px, 2.8cqw, 19px);
+  font-weight: 300;
+  text-align: right;
+}
+
+.split-content {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+  align-items: stretch;
+  gap: 13px;
+  min-width: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  align-content: start;
+  gap: 7px 10px;
+  min-width: 0;
+}
+
+.stats-grid--cpu {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stats-grid--gpu {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* RAM only: move the speed/SWAP column toward both percentage values.
+ * Keep original font sizing for RAM values; other cards are unchanged. */
+.stats-grid--ram {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 92px);
+  column-gap: 8px;
+}
+
+.stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.stat--full {
+  grid-column: 1/-1;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-weight: 300;
+  font-size: clamp(13px, 2.5cqw, 19px);
+  line-height: 1.3;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value--uptime {
+  font-size: clamp(12px, 2.3cqw, 17px);
+}
+
+.charts {
+  min-width: 0;
+  min-height: 0;
+  height: 70px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.charts--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.charts--gpu {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chart {
+  --chart: var(--cpu);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart[data-color="cpu"] {
+  --chart: var(--cpu);
+}
+
+.chart[data-color="gpu"] {
+  --chart: var(--gpu);
+}
+
+.chart[data-color="ram"] {
+  --chart: var(--ram);
+}
+
+.chart[data-color="network"] {
+  --chart: var(--network);
+}
+
+.chart-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 3px;
+  margin-bottom: 2px;
+  font-size: 10px;
+  line-height: 1.15;
+  color: #adb0b8;
+  min-width: 0;
+}
+
+.chart-heading span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-heading span:last-child {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.plot {
+  min-height: 0;
+  flex: 1;
+  border: 1px solid #565b64;
+  background: var(--chart-bg);
+  overflow: hidden;
+  position: relative;
+}
+
+.plot svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.plot .area {
+  fill: var(--chart);
+  opacity: .57;
+}
+
+.plot .line {
+  fill: none;
+  stroke: var(--chart);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.grid-lines path {
+  stroke: var(--grid);
+  stroke-width: .65;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.resource-watch.hide-grid .grid-lines {
+  display: none;
+}
+
+.no-data {
+  display: none;
+  position: absolute;
+  inset: 0;
+  place-items: center;
+  font-size: 10px;
+  color: #bec0c6;
+  background: #24272d2a;
+}
+
+.chart.is-missing .no-data {
+  display: grid;
+}
+
+.chart.is-missing .line,
+.chart.is-missing .area {
+  display: none;
+}
+
+.disks-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--card-gap);
+  min-width: 0;
+}
+
+.disks-grid:empty {
+  display: none;
+}
+
+.monitor-card--disk {
+  min-height: 118px;
+}
+
+.disk-header {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.disk-header h2 {
+  font-size: 19px;
+  font-weight: 300;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.disk-name {
+  font-size: 19px;
+  line-height: 1.2;
+  color: #e7e7e9;
+  white-space: nowrap;
+}
+
+.disk-model {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  min-height: 26px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.disk-model span {
+  display: inline;
+}
+
+.disk-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.disk-stats .stat-value {
+  font-size: 16px;
+}
+
+.footer {
+  flex: 0 0 auto;
+  text-align: right;
+  font-size: 10px;
+  line-height: 1.25;
+  padding: 8px 2px 0;
+  opacity: .6;
+}
+
+/* These are container breakpoints: respond to the widget's width, not the whole screen. */
+@container (max-width: 640px) {
+  .card-stack {
+    --card-gap: 11px;
+    --card-pad: 12px;
+  }
+
+  .split-content {
+    gap: 10px;
+  }
+
+  .stat-label,
+  .chart-heading,
+  .disk-model {
+    font-size: 9px;
+  }
+
+  .card-heading h2 {
+    font-size: 18px;
+  }
+
+  .disk-header h2,
+  .disk-name {
+    font-size: 17px;
+  }
+}
+
+@container (max-width: 520px) {
+  .split-content {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .stats-grid--cpu {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .charts {
+    height: 84px;
+  }
+
+  .charts--gpu {
+    height: 90px;
+  }
+
+  .disks-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitor-card--disk {
+    min-height: 0;
+  }
+
+  .disk-model {
+    min-height: 19px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  .stat-value--uptime {
+    font-size: 15px;
+  }
+
+  .device-name {
+    font-size: 14px;
+  }
+}
+
+@container (max-width: 390px) {
+  .card-stack {
+    --card-gap: 9px;
+    --card-pad: 11px;
+  }
+
+  .charts--gpu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    height: 184px;
+    row-gap: 10px;
+    column-gap: 7px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .device-name {
+    font-size: 12px;
+  }
+
+  .card-heading h2 {
+    font-size: 17px;
+  }
+}
+
+@container (max-width: 290px) {
+  .stats-grid--cpu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-name {
+    max-width: 65%;
+  }
+}
+
+/* Prevent horizontal page scroll at narrow window widths. */
+html {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+body {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.resource-watch {
+  overflow-x: hidden;
+}
+
+.demo-label[hidden] {
+  display: none !important;
+}

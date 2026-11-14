@@ -3,8 +3,8 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。
 修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。
 
-> 目前狀態：桌面與 Widget 仍由舊版「Plasma QML + Python + HTML」實作提供。
-> Rust + Tauri 後端尚未建立；下文「Rust 後端」章節只描述預定結構與資料來源對照，不代表已實作。
+> 目前狀態：實際硬體監控仍只由舊版「Plasma QML + Python + HTML」提供。
+> Tauri 桌面應用（`src-tauri/` + `frontend/`）已有視窗、前端與 IPC 骨架，但所有數值來自 mock 資料來源，尚未讀取任何硬體。
 
 ```text
 舊版（現行）
@@ -16,7 +16,12 @@ KDE Plasma 6 / plasmawindowed
 KDE 設定視窗
 └── config/config.qml → ui/configGeneral.qml ── QtWebChannel ── web/settings/*
 
-目標（Rust + Tauri，尚未實作）
+Tauri 桌面應用（骨架，mock 資料）
+src-tauri/src/lib.rs ── AppState{settings, MockSource} ── mock loop thread ── event "snapshot"
+        ▲ commands: get_snapshot / get_settings / update_settings / reset_settings / refresh_devices
+frontend/index.html + app.js（window.__TAURI__ invoke / listen）
+
+目標（尚未實作）
 Frontend (HTML/CSS/JS) ◀── Tauri Commands & Events ──▶ Rust: collectors / scheduler / state+history / settings
 ```
 
@@ -116,7 +121,8 @@ QtWebEngine 容器與 QtWebChannel 橋接（物件 `resourceWatch`），只公�
 
 ### HTML 快照 JSON 契約（v0.0.5）
 
-Tauri 版的快照事件以此為基準；欄位改名或刪除須同步更新本表與 `app.js`。
+Tauri 版的快照（`src-tauri/src/snapshot.rs`）沿用此表，並額外加入 `dataSource`（目前只有 `"mock"`，前端據此顯示「模擬資料 · 非實機」）；
+Tauri 版 `gpuSource` 另有 `"mock"` 值。欄位改名或刪除須同步更新本表、`snapshot.rs`、`frontend/app.js` 與 `package/contents/web/app.js`。
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
@@ -177,12 +183,92 @@ NVML 失敗時以 `nvidia-smi -q -x -d UTILIZATION` 備援。百分比超出 0�
 
 ## install.sh、packaging/
 
-舊版 Plasma 套件安裝腳本與 `plasmawindowed` 的 `.desktop` 入口。Tauri 版的打包另行建立。
+舊版 Plasma 套件安裝腳本與 `plasmawindowed` 的 `.desktop` 入口。Tauri 版由 `cargo tauri build` 產生 deb／rpm（見 `src-tauri/tauri.conf.json`）。
 
-## Rust 後端（src-tauri/，尚未建立）
+## frontend/
 
-預定模組：`collectors`（只讀資料）、`scheduler`（統一排程）、`state` / `history`（最新快照與歷史）、`settings`（讀寫與驗證）、
-Tauri Commands / Events。下表為新舊資料來源對照，「新來源」為候選，實作與驗證狀態記錄在 `REFACTOR_RUST_TAURI.md`。
+Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
+
+- `index.html`：左側導覽「總覽」「桌面小工具」「設定」三頁。總覽沿用舊版卡片 DOM 與元素 ID；
+  「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗）。
+  資料來源為 mock 時顯示黃色提示列。
+- `styles.css`、`application.css`：自 `package/contents/web/` 複製的卡片與應用外框樣式（移除 Plasma 瀏覽器預覽用的 popover 規則）。
+  響應式：寬度 ≤1200 px 單欄、≤980 px 側欄變窄、≤790 px 側欄只剩圖示。
+- `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式。
+- `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
+  啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_snapshot`。
+  `setText()` 只在文字改變時寫入 DOM；SVG path 相同時不重設；硬碟卡片只在清單變動時重建（以 DOM API 建立，不用 innerHTML）；
+  總覽隱藏時只保存快照，切回總覽才繪製。Uptime 以快照 `uptimeSeconds` 為錨點、`performance.now()` 每秒更新一個文字節點，不呼叫 IPC。
+  設定欄位 `change` 時先做前端範圍檢查，再呼叫 `update_settings`；錯誤依 `CommandError.field` 顯示在對應欄位下。
+  在 Tauri 以外（例如瀏覽器）開啟時不顯示任何數值，只標示「未連線到應用程式後端」。
+
+## src-tauri/
+
+Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm）、`cargo build`；檢查：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`。
+開發環境為 distrobox `resourcewatch-dev`（Fedora 44）。
+
+### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json、icons/
+
+- 套件 `resourcewatch` 0.1.0（Tauri 版自己的版號，與 Plasma 套件 0.0.5 分開；rpm 版號不允許 `-`）；lib 名稱 `resourcewatch_lib`。
+  依賴只有 `tauri`、`serde`、`serde_json`；dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。
+- `tauri.conf.json`：identifier `io.github.local.resourcewatch`；視窗 `main` 初始 1220×790、最小 640×480、可自由縮放、不設最大值；
+  CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
+- `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
+- `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。
+
+### src/lib.rs
+
+應用組裝與 IPC。`configure(builder)` 註冊 `AppState`、mock 迴圈與所有 Command（供 `run()` 與整合測試共用）。
+
+| Command | 輸入 | 輸出 | 錯誤 |
+|---|---|---|---|
+| `get_snapshot` | — | `Snapshot`（不推進 mock 時間） | — |
+| `get_settings` | — | `Settings` | — |
+| `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證後的 `Settings`，並發出 `settings-changed` | `CommandError {code: "invalidSetting", field, message}`；型別錯誤為 Tauri 反序列化錯誤字串 |
+| `reset_settings` | — | 預設 `Settings`，並發出 `settings-changed` | — |
+| `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}` | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
+
+| Event | Payload | 時機 |
+|---|---|---|
+| `snapshot` | `Snapshot` | 每個 `updateInterval` 一次；手動刷新後立即一次 |
+| `settings-changed` | `Settings` | 設定更新或恢復預設後 |
+
+`AppState` 以單一 `Mutex` 保存設定與 mock 來源（中毒時復原而非崩潰），`Condvar` 用於設定變更時喚醒迴圈。
+暫時的 mock 迴圈（執行緒 `rw-mock-loop`）睡到下一個到期時間才取樣並發出快照；下一次到期一律由「現在」起算，不補跑；
+`updateInterval` 變更時立即以新間隔重新排程。此迴圈是 mock 專用，之後由正式的統一排程器取代。
+
+### src/settings.rs
+
+`Settings {updateInterval, historyPoints, gpuIndex, netInterface}`，預設與範圍同 `main.xml`：
+`updateInterval` 100–10000／步進 50、`historyPoints` 10–120／步進 10、`gpuIndex` 0–15、`netInterface` 為 `all`（空值亦視為 `all`）
+或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
+目前只存在記憶體，重新啟動即恢復預設。
+
+### src/snapshot.rs
+
+快照型別，serde 以 camelCase 輸出，欄位對應上方「HTML 快照 JSON 契約」。`Metric::percent / pair / rate` 建構子負責把缺失、非有限值、
+負值與總量 0 轉成 `null` / `"--"` / `status: "unavailable"`，不轉成 0。`format_uptime()` 對應舊版 `uptimeFromSeconds`。
+
+### src/format.rs
+
+自 `FormatUtils.js` 與舊版 QML 格式化函式移植：`valid`、`valid_rate`、`clamp_percent`、`percent_of`、`format_percent`（一位小數、去掉 `.0`）、
+`format_bytes`（B…PiB）、`format_rate`（B/s…GiB/s）。
+
+### src/mock.rs
+
+mock 資料來源：以正弦波產生數值，名稱一律帶 `Mock`，IPv4 使用文件保留位址 `192.0.2.10`，RAM 速度刻意為 `--` 以測試缺失顯示；
+不讀硬體、不啟動程序。`sample()` 推進時間並寫入歷史（長度 = `historyPoints`，縮小時從前端截斷），`peek()` 不推進。
+`refresh(Disks)` 後第一個樣本的硬碟速率為 `null`（模擬舊版計數器差值行為）。
+
+### tests/ipc.rs
+
+以 Tauri mock runtime 走真實的 invoke 路由：檢查快照欄位契約與 `dataSource`、設定讀寫／驗證錯誤格式／未知鍵／失敗不改值／恢復預設、
+三種 `refresh_devices` 與未知 `kind`。各模組的單元測試寫在該檔案的 `#[cfg(test)]` 內。
+
+## Rust 後端：新舊資料來源對照（collectors 尚未實作）
+
+預定模組：`collectors`（只讀資料）、`scheduler`（統一排程）、`state` / `history`（最新快照與歷史）、`settings`（讀寫與驗證）。
+下表為新舊資料來源對照，「新來源」為候選，實作與驗證狀態記錄在 `REFACTOR_RUST_TAURI.md`。
 
 | 指標 | 舊版來源 | Rust 候選來源 | 觸發 | 對照驗證方式 |
 |---|---|---|---|---|

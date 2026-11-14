@@ -1,0 +1,194 @@
+/* Tauri application shell: sidebar, header, pages and responsive overview.
+ * Copied from the legacy package/contents/web/application.css. */
+.app-shell[hidden], .app-page[hidden] { display: none !important; }
+
+.application-mode {
+  height: 100vh;
+  overflow: hidden;
+  background: #202329;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+  width: 100%;
+  color: #eef0f3;
+  background: #21252b;
+  font-family: inherit;
+}
+
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 26px 15px 16px;
+  background: #24282e;
+  border-right: 1px solid #3a3e46;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 13px 30px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+
+.app-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 7px;
+  background: #315846;
+  color: #8debab;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.app-nav { display: grid; gap: 6px; }
+.app-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c4cad3;
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.app-nav-item:hover { background: #333840; color: #f7f9fb; }
+.app-nav-item.is-active { background: #344b62; color: #f4f8fd; }
+.app-nav-item:focus-visible { outline: 2px solid #85bce5; outline-offset: 2px; }
+.app-nav-item svg { width: 20px; height: 20px; flex: 0 0 20px; }
+.app-sidebar-bottom { display: grid; gap: 12px; margin-top: auto; }
+.app-sidebar-version { padding: 0 12px; color: #868e99; font-size: 10px; }
+
+.app-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 26px 20px;
+  background: #21252bf0;
+  border-bottom: 1px solid #353a42;
+  backdrop-filter: blur(9px);
+}
+.app-header h1 { margin: 0 0 3px; font-size: 25px; font-weight: 450; }
+.app-header p { margin: 0; font-size: 12px; color: #9da7b2; }
+.app-live-label { display: flex; align-items: center; white-space: nowrap; gap: 8px; font-size: 11px; color: #a7b3c0; }
+.app-live-label::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #e3b867; }
+.app-live-label.is-live::before { background: #68c887; }
+.app-page { padding: 23px 26px 32px; }
+
+/* Fluid monitoring dashboard.  Internal content and typography can grow or
+ * wrap naturally rather than shrinking everything with CSS zoom. */
+.app-overview-page .resource-watch {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  display: block;
+  container-type: inline-size;
+}
+.app-overview-page .resource-watch > .toolbar,
+.app-overview-page .resource-watch > .footer,
+.app-overview-page .resource-watch > .settings-popover { display: none; }
+.app-overview-page .card-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 17px;
+  justify-content: stretch;
+  align-content: start;
+}
+.app-overview-page .monitor-card { padding: 19px; min-height: 174px; }
+.app-overview-page .card-stack > [data-card="cpu"] { order: 1; }
+.app-overview-page .card-stack > [data-card="gpu"] { order: 2; }
+.app-overview-page .card-stack > [data-card="ram"] { order: 3; }
+.app-overview-page .card-stack > [data-card="network"] { order: 4; }
+.app-overview-page .card-stack > .disks-grid { order: 5; grid-column: 1 / -1; }
+.app-overview-page .split-content { display: flex; flex-direction: column; gap: 12px; }
+.app-overview-page .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px 12px; }
+.app-overview-page .stats-grid--gpu { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-overview-page .stats-grid--ram { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-overview-page .stats-grid--network { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.app-overview-page .stat--full { grid-column: 1 / -1; }
+.app-overview-page .charts { height: 86px; }
+.app-overview-page .charts--gpu { height: 86px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.app-overview-page .card-heading { margin-bottom: 14px; }
+.app-overview-page .card-heading h2 { font-size: 19px; }
+.app-overview-page .device-name { max-width: 80%; font-size: 14px; }
+.app-overview-page .stat-value { font-size: 17px; }
+.app-overview-page .stat-label { font-size: 10px; }
+.app-overview-page .disk-stats { margin-top: 12px; }
+.app-overview-page .disks-grid { gap: 17px; }
+.app-overview-page .monitor-card--disk { min-height: 140px; }
+.app-overview-page .disk-model { font-size: 11px; }
+
+.widget-info { max-width: 900px; margin-bottom: 20px; }
+.widget-info h2 { margin: 0 0 9px; font-size: 20px; font-weight: 450; }
+.widget-info p, .widget-footnote { margin: 0; color: #b2bac4; font-size: 13px; line-height: 1.75; }
+.widget-preview-frame {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+  overflow: hidden;
+  padding: 22px 24px;
+  border: 1px dashed #4a515b;
+  border-radius: 14px;
+  background: #191d22;
+}
+.widget-preview-host { width: 100%; max-width: 720px; overflow: visible; }
+.widget-footnote { margin-top: 16px; }
+.app-widgets-page .resource-watch { margin: 0 auto; }
+
+@media (max-width: 1200px) {
+  .app-overview-page .card-stack { grid-template-columns: minmax(0, 1fr); }
+  .app-overview-page .card-stack > .disks-grid { grid-column: auto; }
+  .app-overview-page .split-content { display: grid; grid-template-columns: 2fr 3fr; gap: 12px; }
+  .app-overview-page .stats-grid--cpu { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-overview-page .charts { height: 105px; }
+  .app-overview-page .monitor-card { min-height: 150px; }
+  .app-overview-page .disks-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Browser zoom/OS scale should not destroy the navigation structure. */
+@media (max-width: 980px) {
+  .app-shell { grid-template-columns: 185px minmax(0,1fr); }
+  .app-sidebar { padding: 18px 10px 13px; }
+  .app-brand { padding: 8px 8px 24px; font-size: 15px; }
+  .app-header { padding: 20px; }
+  .app-page { padding: 18px 20px 28px; }
+}
+@media (max-width: 790px) {
+  .app-shell { grid-template-columns: 66px minmax(0,1fr); }
+  .app-brand { justify-content: center; padding: 8px 0 28px; }
+  .app-brand > span:last-child, .app-nav-item span, .app-sidebar-version { display: none; }
+  .app-nav-item { justify-content: center; padding: 10px 0; }
+  .app-overview-page .split-content { display: flex; }
+}
+
+/* Keep full-size SWAP text: use the available row width instead of reducing font. */
+@media (max-width: 1200px) {
+  .app-overview-page [data-card="ram"] .split-content { display: flex; flex-direction: column; }
+}
