@@ -5,9 +5,9 @@
 :root {
   color-scheme: dark;
   --bg: #26272b;
-  --sidebar: #3a2a36;
-  --sidebar-glass: rgba(52, 34, 46, .68);
-  --sidebar-text: #e6dde3;
+  --sidebar: #1c1c1e;
+  --sidebar-glass: rgba(22, 22, 24, .7);
+  --sidebar-text: #e4e4e6;
   --nav-hover: rgba(255, 255, 255, .07);
   --nav-active: rgba(255, 255, 255, .13);
   --card: #323338;
@@ -34,9 +34,9 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #ecedf0;
-  --sidebar: #e4d7df;
-  --sidebar-glass: rgba(246, 236, 242, .72);
-  --sidebar-text: #3b2f37;
+  --sidebar: #dedfe2;
+  --sidebar-glass: rgba(232, 233, 236, .72);
+  --sidebar-text: #2a2b2e;
   --nav-hover: rgba(0, 0, 0, .05);
   --nav-active: rgba(0, 0, 0, .1);
   --card: #ffffff;

@@ -35,7 +35,7 @@
 ### 2.1 透明視窗（`tauri.conf.json`、`lib.rs`、`styles.css`、`application.css`）
 - [x] 主視窗改為 `"create": false`，由 `lib.rs` `create_main_window()` 建立：**只有原生 Wayland 才透明**（保留系統標題列）。
 - [x] `html, body` 背景透明；`.app-main` 不透明 `--bg`；`.app-sidebar` 在 `data-glass="on"` 時用半透明 `--sidebar-glass`
-      （深色 `rgba(52,34,46,.68)`、淺色 `rgba(246,236,242,.72)`；.5 時背景文字會干擾導覽文字），加細邊線分隔。
+      （中性燻黑：深色 `rgba(22,22,24,.7)`、淺色 `rgba(232,233,236,.72)`；不透明度 .5 時背景文字會干擾導覽文字），加細邊線分隔。
 - [x] NVIDIA＋X11（`WEBKIT_DISABLE_DMABUF_RENDERER`）實測：透明視窗下側欄整塊沒有繪製（關閉模糊、加 `will-change`、改捲動容器皆無效），
       因此 X11／XWayland 改為不透明視窗、不提供毛玻璃。
 

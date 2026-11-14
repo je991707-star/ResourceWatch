@@ -32,7 +32,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
-- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；`--sidebar-glass` 為毛玻璃側欄的半透明色）。
+- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；側欄為中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色）。
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
   進度條、折線圖與硬碟列樣式。
