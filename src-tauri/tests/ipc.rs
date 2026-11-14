@@ -206,6 +206,27 @@ fn refresh_devices_kinds() {
 }
 
 #[test]
+fn processes_list_this_test_with_cpu_after_second_call() {
+    let (_app, w) = app("processes");
+    let me = std::process::id();
+    let first = invoke(&w, "get_processes", json!({})).unwrap();
+    let mine = |list: &serde_json::Value| {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["pid"] == me)
+            .cloned()
+            .unwrap()
+    };
+    let p = mine(&first);
+    assert!(p["name"].is_string() && p["memory"].as_u64().unwrap() > 0);
+    assert!(p["cpu"].is_null(), "no CPU share before a second scan");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let second = invoke(&w, "get_processes", json!({})).unwrap();
+    assert!(mine(&second)["cpu"].is_number());
+}
+
+#[test]
 fn window_info_reports_no_glass_without_compositor_blur() {
     // The mock runtime has no Wayland surface, so blur is never requested and
     // the frontend must keep the sidebar opaque.

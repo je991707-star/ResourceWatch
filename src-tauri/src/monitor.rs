@@ -12,6 +12,7 @@ use crate::collectors::{
     gpu::{GpuCollector, GpuReading},
     memory::{self, MemReading},
     network::{self, NetCollector, NetReading},
+    process::{ProcessCollector, ProcessInfo},
     sensors::{self, SensorInput},
     system, Roots,
 };
@@ -54,6 +55,7 @@ pub struct Monitor {
     disk_io: DiskCollector,
     net: NetCollector,
     gpu: GpuCollector,
+    processes: ProcessCollector,
     net_interface: String,
     cpu_model: Option<String>,
     cpu_topology: (Option<u32>, Option<u32>),
@@ -92,12 +94,18 @@ impl Monitor {
         Self::with_roots(Roots::default(), settings)
     }
 
+    /// Process list for `get_processes`; CPU % is relative to the previous call.
+    pub fn processes(&mut self, now: Instant) -> Vec<ProcessInfo> {
+        self.processes.sample(now)
+    }
+
     pub fn with_roots(roots: Roots, settings: &Settings) -> Self {
         Self {
             cpu: CpuCollector::new(&roots),
             disk_io: DiskCollector::new(&roots),
             net: NetCollector::new(&roots, &settings.net_interface),
             gpu: GpuCollector::new(&roots, settings.gpu_index),
+            processes: ProcessCollector::new(&roots),
             net_interface: settings.net_interface.clone(),
             cpu_model: cpu::cpu_model(&roots),
             cpu_topology: cpu::cpu_topology(&roots),

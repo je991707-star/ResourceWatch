@@ -88,6 +88,7 @@
     storage: { host: "storagePage", nav: "navStorage", title: "儲存裝置", live: true },
     network: { host: "networkPage", nav: "navNetwork", title: "網路", live: true },
     sensors: { host: "sensorsPage", nav: "navSensors", title: "感測器", live: true },
+    apps: { host: "appsPage", nav: "navApps", title: "應用程式" },
     widgets: { host: "widgetsPage", nav: "navWidgets", title: "桌面小工具" },
     settings: { host: "settingsPage", nav: "navSettings", title: "設定" },
   };
@@ -108,6 +109,7 @@
     setText("pageTitle", PAGES[page].title);
     // Snapshots are not rendered while no monitoring page is visible; catch up now.
     if (isLive() && pendingRender) render();
+    watchProcesses();
   }
   for (const [key, def] of Object.entries(PAGES)) {
     $(def.nav).addEventListener("click", () => switchPage(key));
@@ -687,6 +689,77 @@
       setLiveStatus("後端連線失敗", null);
     }
   }
+  // ---------------------------------------------------------------- processes
+  // Polled (get_processes) only while the dashboard or the applications page is visible.
+  const PROC_INTERVAL = 2000;
+  const procLists = all("[data-proc-list]");
+  const procTable = document.querySelector("[data-proc-table]");
+  const procSortButtons = all("[data-proc-sort]");
+  let procSort = "cpu";
+  let procs = [];
+  let procPolling = false;
+  const procVisible = () => !document.hidden && (activePage === "overview" || activePage === "apps");
+  const cpuText = (c) => (Number.isFinite(c) ? `${c.toFixed(1)}%` : "--");
+  const memText = (b) => (b >= 2 ** 30 ? `${(b / 2 ** 30).toFixed(1)} GiB` : `${Math.round(b / 2 ** 20)} MiB`);
+  const procValue = { cpu: (p) => cpuText(p.cpu), memory: (p) => memText(p.memory) };
+  const sortedBy = (key) => [...procs].sort((a, b) => (b[key] ?? -1) - (a[key] ?? -1));
+
+  function renderProcesses() {
+    for (const host of procLists) {
+      const key = host.dataset.procList;
+      host.replaceChildren(...sortedBy(key).slice(0, 5).map((p) => {
+        const row = document.createElement("div");
+        const dt = document.createElement("dt");
+        dt.textContent = dt.title = p.name;
+        const dd = document.createElement("dd");
+        dd.textContent = procValue[key](p);
+        row.append(dt, dd);
+        return row;
+      }));
+    }
+    setText("procCount", `${procs.length} 個程序`);
+    if (activePage !== "apps") return;
+    procTable.replaceChildren(...sortedBy(procSort).map((p) => {
+      const tr = document.createElement("tr");
+      for (const value of [p.name, p.pid, cpuText(p.cpu), memText(p.memory)]) {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.append(td);
+      }
+      tr.firstChild.title = p.name;
+      return tr;
+    }));
+  }
+  function applyProcSort() {
+    for (const b of procSortButtons) {
+      if (b.dataset.procSort === procSort) b.parentElement.setAttribute("aria-sort", "descending");
+      else b.parentElement.removeAttribute("aria-sort");
+    }
+  }
+  for (const b of procSortButtons) {
+    b.addEventListener("click", () => { procSort = b.dataset.procSort; applyProcSort(); renderProcesses(); });
+  }
+  applyProcSort();
+
+  async function watchProcesses() {
+    if (procPolling || !invoke) return;
+    procPolling = true;
+    // The first scan has no CPU share yet, so the second one follows quickly.
+    let delay = 500;
+    while (procVisible()) {
+      try {
+        procs = await invoke("get_processes");
+        renderProcesses();
+      } catch (e) {
+        console.warn("ResourceWatch: process list unavailable", e);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = PROC_INTERVAL;
+    }
+    procPolling = false;
+  }
+  document.addEventListener("visibilitychange", watchProcesses);
+
   switchPage("overview");
   start();
 })();

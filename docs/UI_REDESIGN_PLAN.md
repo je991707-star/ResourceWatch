@@ -95,10 +95,17 @@
 
 ---
 
-## Phase 5：程序清單（應用程式頁）
-- [ ] Rust `collectors/process.rs`：讀 `/proc/[pid]/stat`（utime+stime 差值算 CPU%）、`/proc/[pid]/status`（`VmRSS`）、`comm`／`cmdline` 名稱；
+## Phase 5：程序清單（應用程式頁） `[x]`
+- [x] ✅ Rust `collectors/process.rs`：讀 `/proc/[pid]/stat`（utime+stime 差值算 CPU%）、`/proc/[pid]/status`（`VmRSS`）、`comm`／`cmdline` 名稱；
       程序消失、權限不足時略過。
-- [ ] 只在處理器／記憶體卡片或應用程式頁可見時取樣，間隔約 2 秒（獨立於 `updateInterval`，避免每週期掃描所有 PID）；
+- [x] ✅ 只在處理器／記憶體卡片或應用程式頁可見時取樣，間隔約 2 秒（獨立於 `updateInterval`，避免每週期掃描所有 PID）；
       新 Command `set_process_watch(enabled)` 或併入 `snapshot` 的可選欄位 `processes`，以實作時成本較低者為準。
-- [ ] 處理器卡片顯示 CPU 前 5 名、記憶體卡片顯示記憶體前 5 名（「顯示應用程式…」展開）；側欄新增「應用程式」頁，可依 CPU／記憶體排序。
-- [ ] 效能驗證：程序數 500+ 時單次取樣耗時與 `RW_STATS` 排程延遲。
+- [x] ✅ 處理器卡片顯示 CPU 前 5 名、記憶體卡片顯示記憶體前 5 名（「顯示應用程式…」展開）；側欄新增「應用程式」頁，可依 CPU／記憶體排序。
+- [x] ✅ 效能驗證：程序數 500+ 時單次取樣耗時與 `RW_STATS` 排程延遲。
+- 實作與計畫不同處：
+  - 只讀 `/proc/[pid]/stat`（rss 欄位），不讀 `status`／`cmdline`，每個程序一次讀檔；名稱為 kernel 截斷的 comm（最多 15 字元）。
+  - 採新 Command `get_processes`（前端可見時輪詢），不用 `set_process_watch`、也不併入 `snapshot`：排程器與快照契約完全不變。
+  - CPU% 以整機為 100%（與處理器卡片同尺度），不是單核 100%；不依應用程式合併同名程序。
+- 效能（實機，Xeon E3-1231 v3，共約 730 個 PID、其中 512 個使用者程序）：單次掃描最慢 10.6 ms（release）；
+  儀表板顯示中（每 2 秒輪詢）`RW_STATS` interval 500 ms、skipped 0、max_lateness 140 µs、max_duration 12.3 ms。
+- [ ] NOT TESTED：應用程式頁點擊排序、視窗最小化時是否確實停止輪詢（依賴 WebKitGTK 的 `document.hidden`）。

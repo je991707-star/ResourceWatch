@@ -1,6 +1,7 @@
 //! Selects where snapshots come from: the live [`Monitor`] (default) or the
 //! [`MockSource`] when `RESOURCEWATCH_MOCK=1` is set (UI development only).
 
+use crate::collectors::process::ProcessInfo;
 use crate::mock::MockSource;
 use crate::monitor::Monitor;
 use crate::settings::Settings;
@@ -54,6 +55,14 @@ impl Source {
         match self {
             Source::Live(m) => m.refresh(kind, s),
             Source::Mock(m) => m.refresh(kind),
+        }
+    }
+
+    /// Process list (`get_processes`), independent of the scheduler cycle.
+    pub fn processes(&mut self, now: Instant) -> Vec<ProcessInfo> {
+        match self {
+            Source::Live(m) => m.processes(now),
+            Source::Mock(m) => m.processes(),
         }
     }
 

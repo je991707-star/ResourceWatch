@@ -4,6 +4,7 @@
 //! with "Mock"). It reads no hardware and starts no process, and must never be
 //! shown as real data. The default source is the live [`crate::monitor::Monitor`].
 
+use crate::collectors::process::ProcessInfo;
 use crate::collectors::sensors::SensorKind;
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
@@ -46,6 +47,28 @@ impl MockSource {
             samples_since_disk_scan: 0,
             ip: Some(MOCK_IPV4.to_string()),
         }
+    }
+
+    /// Fixed process list whose CPU and memory follow the mock clock.
+    pub fn processes(&self) -> Vec<ProcessInfo> {
+        let t = self.tick as f64;
+        [
+            ("mock-browser", 9.0, 900),
+            ("mock-editor", 4.0, 450),
+            ("mock-shell", 0.5, 12),
+            ("mock-compositor", 3.0, 210),
+            ("mock-daemon", 0.1, 30),
+            ("mock-player", 6.0, 320),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (name, cpu, mib))| ProcessInfo {
+            pid: 1000 + i as u32,
+            name: name.to_string(),
+            cpu: Some(cpu * (1.0 + 0.5 * (t / 3.0 + i as f64).sin())),
+            memory: mib << 20,
+        })
+        .collect()
     }
 
     /// Simulates the manual refresh actions. No hardware is queried.

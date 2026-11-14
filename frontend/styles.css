@@ -135,6 +135,16 @@ html, body {
 .sensor-list:empty { display: none; }
 .sensor-list { padding-top: 8px; border-top: 1px solid var(--card-border); }
 .sensor-group { margin-top: 6px; }
+.proc-list { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--card-border); }
+.proc-list:empty { display: none; }
+.card-count { color: var(--muted); font-size: 12px; font-weight: 400; }
+.proc-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.proc-table th, .proc-table td { padding: 6px 8px; border-bottom: 1px solid var(--card-border); text-align: right; white-space: nowrap; }
+.proc-table th:first-child, .proc-table td:first-child { width: 55%; max-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.proc-table th { color: var(--muted); font-weight: 600; }
+.proc-table th button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.proc-table th[aria-sort] { color: var(--text); }
+.proc-table th[aria-sort] button::after { content: " ▾"; }
 .sensor-group:first-child { margin-top: 0; }
 .sensor-group dt { color: var(--text); font-weight: 600; }
 .card-tag { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0; }

@@ -201,6 +201,13 @@ struct WindowInfo {
     glass: bool,
 }
 
+/// Process list for the processor/memory cards and the applications page;
+/// the frontend polls it only while one of them is shown.
+#[tauri::command]
+fn get_processes(state: State<'_, AppState>) -> Vec<collectors::process::ProcessInfo> {
+    lock(&state.source).processes(Instant::now())
+}
+
 #[tauri::command]
 fn get_window_info(state: State<'_, AppState>) -> WindowInfo {
     WindowInfo {
@@ -342,6 +349,7 @@ pub fn configure_with<R: Runtime>(
             get_settings,
             get_settings_info,
             get_window_info,
+            get_processes,
             update_settings,
             reset_settings,
             refresh_devices,

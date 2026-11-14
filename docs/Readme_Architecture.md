@@ -11,10 +11,10 @@
 src-tauri/src/lib.rs ── AppState{settings(+SettingsStore → config.json), source, latest, scheduler}
         │   scheduler.rs: rw-scheduler 執行緒（唯一）每個 updateInterval 一個週期：
         │     source.sample(now) → emit "snapshot" → latest
-        │   source: Source::Live(Monitor) ─ collectors/{cpu,memory,system,disk,network,gpu(+nvml)}
+        │   source: Source::Live(Monitor) ─ collectors/{cpu,memory,system,disk,network,sensors,battery,process,gpu(+nvml)}
         │           Source::Mock(MockSource)（RESOURCEWATCH_MOCK=1）
         ▲ commands: get_snapshot / get_settings / get_settings_info / update_settings / reset_settings /
-        │           refresh_devices / get_scheduler_stats / get_window_info
+        │           refresh_devices / get_scheduler_stats / get_window_info / get_processes（不經排程器，前端輪詢）
         │   blur.rs: 主視窗於 setup 建立（Wayland 才透明）→ 合成器模糊（側欄毛玻璃）
 frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 ```
@@ -35,7 +35,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
 Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
 
-- `index.html`：側欄品牌列為應用圖示 `app-icon.png`＋名稱；左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
+- `index.html`：側欄品牌列為應用圖示 `app-icon.png`＋名稱；左側導覽「儀表板」「儲存裝置」「網路」「感測器」「應用程式」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路卡片：介面選單、使用中介面、IPv4、MAC、閘道與上傳／下載雙線圖；圖形處理器卡片標題列有 GPU 選單），感測器、磁碟、磁碟 I/O、網路卡片的「顯示更多…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
@@ -54,6 +54,9 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
+  程序清單：只在儀表板或應用程式頁顯示且視窗可見（`document.hidden` 為 false）時輪詢 `get_processes`，第一次後 0.5 秒補一次（第一次沒有 CPU 比例），之後每 2 秒；
+  切頁與 `visibilitychange` 時重新判斷，同時只會有一個輪詢迴圈。處理器卡片列 CPU 前 5 名、記憶體卡片列記憶體前 5 名（`data-proc-list="cpu|memory"`，「顯示應用程式…」→ 應用程式頁）；
+  應用程式頁（`data-proc-table`）列出全部程序（名稱、PID、CPU、記憶體），按 CPU／記憶體欄標題切換由大到小排序（`aria-sort`），只在該頁顯示時重建表格。
   卡片上的設定選單（`<select data-setting-select="netInterface|gpuIndex">`）：選項來自快照（`netInterfaces`、`gpus`），值來自目前設定（`settings-changed`／`get_settings`），
   選擇後呼叫 `update_settings`，被拒絕時回到已儲存的值；已儲存但不在清單中的值（例如拔除的網卡）會保留為選項。
   主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
@@ -110,6 +113,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證並**已寫入磁碟**的 `Settings`，並發出 `settings-changed` | `invalidSetting`（含 `field`）；`settingsWriteFailed`（`field: null`，記憶體／排程器／磁碟皆不變）；型別錯誤為 Tauri 反序列化錯誤字串 |
 | `reset_settings` | — | 預設 `Settings`（已寫入磁碟），並發出 `settings-changed` | `settingsWriteFailed` |
 | `get_scheduler_stats` | — | `SchedulerStats`（間隔、週期數、略過數、panic 數、耗時與延遲） | — |
+| `get_processes` | — | `ProcessInfo[]`：`{pid, name, cpu: number \| null, memory}`（`collectors/process.rs`；CPU 為與上次呼叫之間的整機比例；mock 時為固定假清單）。只取 source 鎖（實機約 500 個程序時單次約 10 ms），不經排程器、不發事件 | — |
 | `get_window_info` | — | `{glass: bool}`：合成器已對主視窗套用背景模糊（前端據此決定側欄是否半透明） | — |
 | `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}`：IPv4／硬碟清單／CPU 型號＋RAM 速度＋GPU 清單與名稱 | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
 
@@ -225,7 +229,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 ### src/source.rs
 
 `Source::Live(Box<Monitor>)`（預設）或 `Source::Mock(Box<MockSource>)`（環境變數 `RESOURCEWATCH_MOCK=1`，僅供 UI 開發）。
-統一提供 `sample`、`peek`、`refresh(RefreshKind)`、`apply_settings`。`RefreshKind` = `ipv4` | `disks` | `hardware`。
+統一提供 `sample`、`peek`、`refresh(RefreshKind)`、`apply_settings`、`processes(now)`（程序清單）。`RefreshKind` = `ipv4` | `disks` | `hardware`。
 
 ### src/monitor.rs
 
@@ -233,6 +237,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 - `sample(now, settings)`：一個監控週期。讀取 CPU、記憶體、uptime、GPU、硬碟 I/O、網路各一次；硬碟與網路速率使用排程器提供的
   同一個週期時間戳 `now`；組成快照、寫入歷史，歷史陣列每週期只產生一次。
 - `peek()`：只用上次讀值組成快照，不讀硬體、不寫歷史。
+- `processes(now)`：交給 `ProcessCollector`，與排程週期無關（`get_processes` 呼叫時才掃描）。
 - 溫度／時脈文字不再重複做有限值檢查：collectors 只會輸出有限值（hwmon／NVML 整數已檢查範圍、cpufreq 為正整數平均），`None` 是唯一缺失情況。
 - `refresh(kind)`：IPv4 重新查詢；硬碟清單重新掃描並重設 I/O 計數（下一個樣本無速率）；硬體資訊重新讀 CPU 型號、主機名稱、機型、RAM 速度並重掃 GPU。
 - `apply_settings()`：`gpuIndex` 改變時切換 GPU；`netInterface` 改變時切換統計介面，並因為是使用者明確操作而重新查詢一次 IPv4。
@@ -302,6 +307,14 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 - 讀寫速率（每次取樣）：直接讀 `/proc/diskstats` 第 6／10 欄（512-byte sectors），先算 sectors/s 再乘 512（避免溢位）；
   第一次、裝置不在 diskstats、計數器倒退時為 `None`。`reset()` 用於重新掃描後。
 
+### src/collectors/process.rs
+
+程序清單（`get_processes`）。每次掃描列出 `/proc` 下的數字目錄，每個程序只讀一個 `/proc/<pid>/stat`：
+`parse_stat` 取 comm（到最後一個 `)`，名稱可含空白與括號）、utime+stime（欄位 14、15）、rss 頁數（欄位 24）、flags（欄位 9）。
+略過 kernel thread（`PF_KTHREAD`）、掃描途中結束或讀不到的程序。CPU% = 與上次掃描的 tick 差 ÷ `CLK_TCK` ÷ 經過秒數 ÷ 線上邏輯 CPU 數 × 100
+（整機 = 100%，與處理器卡片的整體使用率同一尺度，上限 100）；第一次看到的程序為 `null`；PID 被重用且 tick 變少時該次為 0。
+記憶體 = rss × 頁大小（`sysconf`）。名稱為 kernel 截斷的 comm（最多 15 字元）。
+
 ### src/collectors/network.rs
 
 - 流量：`/proc/net/dev` 的 rx/tx bytes 差值。`all` 只加總**實體介面**（有 `/sys/class/net/<if>/device`；結果快取），排除 lo、bridge、veth、tun/VPN，避免轉送或封裝流量重複計算。
@@ -333,12 +346,12 @@ v2 不存在（R510 以前的驅動）或失敗時退回 v1。`nvmlInit_v2` 成�
 
 mock 資料來源（`RESOURCEWATCH_MOCK=1`）：以正弦波產生數值，名稱一律帶 `Mock`，IPv4 使用文件保留位址 `192.0.2.10`，RAM 速度刻意為 `--` 以測試缺失顯示；
 不讀硬體、不啟動程序。`sample()` 推進時間並寫入歷史（共用 `HistoryBuffer`），`peek()` 不推進。
-`refresh(Disks)` 後第一個樣本的硬碟速率為 `null`（模擬舊版計數器差值行為）。
+`refresh(Disks)` 後第一個樣本的硬碟速率為 `null`（模擬舊版計數器差值行為）。`processes()` 回傳 6 個 `mock-*` 程序，CPU 隨 mock 時鐘變化。
 
 ### src/robustness.rs（僅測試）
 
 容錯測試：以固定種子的 xorshift 亂數產生 3000 組隨機位元組與類真實檔案的 token，餵給所有解析器（`/proc/stat`、meminfo、diskstats、
-net/dev、SMBIOS、pci.ids、udev 解碼、設定檔 JSON），確認不會 panic；極大計數器值（溢位、回捲）；執行中硬碟、網卡、hwmon 消失
+net/dev、SMBIOS、pci.ids、udev 解碼、`/proc/<pid>/stat`、設定檔 JSON），確認不會 panic；極大計數器值（溢位、回捲）；執行中硬碟、網卡、hwmon 消失
 以及 `/proc` 檔案變成垃圾或不存在後，數值變為 `None`／`--`（歷史保留空缺），裝置恢復後數值也恢復；檔案權限不足（chmod 000）時為缺失值；
 SMBIOS 無權限且沒有快取時 RAM 速度為未知。
 
@@ -351,7 +364,7 @@ SMBIOS 無權限且沒有快取時 RAM 速度為未知。
 以 Tauri mock runtime 走真實的 invoke 路由；每個測試使用自己的暫存設定目錄，並以 `run_iteration` 執行一次 `setup`（載入設定、啟動排程器）。
 涵蓋：快照欄位契約與 `dataSource: "live"`、設定讀寫／驗證錯誤格式／未知鍵／失敗不改值／恢復預設、三種 `refresh_devices` 與未知 `kind`、
 設定存檔後重新啟動仍保留（排程器以儲存的間隔啟動）、非法輸入不寫檔不改排程、損壞設定檔回報並保留備份、
-快速連續修改後磁碟／記憶體／排程器一致且無暫存檔殘留、目錄唯讀時寫入失敗不改變任何狀態、排程器實際執行並餵給 `get_snapshot`。各模組的單元測試寫在該檔案的 `#[cfg(test)]` 內，collector 測試使用暫存目錄建立的假 `/proc`、`/sys`。
+快速連續修改後磁碟／記憶體／排程器一致且無暫存檔殘留、目錄唯讀時寫入失敗不改變任何狀態、排程器實際執行並餵給 `get_snapshot`、`get_processes` 列出測試程序本身（第一次 `cpu` 為 null、第二次為數字）。各模組的單元測試寫在該檔案的 `#[cfg(test)]` 內，collector 測試使用暫存目錄建立的假 `/proc`、`/sys`。
 
 ## 與舊版（v0.0.5）的資料來源對照
 

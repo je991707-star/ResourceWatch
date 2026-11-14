@@ -38,6 +38,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0Z"/><path d="M12 9v7"/></svg>
           <span>感測器</span>
         </button>
+        <button type="button" class="app-nav-item" id="navApps">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>應用程式</span>
+        </button>
         <button type="button" class="app-nav-item" id="navWidgets">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
           <span>桌面小工具</span>
@@ -158,6 +162,8 @@
             <div><div class="chart-heading"><span>使用率</span><span data-bind="cpuUsage">--</span></div>
           <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div></div>
           </div>
+          <dl class="rows proc-list" data-proc-list="cpu" aria-label="CPU 使用率前 5 名"></dl>
+          <button type="button" class="more-link" data-goto="apps">顯示應用程式…</button>
         </section>
 
         <section class="card" aria-labelledby="diskIoTitle">
@@ -185,6 +191,8 @@
           <dl class="rows"><div><dt>速度</dt><dd data-bind="ramSpeed">--</dd></div></dl>
           <div class="chart-heading"><span>壓力（PSI，10 秒平均）</span><span data-bind="memPressure">--</span></div>
           <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="記憶體壓力圖表"><g class="grid-lines"></g><g data-chart="memPressure" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
+          <dl class="rows proc-list" data-proc-list="memory" aria-label="記憶體用量前 5 名"></dl>
+          <button type="button" class="more-link" data-goto="apps">顯示應用程式…</button>
         </section>
 
         <section class="card" aria-labelledby="disksTitle">
@@ -287,6 +295,21 @@
         <section class="card">
           <h2>時脈</h2>
           <dl class="rows"><div><dt>CPU 平均時脈</dt><dd data-bind="cpuSpeed">--</dd></div></dl>
+        </section>
+      </section>
+
+      <!-- Applications (process list) -->
+      <section class="app-page" id="appsPage" hidden aria-label="應用程式">
+        <section class="card">
+          <h2>應用程式 <span class="card-count" data-bind="procCount">--</span></h2>
+          <table class="proc-table">
+            <thead><tr>
+              <th scope="col">名稱</th><th scope="col">PID</th>
+              <th scope="col"><button type="button" data-proc-sort="cpu">CPU</button></th>
+              <th scope="col"><button type="button" data-proc-sort="memory">記憶體</button></th>
+            </tr></thead>
+            <tbody data-proc-table></tbody>
+          </table>
         </section>
       </section>
 

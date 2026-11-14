@@ -3,7 +3,7 @@
 //! and must yield missing values (`None` / `"--"`) instead of fake numbers.
 
 use crate::collectors::testutil::{roots, temp_root, write};
-use crate::collectors::{cpu, disk, gpu, memory, network, system};
+use crate::collectors::{cpu, disk, gpu, memory, network, process, system};
 use crate::monitor::Monitor;
 use crate::settings::Settings;
 use crate::snapshot::MetricStatus;
@@ -74,6 +74,7 @@ fn parsers_never_panic_on_garbage() {
             let _ = cpu::parse_topology(text);
             let _ = memory::parse_meminfo(text);
             let _ = memory::parse_pressure(text);
+            let _ = process::parse_stat(text);
             let _ = disk::parse_diskstats(text);
             let _ = disk::parse_mountinfo(text);
             let _ = disk::udev_unescape(text);
