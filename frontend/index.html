@@ -147,6 +147,16 @@
           </div>
         </section>
 
+        <section class="card" aria-labelledby="diskIoTitle">
+          <h2 id="diskIoTitle">磁碟 I/O</h2>
+          <div class="chart-heading"><span>速度（所有硬碟）</span><span data-bind="diskIoMax">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="磁碟讀寫速度歷史圖表"><g class="grid-lines"></g><g data-chart="diskWrite" data-color="disk-write"><path class="area"></path><path class="line"></path></g><g data-chart="diskRead" data-color="disk-read"><path class="area"></path><path class="line"></path></g></svg></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="disk-read"></i>讀取<strong data-bind="diskReadNow">--</strong></li>
+            <li><i class="dot" data-color="disk-write"></i>寫入<strong data-bind="diskWriteNow">--</strong></li>
+          </ul>
+        </section>
+
         <section class="card" aria-labelledby="memoryTitle">
           <h2 id="memoryTitle">記憶體</h2>
           <div class="bar bar--wide bar--stack" role="img" aria-label="記憶體組成">

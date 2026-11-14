@@ -28,7 +28,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
@@ -187,7 +187,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
 | `netUp`, `netDown` | Metric | `rawValue` 為 B/s |
-| `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown, memPressure}: (number\|null)[]` | 最多 120 點，缺失保留 `null` |
+| `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown, memPressure, diskRead, diskWrite}: (number\|null)[]`（`diskRead`／`diskWrite` 為所有硬碟加總 B/s） | 最多 120 點，缺失保留 `null` |
 
 Metric 子物件：`{displayValue: string, percent: number|null, rawValue: number|null, status: string, usedText: string, totalText: string}`。
 
@@ -219,8 +219,8 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 
 ### src/history.rs
 
-`HistoryBuffer`：九條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown、memPressure），每條最多 `historyPoints`（至少 2）點，
-`historyPoints` 縮小時捨棄最舊的點；非有限值存成 `None`。Monitor 與 MockSource 共用。
+`HistoryBuffer`：十一條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown、memPressure、diskRead、diskWrite），每條最多 `historyPoints`（至少 2）點，
+`historyPoints` 縮小時捨棄最舊的點；非有限值存成 `None`。`disk_totals()` 加總各硬碟讀寫速率（有速率的硬碟才計入，全部沒有時為 `None`）。Monitor 與 MockSource 共用。
 
 ### src/collectors/mod.rs
 

@@ -115,6 +115,8 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "netUp",
         "netDown",
         "memPressure",
+        "diskRead",
+        "diskWrite",
     ] {
         assert!(snap["history"][key].is_array(), "history missing {key}");
     }

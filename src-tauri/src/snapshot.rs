@@ -125,6 +125,9 @@ pub struct History {
     pub net_up: Vec<Option<f64>>,
     pub net_down: Vec<Option<f64>>,
     pub mem_pressure: Vec<Option<f64>>,
+    /// Sum over all disks, B/s.
+    pub disk_read: Vec<Option<f64>>,
+    pub disk_write: Vec<Option<f64>>,
 }
 
 /// Parts of RAM as used/total pairs of `MemTotal` (see `collectors::memory`).

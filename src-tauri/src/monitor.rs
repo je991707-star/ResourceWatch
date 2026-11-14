@@ -14,7 +14,7 @@ use crate::collectors::{
     system, Roots,
 };
 use crate::format::{clamp_percent, format_bytes, MISSING};
-use crate::history::{HistoryBuffer, HistorySample};
+use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
     format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, RamBreakdown,
@@ -147,6 +147,7 @@ impl Monitor {
             mem_pressure: memory::pressure(&self.roots),
         };
         let mut snap = self.build(s);
+        let (disk_read, disk_write) = disk_totals(snap.disk_rates.values());
         self.history.push(
             HistorySample {
                 cpu: snap.cpu.percent,
@@ -158,6 +159,8 @@ impl Monitor {
                 net_up: snap.net_up.raw_value,
                 net_down: snap.net_down.raw_value,
                 mem_pressure: snap.mem_pressure,
+                disk_read,
+                disk_write,
             },
             s.history_points,
         );

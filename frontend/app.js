@@ -359,12 +359,19 @@
     let pressureMax = 10;
     for (const v of h.memPressure || []) if (Number.isFinite(v) && v > pressureMax) pressureMax = v;
     chartSeries("memPressure", h.memPressure, pressureMax);
-    // Upload and download share one scale so the two lines are comparable.
-    let max = 1;
-    for (const v of [...(h.netUp || []), ...(h.netDown || [])]) if (Number.isFinite(v) && v > max) max = v;
-    chartSeries("netUp", h.netUp, max * 1.12);
-    chartSeries("netDown", h.netDown, max * 1.12);
-    setText("netMax", formatRate(max));
+    // Paired series share one scale so the two lines are comparable.
+    const pair = (a, b, maxKey) => {
+      let max = 1;
+      for (const v of [...(h[a] || []), ...(h[b] || [])]) if (Number.isFinite(v) && v > max) max = v;
+      chartSeries(a, h[a], max * 1.12);
+      chartSeries(b, h[b], max * 1.12);
+      setText(maxKey, formatRate(max));
+    };
+    pair("netUp", "netDown", "netMax");
+    pair("diskRead", "diskWrite", "diskIoMax");
+    const last = (series) => (Array.isArray(series) && series.length ? series[series.length - 1] : null);
+    setText("diskReadNow", formatRate(last(h.diskRead)));
+    setText("diskWriteNow", formatRate(last(h.diskWrite)));
   }
 
   function setLiveStatus(label, kind) {

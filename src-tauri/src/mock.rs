@@ -4,7 +4,7 @@
 //! with "Mock"). It reads no hardware and starts no process, and must never be
 //! shown as real data. The default source is the live [`crate::monitor::Monitor`].
 
-use crate::history::{HistoryBuffer, HistorySample};
+use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
     format_uptime, DataSource, DiskInfo, DiskRate, Metric, RamBreakdown, Snapshot,
@@ -95,23 +95,6 @@ impl MockSource {
         let net_up = Metric::rate(Some(up));
         let net_down = Metric::rate(Some(down));
 
-        if record {
-            self.history.push(
-                HistorySample {
-                    cpu: cpu_m.percent,
-                    gpu: gpu_m.percent,
-                    encode: enc_m.percent,
-                    decode: dec_m.percent,
-                    vram: vram_m.percent,
-                    ram: ram_m.percent,
-                    net_up: net_up.raw_value,
-                    net_down: net_down.raw_value,
-                    mem_pressure: Some(pressure),
-                },
-                settings.history_points,
-            );
-        }
-
         let mut disk_rates = BTreeMap::new();
         for (i, d) in self.disks.iter().enumerate() {
             let rate = if self.samples_since_disk_scan < 2 {
@@ -127,6 +110,26 @@ impl MockSource {
                 }
             };
             disk_rates.insert(d.name.clone(), rate);
+        }
+
+        let (disk_read, disk_write) = disk_totals(disk_rates.values());
+        if record {
+            self.history.push(
+                HistorySample {
+                    cpu: cpu_m.percent,
+                    gpu: gpu_m.percent,
+                    encode: enc_m.percent,
+                    decode: dec_m.percent,
+                    vram: vram_m.percent,
+                    ram: ram_m.percent,
+                    net_up: net_up.raw_value,
+                    net_down: net_down.raw_value,
+                    mem_pressure: Some(pressure),
+                    disk_read,
+                    disk_write,
+                },
+                settings.history_points,
+            );
         }
 
         let uptime = 8990.0 + self.started.elapsed().as_secs_f64();
