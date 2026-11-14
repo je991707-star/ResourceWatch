@@ -164,6 +164,75 @@ pub fn ipv4_address(selection: &str) -> Option<String> {
     found
 }
 
+/// Default IPv4 route from `/proc/net/route`: (interface, gateway) of the
+/// `00000000` destination with the lowest metric. Addresses are printed as
+/// the raw in-memory `__be32`, hence `to_ne_bytes`.
+pub fn parse_default_route(text: &str) -> Option<(String, std::net::Ipv4Addr)> {
+    text.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            let flags = u32::from_str_radix(f.get(3)?, 16).ok()?;
+            // RTF_UP | RTF_GATEWAY
+            if *f.get(1)? != "00000000" || flags & 0x3 != 0x3 {
+                return None;
+            }
+            let gw = u32::from_str_radix(f.get(2)?, 16).ok()?;
+            let metric: u32 = f.get(6)?.parse().ok()?;
+            Some((
+                metric,
+                f[0].to_string(),
+                std::net::Ipv4Addr::from(gw.to_ne_bytes()),
+            ))
+        })
+        .min_by_key(|(metric, _, _)| *metric)
+        .map(|(_, iface, gw)| (iface, gw))
+}
+
+/// Physical interfaces (with `/sys/class/net/<if>/device`), sorted.
+pub fn physical_interfaces(roots: &Roots) -> Vec<String> {
+    super::list_dir(&roots.sys("class/net"), |_| true)
+        .into_iter()
+        .filter(|p| p.join("device").exists())
+        .filter_map(|p| Some(p.file_name()?.to_str()?.to_string()))
+        .collect()
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct NetDetails {
+    /// Selected interface, or for `"all"` the default-route interface.
+    pub interface: Option<String>,
+    pub mac: Option<String>,
+    /// Default gateway, when it is reached through `interface`.
+    pub gateway: Option<String>,
+    pub interfaces: Vec<String>,
+}
+
+/// Looked up with the IPv4 address: startup, manual refresh, interface change.
+pub fn details(roots: &Roots, selection: &str) -> NetDetails {
+    let route = std::fs::read_to_string(roots.proc("net/route"))
+        .ok()
+        .and_then(|t| parse_default_route(&t));
+    let interface = if selection == "all" {
+        route.as_ref().map(|(i, _)| i.clone())
+    } else {
+        Some(selection.to_string())
+    };
+    let mac = interface.as_ref().and_then(|i| {
+        super::read_trimmed(&roots.sys(&format!("class/net/{i}/address")))
+            .filter(|m| m != "00:00:00:00:00:00")
+    });
+    let gateway = route
+        .filter(|(i, _)| Some(i) == interface.as_ref())
+        .map(|(_, gw)| gw.to_string());
+    NetDetails {
+        interface,
+        mac,
+        gateway,
+        interfaces: physical_interfaces(roots),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +248,39 @@ mod tests {
              virbr0: {br} 1 0 0 0 0 0 0 {br} 1 0 0 0 0 0 0\n",
             eth.0, eth.1
         )
+    }
+
+    #[test]
+    fn default_route_and_details() {
+        let route = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\n\
+                     wlp2s0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\n\
+                     enp3s0\t00000000\t0132A8C0\t0003\t0\t0\t100\t00000000\n\
+                     enp3s0\t0032A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\n";
+        let (iface, gw) = parse_default_route(route).unwrap();
+        assert_eq!(
+            (iface.as_str(), gw.to_string().as_str()),
+            ("enp3s0", "192.168.50.1")
+        );
+        assert_eq!(parse_default_route("Iface\nbad line\n"), None);
+
+        let r = temp_root("net-details");
+        write(&r, "proc/net/route", route);
+        write(&r, "sys/class/net/enp3s0/address", "fc:aa:14:84:57:82\n");
+        std::fs::create_dir_all(r.join("sys/class/net/enp3s0/device")).unwrap();
+        std::fs::create_dir_all(r.join("sys/class/net/wlp2s0/device")).unwrap();
+        write(&r, "sys/class/net/lo/address", "00:00:00:00:00:00\n");
+        let rt = roots(&r);
+        let all = details(&rt, "all");
+        assert_eq!(all.interface.as_deref(), Some("enp3s0"));
+        assert_eq!(all.mac.as_deref(), Some("fc:aa:14:84:57:82"));
+        assert_eq!(all.gateway.as_deref(), Some("192.168.50.1"));
+        assert_eq!(all.interfaces, ["enp3s0", "wlp2s0"]);
+        let lo = details(&rt, "lo");
+        assert_eq!(
+            (lo.mac, lo.gateway),
+            (None, None),
+            "zero MAC and other route ignored"
+        );
     }
 
     #[test]

@@ -130,7 +130,7 @@
         </section>
 
         <section class="card" aria-labelledby="graphicsTitle">
-          <h2 id="graphicsTitle">圖形處理器 <span class="card-tag" data-bind="gpuHeading">GPU0</span></h2>
+          <h2 id="graphicsTitle">圖形處理器 <select class="inline-select card-picker" data-setting-select="gpuIndex" aria-label="選擇 GPU"></select></h2>
           <div class="graphics">
             <div class="gauge">
               <svg class="rings" viewBox="0 0 120 120" aria-hidden="true">
@@ -195,7 +195,13 @@
 
         <section class="card" aria-labelledby="networkTitle">
           <h2 id="networkTitle">網路</h2>
-          <dl class="rows"><div><dt>介面</dt><dd data-bind="netSubtitle">--</dd></div></dl>
+          <dl class="rows">
+            <div><dt>介面</dt><dd><select class="inline-select" data-setting-select="netInterface" aria-label="網路介面"></select></dd></div>
+            <div><dt>使用中</dt><dd data-bind="netInterfaceName">--</dd></div>
+            <div><dt>IPv4</dt><dd data-bind="netIp">--</dd></div>
+            <div><dt>MAC</dt><dd data-bind="netMac">--</dd></div>
+            <div><dt>閘道</dt><dd data-bind="netGateway">--</dd></div>
+          </dl>
           <div class="chart-heading"><span>速度</span><span data-bind="netMax">--</span></div>
           <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="網路傳輸速度歷史圖表"><g class="grid-lines"></g><g data-chart="netDown" data-color="net-down"><path class="area"></path><path class="line"></path></g><g data-chart="netUp" data-color="net-up"><path class="area"></path><path class="line"></path></g></svg></div>
           <ul class="legend legend--row">
@@ -220,7 +226,11 @@
         <section class="card">
           <h2>網路</h2>
           <dl class="rows">
-            <div><dt>介面</dt><dd data-bind="netSubtitle">--</dd></div>
+            <div><dt>介面</dt><dd><select class="inline-select" data-setting-select="netInterface" aria-label="網路介面"></select></dd></div>
+            <div><dt>使用中</dt><dd data-bind="netInterfaceName">--</dd></div>
+            <div><dt>IPv4</dt><dd data-bind="netIp">--</dd></div>
+            <div><dt>MAC</dt><dd data-bind="netMac">--</dd></div>
+            <div><dt>閘道</dt><dd data-bind="netGateway">--</dd></div>
             <div><dt>下載</dt><dd data-bind="netDown">--</dd></div>
             <div><dt>上傳</dt><dd data-bind="netUp">--</dd></div>
           </dl>

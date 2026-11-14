@@ -8,7 +8,7 @@ use crate::collectors::sensors::SensorKind;
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, Metric, RamBreakdown, Sensor, Snapshot,
+    format_uptime, DataSource, DiskInfo, DiskRate, GpuInfo, Metric, RamBreakdown, Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -156,6 +156,13 @@ impl MockSource {
             gpu_name: format!("Mock GPU {}", settings.gpu_index),
             gpu_vendor: "other".to_string(),
             gpu_source: "mock".to_string(),
+            gpus: (0..2)
+                .map(|i| GpuInfo {
+                    index: i,
+                    name: format!("Mock GPU {i}"),
+                    vendor: "other".to_string(),
+                })
+                .collect(),
             gpu: gpu_m,
             gpu_temp_text: format!("{:.0} °C", 58.0 + 4.0 * (t * 0.09).sin()),
             vram: vram_m,
@@ -228,6 +235,15 @@ impl MockSource {
             net_has_interface,
             net_ip_available: self.ip.is_some(),
             net_ip: self.ip.clone().unwrap_or_else(|| "--".to_string()),
+            net_interface_name: if net_has_interface {
+                settings.net_interface.clone()
+            } else {
+                "mock0".to_string()
+            },
+            // Documentation-reserved values (RFC 7042 / RFC 5737).
+            net_mac: "00:00:5e:00:53:01".to_string(),
+            net_gateway: "192.0.2.1".to_string(),
+            net_interfaces: vec!["mock0".to_string(), "mockwl0".to_string()],
             net_up,
             net_down,
             history: self.history.to_history(),

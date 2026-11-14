@@ -122,6 +122,14 @@ pub struct Sensor {
     pub value: Option<f64>,
 }
 
+/// One entry of the GPU picker; `index` is the `gpuIndex` setting value.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GpuInfo {
+    pub index: u32,
+    pub name: String,
+    pub vendor: String,
+}
+
 /// History series; missing samples stay `null`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +182,8 @@ pub struct Snapshot {
     /// Tauri: `nvml` | `drm` | `unavailable` | `mock`
     /// (legacy widget: `nvml` | `nvidia-smi` | `ksystemstats` | `unavailable`)
     pub gpu_source: String,
+    /// Every discovered GPU (startup / hardware refresh).
+    pub gpus: Vec<GpuInfo>,
     pub gpu: Metric,
     pub gpu_temp_text: String,
     pub vram: Metric,
@@ -196,6 +206,12 @@ pub struct Snapshot {
     pub net_has_interface: bool,
     pub net_ip_available: bool,
     pub net_ip: String,
+    /// Selected interface, or the default-route interface for `all`.
+    pub net_interface_name: String,
+    pub net_mac: String,
+    pub net_gateway: String,
+    /// Physical interfaces, for the interface picker.
+    pub net_interfaces: Vec<String>,
     pub net_up: Metric,
     pub net_down: Metric,
     pub history: History,

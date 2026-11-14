@@ -295,6 +295,14 @@ impl GpuCollector {
             .collect();
     }
 
+    /// (name, vendor) of every discovered GPU, in `gpuIndex` order.
+    pub fn list(&self) -> Vec<(Option<&str>, Vendor)> {
+        self.entries
+            .iter()
+            .map(|e| (e.name.as_deref(), e.device.vendor))
+            .collect()
+    }
+
     /// Switches to another already-discovered GPU (no hardware scan).
     pub fn select(&mut self, index: u32) {
         self.index = index;

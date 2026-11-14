@@ -18,8 +18,8 @@ use crate::format::{clamp_percent, format_bytes, MISSING};
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, RamBreakdown,
-    Sensor, Snapshot,
+    format_uptime, DataSource, DiskInfo, DiskRate, GpuInfo, History, Metric, MetricStatus,
+    RamBreakdown, Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -64,6 +64,7 @@ pub struct Monitor {
     disk_usage: BTreeMap<String, (u64, u64)>,
     usage_at: Instant,
     ip: Option<String>,
+    net_details: network::NetDetails,
     last: Readings,
     history: HistoryBuffer,
 }
@@ -105,6 +106,7 @@ impl Monitor {
             disk_usage: BTreeMap::new(),
             usage_at: Instant::now(),
             ip: network::ipv4_address(&settings.net_interface),
+            net_details: network::details(&roots, &settings.net_interface),
             started: Instant::now(),
             last: Readings::default(),
             history: HistoryBuffer::default(),
@@ -130,12 +132,16 @@ impl Monitor {
             self.net.select(&s.net_interface);
             self.last.net = NetReading::default();
             self.ip = network::ipv4_address(&s.net_interface);
+            self.net_details = network::details(&self.roots, &s.net_interface);
         }
     }
 
     pub fn refresh(&mut self, kind: RefreshKind, s: &Settings) {
         match kind {
-            RefreshKind::Ipv4 => self.ip = network::ipv4_address(&s.net_interface),
+            RefreshKind::Ipv4 => {
+                self.ip = network::ipv4_address(&s.net_interface);
+                self.net_details = network::details(&self.roots, &s.net_interface);
+            }
             RefreshKind::Disks => {
                 self.disks = disk::discover(&self.roots);
                 self.disk_io.reset();
@@ -257,6 +263,17 @@ impl Monitor {
                 .map_or("other", |v| v.as_str())
                 .to_string(),
             gpu_source: self.gpu.source().to_string(),
+            gpus: self
+                .gpu
+                .list()
+                .into_iter()
+                .enumerate()
+                .map(|(i, (name, vendor))| GpuInfo {
+                    index: i as u32,
+                    name: name.unwrap_or(MISSING).to_string(),
+                    vendor: vendor.as_str().to_string(),
+                })
+                .collect(),
             gpu: g(Metric::percent(r.gpu.usage)),
             gpu_temp_text: temp_text(r.gpu.temp_c, 0),
             vram: g(Metric::pair(r.gpu.vram_used, r.gpu.vram_total)),
@@ -311,6 +328,10 @@ impl Monitor {
             net_has_interface: s.net_interface != "all",
             net_ip_available: self.ip.is_some(),
             net_ip: self.ip.clone().unwrap_or_else(|| MISSING.to_string()),
+            net_interface_name: text_or_missing(&self.net_details.interface),
+            net_mac: text_or_missing(&self.net_details.mac),
+            net_gateway: text_or_missing(&self.net_details.gateway),
+            net_interfaces: self.net_details.interfaces.clone(),
             net_up: g(Metric::rate(r.net.up)),
             net_down: g(Metric::rate(r.net.down)),
             history: History::default(),
@@ -339,6 +360,7 @@ mod tests {
         assert_eq!(snap.ram.display_value, "--");
         assert_eq!(snap.cpu_name, "--");
         assert_eq!(snap.gpu_source, "unavailable");
+        assert!(snap.gpus.is_empty());
         assert!(snap.disks.is_empty());
         assert_eq!(snap.history.cpu, vec![None]);
     }

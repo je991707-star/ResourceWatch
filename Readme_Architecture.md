@@ -28,7 +28,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路卡片：介面選單、使用中介面、IPv4、MAC、閘道與上傳／下載雙線圖；圖形處理器卡片標題列有 GPU 選單），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`）；兩處都有 °C／°F 切換（`data-temp-unit`）。
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
@@ -43,6 +43,8 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
+  卡片上的設定選單（`<select data-setting-select="netInterface|gpuIndex">`）：選項來自快照（`netInterfaces`、`gpus`），值來自目前設定（`settings-changed`／`get_settings`），
+  選擇後呼叫 `update_settings`，被拒絕時回到已儲存的值；已儲存但不在清單中的值（例如拔除的網卡）會保留為選項。
   主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
   側欄毛玻璃：啟動時呼叫 `get_window_info`，`glass` 為 true 且使用者偏好（`localStorage` `resourcewatch-glass`，預設開）為開時設 `<html data-glass="on">`；
   不支援時設定頁的開關停用並說明原因。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
@@ -177,6 +179,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `gpuName` | string | |
 | `gpuVendor` | `"nvidia"\|"amd"\|"intel"\|"other"` | |
 | `gpuSource` | `"nvml"\|"drm"\|"unavailable"\|"mock"` | 舊版 v0.0.5 另有 `"nvidia-smi"`、`"ksystemstats"` |
+| `gpus` | `{index, name, vendor}[]` | 所有偵測到的 GPU（`index` 即 `gpuIndex` 設定值），啟動與硬體重新偵測時更新 |
 | `gpu`, `vram`, `encoder`, `decoder` | Metric | `vram` 含 used/total |
 | `gpuTempText` | string | |
 | `ram`, `swap` | Metric | 含 used/total |
@@ -191,6 +194,8 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
+| `netInterfaceName`, `netMac`, `netGateway` | string | 使用中的介面（`all` 時為預設路由介面）、其 MAC、經由該介面的預設閘道；缺失 `"--"` |
+| `netInterfaces` | string[] | 實體介面清單（介面選單用） |
 | `netUp`, `netDown` | Metric | `rawValue` 為 B/s |
 | `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown, memPressure, diskRead, diskWrite}: (number\|null)[]`（`diskRead`／`diskWrite` 為所有硬碟加總 B/s） | 最多 120 點，缺失保留 `null` |
 
@@ -282,6 +287,8 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 
 - 流量：`/proc/net/dev` 的 rx/tx bytes 差值。`all` 只加總**實體介面**（有 `/sys/class/net/<if>/device`；結果快取），排除 lo、bridge、veth、tun/VPN，避免轉送或封裝流量重複計算。
   指定介面時只看該介面；介面不存在、剛出現／消失或計數器重置的那一次略過，全部略過則為 `None`。切換介面會清除前次計數。
+- 網路細節（`details`，與 IPv4 同時機查詢）：預設路由取 `/proc/net/route` 目的地 `00000000`、旗標含 UP|GATEWAY、metric 最小者（位址為記憶體中的 `__be32`，以 `to_ne_bytes` 還原）；
+  介面：指定介面，`all` 時為預設路由介面；MAC 讀 `/sys/class/net/<if>/address`（全零視為無）；閘道只在經由該介面時顯示；實體介面清單＝有 `device` 的介面。
 - IPv4：`getifaddrs(3)`，取選定介面（`all` 則任一非 loopback 介面）第一個非 loopback、非 169.254 的位址。只在啟動、手動刷新、切換介面時查詢；不啟動 `ip`、不經 shell。
 
 ### src/collectors/gpu/mod.rs
@@ -293,7 +300,7 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
   NVENC/NVDEC 一律 `None`；名稱查 `pci.ids`（`/usr/share/hwdata/pci.ids` 等，僅啟動／手動時讀取）。
 - `source()`：`nvml` | `drm` | `unavailable`（索引超出範圍）。NVML 只在偵測到 NVIDIA 卡時嘗試載入一次。
 - 偵測（啟動與 `rediscover()` 手動重新偵測）時為每張卡一次解析好名稱與讀取後端（NVML handle 或 DRM 路徑），`pci.ids` 每次偵測最多讀一次；
-  `select(index)` 切換 GPU 只改索引，不重新掃描、不讀 `pci.ids`、不查 NVML。
+  `select(index)` 切換 GPU 只改索引，不重新掃描、不讀 `pci.ids`、不查 NVML。`list()` 回傳所有已偵測 GPU 的（名稱, 廠牌），供 `gpus` 欄位。
 
 ### src/collectors/gpu/nvml.rs
 

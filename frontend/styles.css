@@ -110,6 +110,25 @@ html, body {
 .unit-toggle button { padding: 1px 7px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; cursor: pointer; }
 .unit-toggle button[aria-pressed="true"] { background: var(--track); color: var(--text); }
 .unit-toggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.inline-select {
+  max-width: 180px;
+  height: 22px;
+  padding: 0 18px 0 6px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+  background-size: 8px 5px;
+  text-overflow: ellipsis;
+  border: 1px solid var(--track);
+  border-radius: 6px;
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.inline-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.card-picker { margin-left: auto; font-weight: 500; letter-spacing: 0; }
 .sensor-list:empty { display: none; }
 .sensor-list { padding-top: 8px; border-top: 1px solid var(--card-border); }
 .card-tag { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0; }

@@ -78,6 +78,7 @@ fn parsers_never_panic_on_garbage() {
             let _ = disk::parse_mountinfo(text);
             let _ = disk::udev_unescape(text);
             let _ = network::parse_net_dev(text);
+            let _ = network::parse_default_route(text);
             let _ = gpu::pci_ids_lookup(text, 0x10de, 0x1cb6);
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let _ = crate::settings_store::parse_stored(&v);

@@ -389,7 +389,7 @@
       uptimeAnchorSeconds = null;
       setText("uptime", s.uptimeText);
     }
-    setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
+    fillSettingSelect("gpuIndex", (s.gpus || []).map((g) => [String(g.index), `GPU${g.index} · ${labeledGpuName(g.name, g.vendor)}`]));
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
     setText("gpuTemp", tempText(s.gpuTempText));
@@ -410,7 +410,11 @@
       setBar(key, metric);
     }
     setText("memPressure", Number.isFinite(s.memPressure) ? s.memPressure.toFixed(2) + "%" : "--");
-    setText("netSubtitle", (s.netHasInterface || s.netIpAvailable) ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
+    setText("netInterfaceName", s.netInterfaceName);
+    setText("netIp", s.netIp);
+    setText("netMac", s.netMac);
+    setText("netGateway", s.netGateway);
+    fillSettingSelect("netInterface", [["all", "所有實體介面"], ...(s.netInterfaces || []).map((i) => [i, i])]);
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
 
@@ -486,6 +490,42 @@
     else pendingRender = true;
   }
 
+  // ---------------------------------------------------------------- setting pickers on cards
+  // <select data-setting-select="key">: options come from the snapshot, the
+  // value from the current settings; choosing writes through update_settings.
+  let currentSettings = {};
+  const settingSelects = all("[data-setting-select]");
+  function syncSettingSelects() {
+    for (const sel of settingSelects) {
+      const want = String(currentSettings[sel.dataset.settingSelect] ?? "");
+      // A saved value missing from the list (e.g. an unplugged interface) stays selectable.
+      if (want && ![...sel.options].some((o) => o.value === want)) sel.append(new Option(want, want));
+      if (document.activeElement !== sel && sel.value !== want) sel.value = want;
+    }
+  }
+  function fillSettingSelect(key, options) {
+    const signature = JSON.stringify(options);
+    for (const sel of settingSelects) {
+      if (sel.dataset.settingSelect !== key || sel.dataset.options === signature) continue;
+      sel.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+      sel.dataset.options = signature;
+    }
+    syncSettingSelects();
+  }
+  for (const sel of settingSelects) {
+    sel.addEventListener("change", async () => {
+      const key = sel.dataset.settingSelect;
+      const value = SPECS[key]?.text ? sel.value : Number(sel.value);
+      if (!invoke) return;
+      try {
+        displaySettings(await invoke("update_settings", { patch: { [key]: value } }));
+      } catch (e) {
+        console.warn("ResourceWatch: setting rejected", e);
+        syncSettingSelects(); // back to the stored value
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- settings
   const SPECS = {
     updateInterval: { min: 100, max: 10000, step: 50 },
@@ -507,6 +547,8 @@
 
   function displaySettings(settings) {
     if (!settings || typeof settings !== "object") return;
+    currentSettings = { ...currentSettings, ...settings };
+    syncSettingSelects();
     for (const [key, field] of Object.entries(fields)) {
       if (!(key in settings) || document.activeElement === field) continue;
       field.value = String(settings[key]);
