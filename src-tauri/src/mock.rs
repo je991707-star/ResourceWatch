@@ -1,56 +1,24 @@
-//! Phase 1 mock data source.
+//! Mock data source for UI development (`RESOURCEWATCH_MOCK=1`).
 //!
 //! Generates clearly labelled fake values (`dataSource: "mock"`, names prefixed
-//! with "Mock") so the Tauri window, IPC and frontend can be developed before
-//! any hardware collector exists. It reads no hardware and starts no process.
-//! Phase 2 replaces it with real collectors; it must never be shown as real data.
+//! with "Mock"). It reads no hardware and starts no process, and must never be
+//! shown as real data. The default source is the live [`crate::monitor::Monitor`].
 
+use crate::history::{HistoryBuffer, HistorySample};
 use crate::settings::Settings;
-use crate::snapshot::{format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, Snapshot};
-use serde::Deserialize;
-use std::collections::{BTreeMap, VecDeque};
+use crate::snapshot::{format_uptime, DataSource, DiskInfo, DiskRate, Metric, Snapshot};
+use crate::source::RefreshKind;
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 /// Documentation address (RFC 5737 TEST-NET-1): obviously not a real lease.
 const MOCK_IPV4: &str = "192.0.2.10";
 
-/// Manual refresh actions (`refresh_devices` command): `"ipv4"`, `"disks"`, `"hardware"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RefreshKind {
-    Ipv4,
-    Disks,
-    Hardware,
-}
-
-#[derive(Default)]
-struct Series {
-    cpu: VecDeque<Option<f64>>,
-    gpu: VecDeque<Option<f64>>,
-    encode: VecDeque<Option<f64>>,
-    decode: VecDeque<Option<f64>>,
-    vram: VecDeque<Option<f64>>,
-    ram: VecDeque<Option<f64>>,
-    net_up: VecDeque<Option<f64>>,
-    net_down: VecDeque<Option<f64>>,
-}
-
-fn push(buf: &mut VecDeque<Option<f64>>, value: Option<f64>, limit: usize) {
-    buf.push_back(value.filter(|v| v.is_finite()));
-    while buf.len() > limit {
-        buf.pop_front();
-    }
-}
-
-fn vec(buf: &VecDeque<Option<f64>>) -> Vec<Option<f64>> {
-    buf.iter().copied().collect()
-}
-
 pub struct MockSource {
     started: Instant,
     tick: u64,
-    series: Series,
+    history: HistoryBuffer,
     disks: Vec<DiskInfo>,
     /// Number of samples since the last disk scan; the first sample after a
     /// scan has no rate (same as the legacy counter-delta behaviour).
@@ -69,7 +37,7 @@ impl MockSource {
         Self {
             started: Instant::now(),
             tick: 0,
-            series: Series::default(),
+            history: HistoryBuffer::default(),
             disks: mock_disks(),
             samples_since_disk_scan: 0,
             ip: Some(MOCK_IPV4.to_string()),
@@ -124,16 +92,19 @@ impl MockSource {
         let net_down = Metric::rate(Some(down));
 
         if record {
-            let n = settings.history_points.max(2) as usize;
-            let s = &mut self.series;
-            push(&mut s.cpu, cpu_m.percent, n);
-            push(&mut s.gpu, gpu_m.percent, n);
-            push(&mut s.encode, enc_m.percent, n);
-            push(&mut s.decode, dec_m.percent, n);
-            push(&mut s.vram, vram_m.percent, n);
-            push(&mut s.ram, ram_m.percent, n);
-            push(&mut s.net_up, net_up.raw_value, n);
-            push(&mut s.net_down, net_down.raw_value, n);
+            self.history.push(
+                HistorySample {
+                    cpu: cpu_m.percent,
+                    gpu: gpu_m.percent,
+                    encode: enc_m.percent,
+                    decode: dec_m.percent,
+                    vram: vram_m.percent,
+                    ram: ram_m.percent,
+                    net_up: net_up.raw_value,
+                    net_down: net_down.raw_value,
+                },
+                settings.history_points,
+            );
         }
 
         let mut disk_rates = BTreeMap::new();
@@ -186,16 +157,7 @@ impl MockSource {
             net_ip: self.ip.clone().unwrap_or_else(|| "--".to_string()),
             net_up,
             net_down,
-            history: History {
-                cpu: vec(&self.series.cpu),
-                gpu: vec(&self.series.gpu),
-                encode: vec(&self.series.encode),
-                decode: vec(&self.series.decode),
-                vram: vec(&self.series.vram),
-                ram: vec(&self.series.ram),
-                net_up: vec(&self.series.net_up),
-                net_down: vec(&self.series.net_down),
-            },
+            history: self.history.to_history(),
         }
     }
 }

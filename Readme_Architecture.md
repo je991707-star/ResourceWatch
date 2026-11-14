@@ -3,8 +3,8 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。
 修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。
 
-> 目前狀態：實際硬體監控仍只由舊版「Plasma QML + Python + HTML」提供。
-> Tauri 桌面應用（`src-tauri/` + `frontend/`）已有視窗、前端與 IPC 骨架，但所有數值來自 mock 資料來源，尚未讀取任何硬體。
+> 目前狀態：Tauri 桌面應用（`src-tauri/` + `frontend/`）已由 Rust collectors 讀取實際硬體資料（`dataSource: "live"`）。
+> 舊版「Plasma QML + Python + HTML」仍完整保留，功能對等驗證與統一排程器、設定持久化尚未完成。
 
 ```text
 舊版（現行）
@@ -16,8 +16,10 @@ KDE Plasma 6 / plasmawindowed
 KDE 設定視窗
 └── config/config.qml → ui/configGeneral.qml ── QtWebChannel ── web/settings/*
 
-Tauri 桌面應用（骨架，mock 資料）
-src-tauri/src/lib.rs ── AppState{settings, MockSource} ── mock loop thread ── event "snapshot"
+Tauri 桌面應用
+src-tauri/src/lib.rs ── AppState{settings, Source} ── rw-sampler 執行緒 ── event "snapshot"
+        │                        └─ Source::Live(Monitor) ─ collectors/{cpu,memory,system,disk,network,gpu(+nvml)}
+        │                           Source::Mock(MockSource)（RESOURCEWATCH_MOCK=1）
         ▲ commands: get_snapshot / get_settings / update_settings / reset_settings / refresh_devices
 frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
@@ -121,8 +123,8 @@ QtWebEngine 容器與 QtWebChannel 橋接（物件 `resourceWatch`），只公�
 
 ### HTML 快照 JSON 契約（v0.0.5）
 
-Tauri 版的快照（`src-tauri/src/snapshot.rs`）沿用此表，並額外加入 `dataSource`（目前只有 `"mock"`，前端據此顯示「模擬資料 · 非實機」）；
-Tauri 版 `gpuSource` 另有 `"mock"` 值。欄位改名或刪除須同步更新本表、`snapshot.rs`、`frontend/app.js` 與 `package/contents/web/app.js`。
+Tauri 版的快照（`src-tauri/src/snapshot.rs`）沿用此表，並額外加入 `dataSource`（`"live"` 實際量測／`"mock"` 模擬，前端據 `"mock"` 顯示「模擬資料 · 非實機」）；
+Tauri 版 `gpuSource` 值為 `"nvml"`、`"drm"`、`"unavailable"`、`"mock"`。欄位改名或刪除須同步更新本表、`snapshot.rs`、`frontend/app.js` 與 `package/contents/web/app.js`。
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
@@ -210,7 +212,8 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 ### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json、icons/
 
 - 套件 `resourcewatch` 0.1.0（Tauri 版自己的版號，與 Plasma 套件 0.0.5 分開；rpm 版號不允許 `-`）；lib 名稱 `resourcewatch_lib`。
-  依賴只有 `tauri`、`serde`、`serde_json`；dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。
+  依賴：`tauri`、`serde`、`serde_json`、`libloading`（執行期載入 NVML，不在連結時依賴 NVIDIA）、`libc`（`getifaddrs`）；
+  dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。`rust-version = 1.85`。
 - `tauri.conf.json`：identifier `io.github.local.resourcewatch`；視窗 `main` 初始 1220×790、最小 640×480、可自由縮放、不設最大值；
   CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
 - `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
@@ -218,24 +221,26 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 
 ### src/lib.rs
 
-應用組裝與 IPC。`configure(builder)` 註冊 `AppState`、mock 迴圈與所有 Command（供 `run()` 與整合測試共用）。
+應用組裝與 IPC。`configure(builder)` 註冊 `AppState`、取樣迴圈與所有 Command（供 `run()` 與整合測試共用）。
+`sample_live(count, interval)` 不開視窗、直接用 `Monitor` 取樣並回傳 JSON，供 `examples/sample.rs` 與系統工具交叉比對。
 
 | Command | 輸入 | 輸出 | 錯誤 |
 |---|---|---|---|
-| `get_snapshot` | — | `Snapshot`（不推進 mock 時間） | — |
+| `get_snapshot` | — | 最近一次讀值組成的 `Snapshot`（不觸發新的硬體讀取） | — |
 | `get_settings` | — | `Settings` | — |
 | `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證後的 `Settings`，並發出 `settings-changed` | `CommandError {code: "invalidSetting", field, message}`；型別錯誤為 Tauri 反序列化錯誤字串 |
 | `reset_settings` | — | 預設 `Settings`，並發出 `settings-changed` | — |
-| `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}` | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
+| `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}`：IPv4／硬碟清單／CPU 型號＋RAM 速度＋GPU 清單與名稱 | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
 
 | Event | Payload | 時機 |
 |---|---|---|
 | `snapshot` | `Snapshot` | 每個 `updateInterval` 一次；手動刷新後立即一次 |
 | `settings-changed` | `Settings` | 設定更新或恢復預設後 |
 
-`AppState` 以單一 `Mutex` 保存設定與 mock 來源（中毒時復原而非崩潰），`Condvar` 用於設定變更時喚醒迴圈。
-暫時的 mock 迴圈（執行緒 `rw-mock-loop`）睡到下一個到期時間才取樣並發出快照；下一次到期一律由「現在」起算，不補跑；
-`updateInterval` 變更時立即以新間隔重新排程。此迴圈是 mock 專用，之後由正式的統一排程器取代。
+`AppState` 以單一 `Mutex` 保存設定與資料來源 `Source`（中毒時復原而非崩潰），`Condvar` 用於設定變更時喚醒迴圈。
+設定變更時先呼叫 `Source::apply_settings`（切換 GPU／網路介面），再存入新設定。
+暫時的取樣迴圈（執行緒 `rw-sampler`）睡到下一個到期時間才對所有 collector 取樣一次並發出快照；下一次到期一律由「現在」起算，不補跑；
+`updateInterval` 變更時立即以新間隔重新排程。之後由正式的統一排程器取代。執行期間不啟動任何外部程序。
 
 ### src/settings.rs
 
@@ -254,41 +259,118 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 自 `FormatUtils.js` 與舊版 QML 格式化函式移植：`valid`、`valid_rate`、`clamp_percent`、`percent_of`、`format_percent`（一位小數、去掉 `.0`）、
 `format_bytes`（B…PiB）、`format_rate`（B/s…GiB/s）。
 
+### src/source.rs
+
+`Source::Live(Box<Monitor>)`（預設）或 `Source::Mock(Box<MockSource>)`（環境變數 `RESOURCEWATCH_MOCK=1`，僅供 UI 開發）。
+統一提供 `sample`、`peek`、`refresh(RefreshKind)`、`apply_settings`。`RefreshKind` = `ipv4` | `disks` | `hardware`。
+
+### src/monitor.rs
+
+實際資料來源。持有各 collector、啟動時取得的靜態資訊（CPU 型號、RAM 速度、硬碟清單、IPv4、GPU 選擇）與歷史緩衝。
+- `sample()`：讀取 CPU、記憶體、uptime、GPU、硬碟 I/O、網路各一次，組成快照並寫入歷史。
+- `peek()`：只用上次讀值組成快照，不讀硬體、不寫歷史。
+- `refresh(kind)`：IPv4 重新查詢；硬碟清單重新掃描並重設 I/O 計數（下一個樣本無速率）；硬體資訊重新讀 CPU 型號、RAM 速度並重掃 GPU。
+- `apply_settings()`：`gpuIndex` 改變時切換 GPU；`netInterface` 改變時切換統計介面，並因為是使用者明確操作而重新查詢一次 IPv4。
+- 啟動後 5 秒內缺失的指標標為 `status: "loading"`（速率需兩次取樣），之後為 `"unavailable"`。
+- 文字格式：CPU 時脈 `x.xx GHz`、CPU 溫度一位小數、GPU 溫度整數、`°C`。
+
+### src/history.rs
+
+`HistoryBuffer`：八條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown），每條最多 `historyPoints`（至少 2）點，
+`historyPoints` 縮小時捨棄最舊的點；非有限值存成 `None`。Monitor 與 MockSource 共用。
+
+### src/collectors/mod.rs
+
+collector 共用工具。`Roots {proc_dir, sys_dir}`（預設 `/proc`、`/sys`，測試時指向假目錄樹）、`read_trimmed`／`read_u64`／`read_i64`／`read_first_line`、
+`list_dir`（自然排序，`card10` 在 `card9` 後）、`counter_rate`（計數器倒退或時間差 ≤ 0 回傳 `None`）。collector 只讀資料，不決定何時讀、不格式化文字。
+
+### src/collectors/cpu.rs
+
+- 使用率：只讀 `/proc/stat` 第一行；total = user+nice+system+idle+iowait+irq+softirq+steal，idle = idle+iowait，取前後兩次差值；第一次、計數器倒退時為 `None`。
+- 時脈：啟動時找出各 `cpuN/cpufreq/scaling_cur_freq`，每次取平均（kHz → MHz）。
+- 溫度：啟動時掃描 hwmon。`coretemp` 取所有 `Core N` 平均（與 KSystemStats `averageTemperature` 相同，不含 Package），沒有則用 `Package id`；
+  `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。
+- 型號：`/proc/cpuinfo` 的 `model name`（或 `Hardware`），啟動與手動重新偵測時讀取。
+
+### src/collectors/memory.rs
+
+`/proc/meminfo`：RAM used = `MemTotal − MemAvailable`、Swap used = `SwapTotal − SwapFree`（與 KSystemStats 舊版數值逐位元組相同）。
+`SwapTotal` 為 0 時保留 0（UI 顯示「0 B / --」且無百分比），欄位缺失或矛盾（Available > Total）時為 `None`。
+
+### src/collectors/system.rs
+
+- Uptime：`/proc/uptime` 第一欄（含睡眠時間，等同 CLOCK_BOOTTIME），每次取樣讀取；前端以此為錨點每秒內插。
+- RAM 速度：先讀 `/sys/firmware/dmi/entries/17-*/raw`（SMBIOS Type 17，configured 優先、其次 rated；一般使用者通常無權限），
+  再讀舊版相同的快取 `${XDG_STATE_HOME:-~/.local/state}/resourcewatch/ram_speed.json`（`{"speedsMTs":[…]}`）；
+  輸出 `N MT/s` 或 `最小–最大 MT/s`，都沒有則未知。不要求 root。
+
+### src/collectors/disk.rs
+
+- 清單（啟動與手動刷新）：掃描 `/sys/block`，依 `dev` 主次號排序（與 `lsblk` 相同，硬碟編號與舊版一致）。
+  排除 `/virtual/`（loop、zram、dm、md）、USB、SCSI type ≠ 0（光碟）、容量 0（空讀卡機）、`vd*`／`mmcblk*` 等；
+  transport：`nvmeXnY` → `nvme`，路徑含 `/ata` → `sata`，含 `end_device-`/`sas_` → `sas`，其餘 `sd*` → `scsi`。型號取 `device/model`。
+- 讀寫速率（每次取樣）：直接讀 `/proc/diskstats` 第 6／10 欄（512-byte sectors），先算 sectors/s 再乘 512（避免溢位）；
+  第一次、裝置不在 diskstats、計數器倒退時為 `None`。`reset()` 用於重新掃描後。
+
+### src/collectors/network.rs
+
+- 流量：`/proc/net/dev` 的 rx/tx bytes 差值。`all` 只加總**實體介面**（有 `/sys/class/net/<if>/device`；結果快取），排除 lo、bridge、veth、tun/VPN，避免轉送或封裝流量重複計算。
+  指定介面時只看該介面；介面不存在、剛出現／消失或計數器重置的那一次略過，全部略過則為 `None`。切換介面會清除前次計數。
+- IPv4：`getifaddrs(3)`，取選定介面（`all` 則任一非 loopback 介面）第一個非 loopback、非 169.254 的位址。只在啟動、手動刷新、切換介面時查詢；不啟動 `ip`、不經 shell。
+
+### src/collectors/gpu/mod.rs
+
+- 清單：`/sys/class/drm/cardN` 中 PCI class `0x03xxxx` 的裝置，依 `cardN` 排序；`gpuIndex` 即此清單的索引（舊版是 KDE 的 `gpuN`，多 GPU 時順序可能不同）。
+  記錄 PCI 位址（`0000:01:00.0`）、vendor／device ID、驅動。
+- NVIDIA 且 NVML 可用：以 PCI 位址取得 NVML handle，讀使用率、NVENC、NVDEC、溫度、VRAM；名稱用 NVML。
+- 其他（AMD、Intel、NVML 不可用的 NVIDIA）：DRM sysfs。`gpu_busy_percent`（AMD）、`mem_info_vram_used/total`、裝置自身 hwmon 溫度（優先 `edge`/`pkg` 標籤）；
+  NVENC/NVDEC 一律 `None`；名稱查 `pci.ids`（`/usr/share/hwdata/pci.ids` 等，僅啟動／手動時讀取）。
+- `source()`：`nvml` | `drm` | `unavailable`（索引超出範圍）。`rediscover()` 供手動重新偵測。NVML 只在偵測到 NVIDIA 卡時嘗試載入一次。
+
+### src/collectors/gpu/nvml.rs
+
+以 `libloading` 在執行期載入 `libnvidia-ml.so.1`（或 `.so`），只綁定 9 個函式（init、shutdown、依 PCI 取 handle、名稱、使用率、
+encoder／decoder 使用率、溫度、memory info v1）。`nvmlInit_v2` 成功後才建立物件，`Drop` 時 `nvmlShutdown`。整個程式生命週期只初始化一次。
+回傳碼非成功（含 `NOT_SUPPORTED`，例如無 NVENC 的 GT 1030）或數值不合理時為 `None`。
+
 ### src/mock.rs
 
-mock 資料來源：以正弦波產生數值，名稱一律帶 `Mock`，IPv4 使用文件保留位址 `192.0.2.10`，RAM 速度刻意為 `--` 以測試缺失顯示；
-不讀硬體、不啟動程序。`sample()` 推進時間並寫入歷史（長度 = `historyPoints`，縮小時從前端截斷），`peek()` 不推進。
+mock 資料來源（`RESOURCEWATCH_MOCK=1`）：以正弦波產生數值，名稱一律帶 `Mock`，IPv4 使用文件保留位址 `192.0.2.10`，RAM 速度刻意為 `--` 以測試缺失顯示；
+不讀硬體、不啟動程序。`sample()` 推進時間並寫入歷史（共用 `HistoryBuffer`），`peek()` 不推進。
 `refresh(Disks)` 後第一個樣本的硬碟速率為 `null`（模擬舊版計數器差值行為）。
+
+### examples/sample.rs
+
+`cargo run --example sample -- [次數] [間隔ms]`：以 `sample_live()` 輸出每次快照的 JSON 行，供與 `kstatsviewer`、`nvidia-smi`、`free` 等比對。不隨應用打包。
 
 ### tests/ipc.rs
 
-以 Tauri mock runtime 走真實的 invoke 路由：檢查快照欄位契約與 `dataSource`、設定讀寫／驗證錯誤格式／未知鍵／失敗不改值／恢復預設、
-三種 `refresh_devices` 與未知 `kind`。各模組的單元測試寫在該檔案的 `#[cfg(test)]` 內。
+以 Tauri mock runtime 走真實的 invoke 路由：檢查快照欄位契約與 `dataSource: "live"`、設定讀寫／驗證錯誤格式／未知鍵／失敗不改值／恢復預設、
+三種 `refresh_devices`（硬碟重新掃描後速率為 `null`）與未知 `kind`。各模組的單元測試寫在該檔案的 `#[cfg(test)]` 內，collector 測試使用暫存目錄建立的假 `/proc`、`/sys`。
 
-## Rust 後端：新舊資料來源對照（collectors 尚未實作）
+## Rust 後端：新舊資料來源對照
 
-預定模組：`collectors`（只讀資料）、`scheduler`（統一排程）、`state` / `history`（最新快照與歷史）、`settings`（讀寫與驗證）。
-下表為新舊資料來源對照，「新來源」為候選，實作與驗證狀態記錄在 `REFACTOR_RUST_TAURI.md`。
+`collectors` 已實作；統一排程器（`scheduler`）與設定持久化尚未實作。交叉比對結果記錄在 `REFACTOR_RUST_TAURI.md` Phase 2。
 
-| 指標 | 舊版來源 | Rust 候選來源 | 觸發 | 對照驗證方式 |
+| 指標 | 舊版來源 | Rust 實作來源 | 觸發 | 對照驗證方式 |
 |---|---|---|---|---|
-| CPU 使用率 | KSystemStats `cpu/all/usage` | `/proc/stat` 前後兩次計數差值 | 更新間隔 | 舊版、`top`/`mpstat` |
-| CPU 時脈 | `cpu/all/averageFrequency` | cpufreq sysfs `scaling_cur_freq` 平均（缺失回退 `/proc/cpuinfo` MHz） | 更新間隔 | 舊版、`/proc/cpuinfo` |
-| CPU 溫度 | `cpu/all/average|maximumTemperature` | hwmon（coretemp / k10temp / zenpower） | 更新間隔 | 舊版、`sensors` |
-| CPU 型號 | `hardware_info.py` `/proc/cpuinfo` | `/proc/cpuinfo` `model name` | 啟動／手動重新偵測 | 舊版輸出 |
-| Uptime | `os/system/uptime` + HTML 內插 | `CLOCK_BOOTTIME`（或 `/proc/uptime` 啟動讀一次）+ 前端單調時鐘 | 每秒顯示、不啟動程序 | `uptime` |
-| GPU 使用率（NVIDIA） | `gpu_backend.py` NVML（每間隔一次 Python） | NVML（常駐初始化一次，以 PCI 位址對應） | 更新間隔 | 舊版、`nvidia-smi` |
-| NVENC / NVDEC | `gpu_backend.py` NVML | NVML encoder/decoder utilization；不支援顯示未知 | 更新間隔 | 舊版、`nvidia-smi -q -d UTILIZATION` |
-| GPU 溫度 | KSystemStats `gpu/gpuN/temperature` | NVIDIA：NVML；AMD/Intel：DRM hwmon | 更新間隔 | 舊版、`sensors` |
-| VRAM | KSystemStats `usedVram/totalVram` | NVIDIA：NVML memory info；AMD：`mem_info_vram_*`；Intel：記錄不支援 | 更新間隔 | 舊版、`nvidia-smi` / `amdgpu_top` |
-| GPU 使用率（AMD/Intel） | KSystemStats `gpu/gpuN/usage` | AMD：`gpu_busy_percent`；Intel：待評估（i915/xe 無通用 sysfs 指標） | 更新間隔 | 舊版、`radeontop` / `intel_gpu_top` |
-| GPU 名稱／廠牌 | KSystemStats name + DRM PCI vendor | DRM sysfs PCI vendor/device + NVML 名稱 | 啟動／手動 | 舊版輸出 |
-| RAM / Swap | KSystemStats `memory/*` | `/proc/meminfo`（used = MemTotal − MemAvailable，需與舊版定義核對） | 更新間隔 | 舊版、`free -b` |
-| RAM 速度 | `hardware_info.py` SMBIOS Type 17 / 使用者快取 | `/sys/firmware/dmi/entries/17-*/raw`（可讀時）/ 相同快取檔；權限不足顯示未知 | 啟動／手動 | 舊版輸出 |
-| 硬碟清單 | `lsblk` JSON + 篩選 | `/sys/block/*`（`device/`、`removable`、`size`、transport 判斷），不啟動 `lsblk` | 啟動／手動按鈕 | 舊版清單、`lsblk` |
-| 硬碟讀寫 | 每間隔 `cat /proc/diskstats` | 直接讀 `/proc/diskstats`，處理重置、裝置移除、時間差 | 更新間隔 | 舊版、`iostat` |
-| 網路上下行 | KSystemStats `network/*` | `/proc/net/dev` 差值（處理回捲與介面變更） | 更新間隔 | 舊版、`ip -s link` |
-| IPv4 | `ip -j -4 address show` + KSystemStats `ipv4address` | Netlink（`getifaddrs` / rtnetlink） | 啟動／手動按鈕 | `ip -4 addr` |
-| 歷史 | QML 陣列 `historyPoints` 長度 | Rust 環形緩衝，缺失保留 `None` | 更新間隔 | 單元測試 |
-| HTML 快照 | QtWebChannel `snapshotReady` | Tauri Event（欄位沿用上方 JSON 契約） | 更新間隔 | 整合測試 |
-| 設定 | KConfig `main.xml` | Rust settings 檔（XDG config），沿用鍵、預設與範圍 | 使用者操作 | 單元測試 |
+| CPU 使用率 | KSystemStats `cpu/all/usage` | `/proc/stat` 前後兩次計數差值 | 更新間隔 | `kstatsviewer` |
+| CPU 時脈 | `cpu/all/averageFrequency` | cpufreq `scaling_cur_freq` 平均 | 更新間隔 | `kstatsviewer` |
+| CPU 溫度 | `cpu/all/averageTemperature`（Core 平均） | hwmon coretemp Core 平均／k10temp Tdie、Tctl | 更新間隔 | `kstatsviewer` |
+| CPU 型號 | `hardware_info.py` `/proc/cpuinfo` | `/proc/cpuinfo` `model name` | 啟動／手動 | 舊版輸出 |
+| Uptime | `os/system/uptime` + HTML 內插 | `/proc/uptime` + 前端單調時鐘 | 每秒顯示、不啟動程序 | `kstatsviewer` |
+| GPU 使用率（NVIDIA） | `gpu_backend.py` NVML（每間隔一次 Python） | NVML（只初始化一次，以 PCI 位址對應） | 更新間隔 | `nvidia-smi` |
+| NVENC / NVDEC | `gpu_backend.py` NVML | NVML；不支援為 `None` | 更新間隔 | `nvidia-smi` |
+| GPU 溫度 | KSystemStats `gpu/gpuN/temperature` | NVIDIA：NVML；其他：DRM 裝置 hwmon | 更新間隔 | `nvidia-smi`、`kstatsviewer` |
+| VRAM | KSystemStats `usedVram/totalVram` | NVIDIA：NVML memory v1；其他：`mem_info_vram_*`（若有） | 更新間隔 | `nvidia-smi` |
+| GPU 使用率（AMD/Intel） | KSystemStats `gpu/gpuN/usage` | AMD：`gpu_busy_percent`；Intel：不支援（sysfs 無此指標） | 更新間隔 | NOT TESTED（無硬體） |
+| GPU 名稱／廠牌 | KSystemStats name + DRM PCI vendor | NVML 名稱／`pci.ids` + DRM PCI vendor | 啟動／手動 | 舊版輸出 |
+| RAM / Swap | KSystemStats `memory/*` | `/proc/meminfo`（MemTotal − MemAvailable；SwapTotal − SwapFree） | 更新間隔 | `kstatsviewer`（逐位元組相同） |
+| RAM 速度 | `hardware_info.py` SMBIOS Type 17 / 使用者快取 | 相同來源與快取檔，權限不足顯示未知 | 啟動／手動 | 舊版輸出 |
+| 硬碟清單 | `lsblk` JSON + 篩選 | `/sys/block/*`，依主次號排序，不啟動 `lsblk` | 啟動／手動按鈕 | `lsblk` |
+| 硬碟讀寫 | 每間隔 `cat /proc/diskstats` | 程序內直接讀 `/proc/diskstats` | 更新間隔 | `kstatsviewer disk/*` |
+| 網路上下行 | KSystemStats `network/*` | `/proc/net/dev` 差值（`all` 只計實體介面） | 更新間隔 | `kstatsviewer` |
+| IPv4 | `ip -j -4 address show` + KSystemStats `ipv4address` | `getifaddrs(3)` | 啟動／手動按鈕／切換介面 | `kstatsviewer` |
+| 歷史 | QML 陣列 `historyPoints` 長度 | `HistoryBuffer`，缺失保留 `None` | 更新間隔 | 單元測試 |
+| HTML 快照 | QtWebChannel `snapshotReady` | Tauri Event `snapshot` | 更新間隔 | IPC 整合測試 |
+| 設定 | KConfig `main.xml` | Rust `Settings`（記憶體；持久化待實作） | 使用者操作 | 單元測試 |

@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DataSource {
+    /// Read from this machine by the Rust collectors.
+    Live,
     /// Generated values for UI development. Never real hardware readings.
     Mock,
 }
@@ -139,7 +141,8 @@ pub struct Snapshot {
     pub gpu_name: String,
     /// `nvidia` | `amd` | `intel` | `other`
     pub gpu_vendor: String,
-    /// `nvml` | `nvidia-smi` | `ksystemstats` | `unavailable` | `mock`
+    /// Tauri: `nvml` | `drm` | `unavailable` | `mock`
+    /// (legacy widget: `nvml` | `nvidia-smi` | `ksystemstats` | `unavailable`)
     pub gpu_source: String,
     pub gpu: Metric,
     pub gpu_temp_text: String,

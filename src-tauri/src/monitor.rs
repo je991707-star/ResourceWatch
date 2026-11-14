@@ -1,0 +1,285 @@
+//! Live monitor: owns the collectors, the startup-time static information and
+//! the history, and turns readings into a [`Snapshot`].
+//!
+//! - every sample: CPU, memory, uptime, GPU, disk I/O, network
+//! - startup and manual refresh only: CPU model, RAM speed, GPU list/name,
+//!   disk list, IPv4
+
+use crate::collectors::{
+    cpu::{self, CpuCollector, CpuReading},
+    disk::{self, DiskCollector, DiskDevice, DiskRateReading},
+    gpu::{GpuCollector, GpuReading},
+    memory::{self, MemReading},
+    network::{self, NetCollector, NetReading},
+    system, Roots,
+};
+use crate::format::{format_bytes, valid, MISSING};
+use crate::history::{HistoryBuffer, HistorySample};
+use crate::settings::Settings;
+use crate::snapshot::{
+    format_uptime, DataSource, DiskInfo, DiskRate, Metric, MetricStatus, Snapshot,
+};
+use crate::source::RefreshKind;
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+/// Like the legacy widget: missing values show "loading" for the first
+/// seconds (rates need two samples), then "unavailable".
+const GRACE: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Clone, Default)]
+struct Readings {
+    cpu: CpuReading,
+    mem: MemReading,
+    gpu: GpuReading,
+    disks: BTreeMap<String, DiskRateReading>,
+    net: NetReading,
+    uptime: Option<f64>,
+}
+
+pub struct Monitor {
+    roots: Roots,
+    started: Instant,
+    cpu: CpuCollector,
+    disk_io: DiskCollector,
+    net: NetCollector,
+    gpu: GpuCollector,
+    net_interface: String,
+    cpu_model: Option<String>,
+    ram_speed: Option<String>,
+    disks: Vec<DiskDevice>,
+    ip: Option<String>,
+    last: Readings,
+    history: HistoryBuffer,
+}
+
+fn temp_text(c: Option<f64>, decimals: usize) -> String {
+    valid(c).map_or_else(|| MISSING.to_string(), |c| format!("{c:.decimals$} °C"))
+}
+
+fn freq_text(mhz: Option<f64>) -> String {
+    valid(mhz).map_or_else(|| MISSING.to_string(), |m| format!("{:.2} GHz", m / 1000.0))
+}
+
+impl Monitor {
+    pub fn new(settings: &Settings) -> Self {
+        Self::with_roots(Roots::default(), settings)
+    }
+
+    pub fn with_roots(roots: Roots, settings: &Settings) -> Self {
+        Self {
+            cpu: CpuCollector::new(&roots),
+            disk_io: DiskCollector::new(&roots),
+            net: NetCollector::new(&roots, &settings.net_interface),
+            gpu: GpuCollector::new(&roots, settings.gpu_index),
+            net_interface: settings.net_interface.clone(),
+            cpu_model: cpu::cpu_model(&roots),
+            ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
+            disks: disk::discover(&roots),
+            ip: network::ipv4_address(&settings.net_interface),
+            started: Instant::now(),
+            last: Readings::default(),
+            history: HistoryBuffer::default(),
+            roots,
+        }
+    }
+
+    /// Reacts to `gpuIndex` / `netInterface` changes. Choosing another
+    /// interface is an explicit user action, so its IPv4 is looked up once.
+    pub fn apply_settings(&mut self, s: &Settings) {
+        if s.gpu_index != self.gpu.index() {
+            self.gpu.select(s.gpu_index);
+            self.last.gpu = GpuReading::default();
+        }
+        if s.net_interface != self.net_interface {
+            self.net_interface = s.net_interface.clone();
+            self.net.select(&s.net_interface);
+            self.last.net = NetReading::default();
+            self.ip = network::ipv4_address(&s.net_interface);
+        }
+    }
+
+    pub fn refresh(&mut self, kind: RefreshKind, s: &Settings) {
+        match kind {
+            RefreshKind::Ipv4 => self.ip = network::ipv4_address(&s.net_interface),
+            RefreshKind::Disks => {
+                self.disks = disk::discover(&self.roots);
+                self.disk_io.reset();
+                self.last.disks.clear();
+            }
+            RefreshKind::Hardware => {
+                self.cpu_model = cpu::cpu_model(&self.roots);
+                self.ram_speed =
+                    system::ram_speed_text(&self.roots, system::ram_cache_path().as_deref());
+                self.gpu.rediscover();
+            }
+        }
+    }
+
+    /// Reads all per-interval collectors, records history, returns a snapshot.
+    pub fn sample(&mut self, s: &Settings) -> Snapshot {
+        self.last = Readings {
+            cpu: self.cpu.sample(),
+            mem: memory::sample(&self.roots),
+            gpu: self.gpu.sample(),
+            disks: self.disk_io.sample(&self.disks),
+            net: self.net.sample(),
+            uptime: system::uptime_seconds(&self.roots),
+        };
+        let snap = self.build(s);
+        self.history.push(
+            HistorySample {
+                cpu: snap.cpu.percent,
+                gpu: snap.gpu.percent,
+                encode: snap.encoder.percent,
+                decode: snap.decoder.percent,
+                vram: snap.vram.percent,
+                ram: snap.ram.percent,
+                net_up: snap.net_up.raw_value,
+                net_down: snap.net_down.raw_value,
+            },
+            s.history_points,
+        );
+        Snapshot {
+            history: self.history.to_history(),
+            ..snap
+        }
+    }
+
+    /// Snapshot of the last readings; performs no I/O on the collectors.
+    pub fn peek(&self, s: &Settings) -> Snapshot {
+        self.build(s)
+    }
+
+    fn build(&self, s: &Settings) -> Snapshot {
+        let grace = self.started.elapsed() < GRACE;
+        let g = |m: Metric| {
+            if grace && m.status == MetricStatus::Unavailable {
+                Metric {
+                    status: MetricStatus::Loading,
+                    ..m
+                }
+            } else {
+                m
+            }
+        };
+        let r = &self.last;
+        let ram = g(Metric::pair(r.mem.ram_used, r.mem.ram_total));
+        let disk_rates = self
+            .disks
+            .iter()
+            .map(|d| {
+                let rate = r.disks.get(&d.name);
+                (
+                    d.name.clone(),
+                    DiskRate {
+                        read: rate.and_then(|x| x.read),
+                        write: rate.and_then(|x| x.write),
+                    },
+                )
+            })
+            .collect();
+        Snapshot {
+            data_source: DataSource::Live,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            cpu_name: self
+                .cpu_model
+                .clone()
+                .unwrap_or_else(|| MISSING.to_string()),
+            cpu: g(Metric::percent(r.cpu.usage)),
+            cpu_freq_text: freq_text(r.cpu.freq_mhz),
+            cpu_temp_text: temp_text(r.cpu.temp_c, 1),
+            uptime_text: format_uptime(r.uptime),
+            uptime_seconds: r.uptime,
+            gpu_index: s.gpu_index,
+            gpu_name: self.gpu.name().unwrap_or(MISSING).to_string(),
+            gpu_vendor: self
+                .gpu
+                .vendor()
+                .map_or("other", |v| v.as_str())
+                .to_string(),
+            gpu_source: self.gpu.source().to_string(),
+            gpu: g(Metric::percent(r.gpu.usage)),
+            gpu_temp_text: temp_text(r.gpu.temp_c, 0),
+            vram: g(Metric::pair(r.gpu.vram_used, r.gpu.vram_total)),
+            encoder: g(Metric::percent(r.gpu.encoder)),
+            decoder: g(Metric::percent(r.gpu.decoder)),
+            ram_subtitle: ram.total_text.clone(),
+            ram,
+            ram_speed_text: self
+                .ram_speed
+                .clone()
+                .unwrap_or_else(|| MISSING.to_string()),
+            swap: g(Metric::pair(r.mem.swap_used, r.mem.swap_total)),
+            disks: self
+                .disks
+                .iter()
+                .map(|d| DiskInfo {
+                    name: d.name.clone(),
+                    model: d.model.clone().unwrap_or_else(|| MISSING.to_string()),
+                    size_text: format_bytes(Some(d.size_bytes as f64)),
+                    transport: d.transport.clone(),
+                })
+                .collect(),
+            disk_rates,
+            net_has_interface: s.net_interface != "all",
+            net_ip_available: self.ip.is_some(),
+            net_ip: self.ip.clone().unwrap_or_else(|| MISSING.to_string()),
+            net_up: g(Metric::rate(r.net.up)),
+            net_down: g(Metric::rate(r.net.down)),
+            history: self.history.to_history(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collectors::testutil::{roots, temp_root, write};
+
+    #[test]
+    fn empty_system_yields_missing_not_zero() {
+        let r = temp_root("monitor-empty");
+        let s = Settings::default();
+        let mut m = Monitor::with_roots(roots(&r), &s);
+        let snap = m.sample(&s);
+        assert_eq!(snap.data_source, DataSource::Live);
+        assert_eq!(snap.cpu.percent, None);
+        assert_eq!(
+            snap.cpu.status,
+            MetricStatus::Loading,
+            "within grace period"
+        );
+        assert_eq!(snap.ram.display_value, "--");
+        assert_eq!(snap.cpu_name, "--");
+        assert_eq!(snap.gpu_source, "unavailable");
+        assert!(snap.disks.is_empty());
+        assert_eq!(snap.history.cpu, vec![None]);
+    }
+
+    #[test]
+    fn fake_system_end_to_end() {
+        let r = temp_root("monitor");
+        write(&r, "proc/stat", "cpu  100 0 100 800 0 0 0 0 0 0\n");
+        write(
+            &r,
+            "proc/meminfo",
+            "MemTotal: 1000 kB\nMemAvailable: 250 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+        );
+        write(&r, "proc/uptime", "100.5 1.0\n");
+        write(&r, "proc/cpuinfo", "model name : Test CPU\n");
+        let s = Settings::default();
+        let mut m = Monitor::with_roots(roots(&r), &s);
+        m.sample(&s);
+        write(&r, "proc/stat", "cpu  200 0 100 900 0 0 0 0 0 0\n");
+        let snap = m.sample(&s);
+        assert_eq!(snap.cpu.display_value, "50%");
+        assert_eq!(snap.ram.display_value, "75%");
+        assert_eq!(snap.cpu_name, "Test CPU");
+        assert_eq!(snap.uptime_seconds, Some(100.5));
+        assert_eq!(snap.swap.percent, None, "no swap configured: no percentage");
+        assert_eq!(snap.history.cpu, vec![None, Some(50.0)]);
+        // peek repeats the last readings without touching history.
+        assert_eq!(m.peek(&s).history.cpu.len(), 2);
+    }
+}

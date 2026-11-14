@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 分支 | `refactor/rust-tauri` |
-| 狀態 | 架構遷移規劃／逐步實作。Tauri 骨架已建立但只顯示 mock 資料；**實際硬體監控仍只有舊版 Plasma QML + Python + HTML** |
+| 狀態 | 架構遷移規劃／逐步實作。Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2）；統一排程器、設定持久化、功能對等驗證尚未完成，**舊版 Plasma QML + Python + HTML 仍保留** |
 | 基礎 | ResourceWatch v0.0.5 系列的監控功能與 HTML 介面 |
 | 專案路徑 | `/var/home/h97m/Projects/ResourceWatch` |
 | 相關文件 | 執行規則：`CLAUDE.md`；檔案職責、JSON 契約、新舊來源對照：`Readme_Architecture.md` |
@@ -168,14 +168,58 @@ Future: Plasma Widget (QML shell + optional HTML view)
 - 設定只存在記憶體（持久化屬 Phase 3）；mock 迴圈是暫時實作，統一排程器屬 Phase 3
 - deb／rpm 只確認可產生，未安裝測試
 
-### Phase 2 — Rust 硬體監控
+### Phase 2 — Rust 硬體監控 ✅
 
-- [ ] CPU、RAM／SWAP
-- [ ] 硬碟 I/O、裝置清單
-- [ ] 網路流量、IPv4
-- [ ] NVIDIA NVML，再逐步擴充 AMD／Intel
-- [ ] CPU 型號、GPU 名稱、RAM 速度等啟動資訊
-- [ ] 與舊版或系統工具交叉比對，記錄不支援項目
+- [x] CPU、RAM／SWAP → `src-tauri/src/collectors/cpu.rs`、`memory.rs`、`system.rs`（uptime）
+- [x] 硬碟 I/O、裝置清單 → `collectors/disk.rs`（`/sys/block` 掃描、`/proc/diskstats` 程序內讀取）
+- [x] 網路流量、IPv4 → `collectors/network.rs`（`/proc/net/dev`、`getifaddrs`）
+- [x] NVIDIA NVML，再逐步擴充 AMD／Intel → `collectors/gpu/nvml.rs`（libloading，初始化一次）、`collectors/gpu/mod.rs`（DRM sysfs／hwmon）
+- [x] CPU 型號、GPU 名稱、RAM 速度等啟動資訊 → `cpu::cpu_model`、NVML 名稱／`pci.ids`、`system::ram_speed_text`；`refresh_devices("hardware")` 可重新偵測
+- [x] 與舊版或系統工具交叉比對資料，記錄不支援項目（見下表）
+- 組合與切換：`monitor.rs`（實際資料，預設）、`source.rs`（`RESOURCEWATCH_MOCK=1` 改用 mock）、`history.rs`（共用歷史緩衝）
+
+**測試證據（2026-11-14）**
+
+- `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings` 無警告
+- `cargo test`：單元測試 45/45（含以暫存目錄假 `/proc`、`/sys` 測試的 CPU 計數差值、hwmon coretemp/k10temp、meminfo、
+  SMBIOS／快取、硬碟分類與 lsblk 排序、diskstats 重置、net/dev 實體介面加總與重置、AMD/Intel DRM、pci.ids、NVML 載入不崩潰）；
+  IPC 整合測試 3/3（預設 `dataSource: "live"`）
+- 主機（Bazzite KDE Wayland，Xeon E3-1231 v3、Quadro P620、driver 580.196.07）以 `examples/sample.rs` 每秒取樣 6 次，與同時執行的
+  `kstatsviewer`（舊版資料來源 KSystemStats）及 `nvidia-smi` 比對：
+
+| 指標 | Rust（新） | 對照來源 | 結果 |
+|---|---|---|---|
+| CPU 使用率 | 7.2–11.1% | KSystemStats 5.8–10.6% | 一致（取樣時間點不同） |
+| CPU 時脈 | 2.11–3.76 GHz | KSystemStats 1.50–3.69 GHz | 一致（頻率本身快速變動） |
+| CPU 溫度 | 51.0–56.8 °C | KSystemStats averageTemperature 51–56.75 °C | 一致（同為 Core 平均） |
+| RAM 已用 | `MemTotal − MemAvailable` | KSystemStats `memory/physical/used` | 逐位元組相同（另於啟動前以 /proc/meminfo 驗算） |
+| Swap 已用 | 7.8 GiB / 7.8 GiB | KSystemStats 8341164032 B | 一致 |
+| GPU 使用率 | 10–12% | `nvidia-smi` 10–12% | 一致；KSystemStats 顯示 51%（舊版已知錯誤值，正是改用 NVML 的原因） |
+| NVENC / NVDEC | 40–42% / 0% | `nvidia-smi` 40–42% / 0% | 一致 |
+| GPU 溫度 | 61 °C | `nvidia-smi` 61、KSystemStats 61 | 一致 |
+| VRAM | 1.5–1.6 GiB / 2.0 GiB | `nvidia-smi` 1501–1546 MiB / 2048 MiB | 一致 |
+| 網路上／下行 | 1.3–1.4 MiB/s ／ 1.3–1.5 KiB/s | KSystemStats 1.34 MiB/s ／ 1.37–1.70 KB/s | 一致 |
+| 硬碟讀寫 | nvme0n1 寫 ~302 KB/s、sda 0 | KSystemStats `disk/*` nvme 寫 302–640 KB/s、sda 0 | 一致 |
+| 硬碟清單 | sda（TOSHIBA DT01ABA2, 1.8 TiB, sata）、nvme0n1（Micron 2400, 476.9 GiB） | `lsblk` | 相同且同順序；USB 讀卡機 sdb、光碟 sr0、zram0 已排除 |
+| CPU 型號／RAM 速度／IPv4／Uptime | Xeon E3-1231 v3 ／ 1600 MT/s（使用者快取）／ 192.168.50.212 ／ 2天 00:23 | 舊版輸出、KSystemStats | 一致 |
+
+- 主機執行 release 版視窗：截圖確認顯示即時資料（「即時監控」、`NVIDIA Quadro P620`、各卡片數值）；執行期間子程序只有 WebKit 固定的
+  `WebKitWebProcess`、`WebKitNetworkProcess`，三次檢查都相同 → **沒有每次更新啟動外部程序**；`libnvidia-ml.so` 只載入一次
+- 舊版測試：`tests/static_check.sh`、`application_layout_test.py` 仍通過（舊版程式未修改）
+
+**不支援／限制**
+
+- Intel GPU 使用率：i915／xe 未在 sysfs 提供使用率（需 perf PMU），顯示 `--`；Intel iGPU 無 VRAM 指標
+- AMD／Intel／nouveau：NVENC／NVDEC 不支援，顯示 `--`
+- AMD／Intel GPU：`NOT TESTED`（本機無此硬體，僅以假 sysfs 單元測試）
+- NVIDIA 在 NVML 無法載入時（例如在未整合 NVIDIA 的 distrobox 內執行）：改用 DRM sysfs，專有驅動沒有 `gpu_busy_percent`，使用率等顯示 `--`；
+  舊版的 `nvidia-smi` 備援**未移植**（避免每次更新啟動外部程序）
+- `gpuIndex` 依 DRM `cardN` 順序，舊版依 KDE `gpuN`；多 GPU 系統順序可能不同，`NOT TESTED`
+- 網路 `all` 只計實體介面；舊版 KSystemStats 的 `all` 定義不同，在有 Wi-Fi／VPN／bridge 的系統上數值可能不同（本機只有 enp3s0，結果一致）
+- 切換網路介面時會立即重新查詢一次 IPv4（使用者明確操作）；其餘仍只在啟動與手動刷新時查詢
+- RAM 速度：SMBIOS 一般使用者無權讀取，本機讀到的是舊版既有快取；沒有快取的系統顯示 `--`
+- 取樣迴圈仍是 Phase 1 的暫時實作（每次取樣讀全部 collector）；統一排程器與睡眠恢復測試屬 Phase 3
+- 資源占用比較（舊版 vs 新版）屬 Phase 4，尚未量測
 
 ### Phase 3 — 排程、歷史與設定
 

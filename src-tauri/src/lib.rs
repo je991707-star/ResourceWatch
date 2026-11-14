@@ -1,22 +1,27 @@
 //! ResourceWatch Tauri application.
 //!
-//! Phase 1: window, frontend and IPC skeleton. All monitoring values come from
-//! `mock::MockSource` (`dataSource: "mock"`); no hardware is read yet.
+//! Snapshots come from the live `monitor::Monitor` (Rust collectors reading
+//! `/proc`, sysfs, hwmon and NVML), or from `mock::MockSource` when
+//! `RESOURCEWATCH_MOCK=1` is set for UI development.
 //!
 //! IPC contract
 //! - Commands: `get_snapshot`, `get_settings`, `update_settings`,
 //!   `reset_settings`, `refresh_devices`
 //! - Events:   `snapshot` (Snapshot), `settings-changed` (Settings)
 
+mod collectors;
 mod format;
+mod history;
 mod mock;
+mod monitor;
 mod settings;
 mod snapshot;
+mod source;
 
-use mock::{MockSource, RefreshKind};
 use serde::Serialize;
 use settings::{Settings, SettingsError, SettingsPatch};
 use snapshot::Snapshot;
+use source::{RefreshKind, Source};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -26,7 +31,7 @@ pub const EVENT_SETTINGS: &str = "settings-changed";
 
 struct Inner {
     settings: Settings,
-    source: MockSource,
+    source: Source,
     /// Set when `updateInterval` changes so the loop reschedules immediately.
     reschedule: bool,
 }
@@ -38,10 +43,11 @@ pub struct AppState {
 
 impl AppState {
     fn new() -> Self {
+        let settings = Settings::default();
         Self {
             inner: Mutex::new(Inner {
-                settings: Settings::default(),
-                source: MockSource::new(),
+                source: Source::from_env(&settings),
+                settings,
                 reschedule: false,
             }),
             wake: Condvar::new(),
@@ -97,6 +103,7 @@ fn store_settings<R: Runtime>(app: &AppHandle<R>, state: &AppState, next: Settin
         if g.settings.update_interval != next.update_interval {
             g.reschedule = true;
         }
+        g.source.apply_settings(&next);
         g.settings = next.clone();
     }
     state.wake.notify_all();
@@ -129,21 +136,21 @@ fn refresh_devices<R: Runtime>(
 ) -> Snapshot {
     let snapshot = {
         let mut g = state.lock();
-        g.source.refresh(kind);
         let settings = g.settings.clone();
+        g.source.refresh(kind, &settings);
         g.source.peek(&settings)
     };
     emit(&app, EVENT_SNAPSHOT, &snapshot);
     snapshot
 }
 
-/// Phase 1 temporary mock loop: one thread, sleeps until the next due time,
-/// emits one snapshot per `updateInterval`. No catch-up after a long stall
-/// (the next due time is always computed from "now"). The unified scheduler
-/// of Phase 3 replaces this.
-fn spawn_mock_loop<R: Runtime>(app: AppHandle<R>) -> std::io::Result<()> {
+/// Temporary sampling loop: one thread, sleeps until the next due time,
+/// takes one sample of every collector and emits one snapshot per
+/// `updateInterval`. No catch-up after a long stall (the next due time is
+/// always computed from "now"). The unified scheduler of Phase 3 replaces this.
+fn spawn_sampler<R: Runtime>(app: AppHandle<R>) -> std::io::Result<()> {
     std::thread::Builder::new()
-        .name("rw-mock-loop".into())
+        .name("rw-sampler".into())
         .spawn(move || {
             let state = app.state::<AppState>();
             let mut next_due = Instant::now();
@@ -182,7 +189,7 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .manage(AppState::new())
         .setup(|app| {
-            spawn_mock_loop(app.handle().clone())?;
+            spawn_sampler(app.handle().clone())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -192,6 +199,22 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
             reset_settings,
             refresh_devices
         ])
+}
+
+/// Headless sampling for cross-checking against system tools
+/// (`cargo run --example sample`). Returns `count` live snapshots taken
+/// `interval` apart; no window, no Tauri runtime.
+pub fn sample_live(count: usize, interval: Duration) -> Vec<serde_json::Value> {
+    let settings = Settings::default();
+    let mut m = monitor::Monitor::new(&settings);
+    (0..count)
+        .map(|i| {
+            if i > 0 {
+                std::thread::sleep(interval);
+            }
+            serde_json::to_value(m.sample(&settings)).unwrap_or_default()
+        })
+        .collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

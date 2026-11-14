@@ -42,10 +42,11 @@ fn invoke(
 }
 
 #[test]
-fn snapshot_follows_contract_and_is_marked_mock() {
+fn snapshot_follows_contract_and_is_live_by_default() {
     let (_app, w) = app();
     let snap = invoke(&w, "get_snapshot", json!({})).unwrap();
-    assert_eq!(snap["dataSource"], "mock");
+    // Without RESOURCEWATCH_MOCK=1 the live monitor is used.
+    assert_eq!(snap["dataSource"], "live");
     for key in [
         "version",
         "cpuName",
@@ -150,7 +151,7 @@ fn refresh_devices_kinds() {
     let (_app, w) = app();
     for kind in ["ipv4", "disks", "hardware"] {
         let snap = invoke(&w, "refresh_devices", json!({"kind": kind})).unwrap();
-        assert_eq!(snap["dataSource"], "mock");
+        assert_eq!(snap["dataSource"], "live");
     }
     let snap = invoke(&w, "refresh_devices", json!({"kind": "disks"})).unwrap();
     // Right after a rescan there is no counter delta yet: rates are null, not 0.
