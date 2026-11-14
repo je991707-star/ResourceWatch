@@ -7,7 +7,9 @@ ID="io.github.local.resourcewatch"
 BOX="${RESOURCEWATCH_BOX:-resourcewatch-dev}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin/resourcewatch"
-DESKTOP="$HOME/.local/share/applications/$ID.desktop"
+# 檔名必須等於視窗的 Wayland app_id（執行檔名），KWin 才找得到圖示
+DESKTOP="$HOME/.local/share/applications/resourcewatch.desktop"
+OLD_DESKTOP="$HOME/.local/share/applications/$ID.desktop" # 舊版啟動器
 ICON="$HOME/.local/share/icons/hicolor/128x128/apps/$ID.png"
 
 build() {
@@ -30,7 +32,7 @@ case "${1:-install}" in
         install -Dm755 "$ROOT/src-tauri/target/release/resourcewatch" "$BIN"
         install -Dm644 "$ROOT/src-tauri/icons/128x128.png" "$ICON"
         mkdir -p "$(dirname "$DESKTOP")"
-        # 同一個 ID 會覆蓋舊版 Plasma Widget 的 plasmawindowed 啟動器
+        rm -f "$OLD_DESKTOP"
         cat >"$DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
@@ -53,7 +55,7 @@ EOF
         fi
         ;;
     uninstall)
-        rm -f "$BIN" "$DESKTOP" "$ICON"
+        rm -f "$BIN" "$DESKTOP" "$OLD_DESKTOP" "$ICON"
         echo "已解除安裝（設定檔 ~/.config/$ID 保留）。"
         ;;
     *)

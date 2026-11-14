@@ -27,7 +27,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 - `install`（預設）：有 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內執行 `cargo tauri build --no-bundle`，
   否則用主機的 cargo-tauri；先 `pkill -x resourcewatch` 再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到
   `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、啟動器到
-  `~/.local/share/applications/io.github.local.resourcewatch.desktop`（與舊版 Plasma Widget 啟動器同 ID，直接覆蓋）。
+  `~/.local/share/applications/resourcewatch.desktop`（檔名必須等於視窗的 Wayland app_id＝執行檔名 `resourcewatch`，KWin 才會在標題列與工作列顯示應用圖示；同時刪除舊版的 `io.github.local.resourcewatch.desktop` 啟動器）。
   偵測到舊版 Plasma Widget 仍安裝時只印出移除指令，不自動移除。
 - `uninstall`：刪除上述三個檔案，保留 `~/.config/io.github.local.resourcewatch` 設定。
 
@@ -35,7 +35,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
 Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
 
-- `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
+- `index.html`：側欄品牌列為應用圖示 `app-icon.png`＋名稱；左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路卡片：介面選單、使用中介面、IPv4、MAC、閘道與上傳／下載雙線圖；圖形處理器卡片標題列有 GPU 選單），感測器、磁碟、磁碟 I/O、網路卡片的「顯示更多…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
@@ -87,7 +87,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
   `"create": false`：不由設定檔自動建立，而由 `lib.rs` `create_main_window()` 以這份設定建立（透明與否依顯示後端決定）；
   CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
 - `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
-- `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。
+- `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。`frontend/app-icon.png` 是 `icons/64x64.png` 的複本（側欄品牌圖示；前端只能讀 `frontend/` 內的檔案），換圖示時一起更新。
 
 ### src/lib.rs
 
