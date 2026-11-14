@@ -12,6 +12,7 @@ fi
 case "${1:-install}" in
     uninstall)
         kpackagetool6 --type Plasma/Applet --remove "$ID"
+        rm -f "$HOME/.local/share/applications/$ID.desktop"
         ;;
     install|upgrade)
         # 單一 HTML 原始碼：package/contents/web/；直接納入 Plasmoid。
@@ -27,7 +28,11 @@ case "${1:-install}" in
         else
             kpackagetool6 --type Plasma/Applet --install ./package
         fi
-        echo "完成。可用以下指令開獨立測試視窗（不影響桌面）："
+        # Desktop application entry uses plasmawindowed as a window host;
+        # Plasma desktop widgets still use the same installed plasmoid.
+        install -Dm644 "packaging/$ID.desktop" "$HOME/.local/share/applications/$ID.desktop"
+        echo "已安裝 ResourceWatch 應用程式啟動器。"
+        echo "完成。可用以下指令開獨立視窗（不影響桌面）："
         echo "  plasmawindowed $ID"
         ;;
     *)

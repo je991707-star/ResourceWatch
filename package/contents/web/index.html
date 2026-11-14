@@ -5,12 +5,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Resource Watch — Plasma Widget</title>
+  <title>ResourceWatch — 系統資源監控</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./application.css">
   <script src="./app.js" defer></script>
 </head>
 
 <body>
+  <!-- App shell only appears in plasmawindowed; plasmashell uses the compact dashboard. -->
+  <div class="app-shell" id="appShell" hidden>
+    <aside class="app-sidebar" aria-label="主選單">
+      <div class="app-brand"><span class="app-brand-icon" aria-hidden="true">▥</span><span>ResourceWatch</span></div>
+      <nav class="app-nav" aria-label="主導覽">
+        <button type="button" class="app-nav-item is-active" id="navOverview" data-page-target="overview" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>總覽</span>
+        </button>
+        <button type="button" class="app-nav-item" id="navWidgets" data-page-target="widgets">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
+          <span>桌面小工具</span>
+        </button>
+      </nav>
+      <div class="app-sidebar-bottom">
+        <button type="button" class="app-nav-item" id="appSettings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.8 2.6 2 .9 2.4-1.3 2.8 2.8-1.3 2.4.9 2L24 12l-2.6.8-.9 2 1.3 2.4-2.8 2.8-2.4-1.3-2 .9L14 22h-4l-.8-2.6-2-.9-2.4 1.3L2 17l1.3-2.4-.9-2L0 12l2.6-.8.9-2L2.2 6.8 5 4l2.4 1.3 2-.9Z" transform="translate(1 1) scale(.917)"/></svg>
+          <span>設定</span>
+        </button>
+        <span class="app-sidebar-version">ResourceWatch <span id="appVersion">v0.0.5</span></span>
+      </div>
+    </aside>
+    <div class="app-main">
+      <header class="app-header"><div><h1 id="appPageTitle">總覽</h1><p id="appPageSubtitle">CPU、GPU、記憶體、磁碟與網路狀態</p></div><span class="app-live-label" id="appLiveStatus">等待監控資料</span></header>
+      <div class="app-page app-overview-page" id="overviewHost"></div>
+      <section class="app-page app-widgets-page" id="widgetPage" hidden aria-labelledby="widgetsTitle">
+        <div class="widget-info"><h2 id="widgetsTitle">桌面小工具</h2><p>此處使用與總覽相同的即時監控資料，預覽 Plasma 桌面小工具的緊湊配置。桌面小工具仍由 KDE Plasma 管理，可從桌面「新增小工具」加入 ResourceWatch。</p></div>
+        <div class="widget-preview-frame" id="widgetPreviewFrame"><div class="widget-preview-host" id="widgetPreviewHost"></div></div>
+        <p class="widget-footnote">預覽與桌面小工具是不同的視窗；變更桌面上的小工具大小不會影響應用視窗。</p>
+      </section>
+    </div>
+  </div>
   <main class="resource-watch" id="resourceWatch" aria-label="Resource Watch 資源監控">
     <div class="toolbar">
       <span class="demo-label" id="dataMode" role="status">示範資料 · 非實機</span>

@@ -8,34 +8,74 @@
   const MAX_SAMPLES = 45;
   const SVG_NS = "http://www.w3.org/2000/svg";
 
-  // 固定 720px 的設計寬度；保留既有卡片比例與圖表 SVG。
-  // 外層 Widget 的尺寸由 main.qml 決定，HTML 僅在容器內等比縮放。
+  // Reuse the same monitoring DOM in both modes.  Only the widget/preview
+  // uses the old fixed-proportion scaling; application overview is fluid.
   const DESIGN_WIDTH = 720;
   const DESIGN_MIN_HEIGHT = 821;
+  const applicationMode = new URLSearchParams(window.location.search).get("mode") === "application";
+  let activePage = "overview";
 
   function fitToViewport() {
     const canvas = $("resourceWatch");
     if (!canvas) return;
-
-    // 先恢復自然高度，避免前一次視窗大小留下的 min-height
-    // 影響下一次重新測量，導致反覆縮小或底部留白。
+    if (applicationMode && activePage === "overview") {
+      canvas.style.width = "";
+      canvas.style.minHeight = "";
+      canvas.style.height = "";
+      canvas.style.zoom = "";
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      return;
+    }
+    // In the widget preview, scale against its preview frame, not the window.
+    const frame = applicationMode ? $("widgetPreviewFrame") : null;
     canvas.style.width = DESIGN_WIDTH + "px";
     canvas.style.minHeight = "0";
     canvas.style.height = "auto";
     canvas.style.zoom = "1";
-
     const naturalHeight = Math.max(DESIGN_MIN_HEIGHT, canvas.scrollHeight);
-    const viewportWidth = Math.max(1, window.innerWidth);
-    const viewportHeight = Math.max(1, window.innerHeight);
-    const scale = Math.max(0.1, Math.min(viewportWidth / DESIGN_WIDTH,
-                                          viewportHeight / naturalHeight));
-
-    // 將多出的高度用於卡片間距（card-stack 的 space-between），
-    // 使 footer 靠近視窗底緣，不把空白堆積在版本號下方。
+    const viewportWidth = Math.max(1, frame ? frame.clientWidth - 48 : window.innerWidth);
+    const viewportHeight = Math.max(1, frame ? 760 : window.innerHeight);
+    const scale = Math.max(0.1, Math.min(viewportWidth / DESIGN_WIDTH, viewportHeight / naturalHeight));
     canvas.style.minHeight = (viewportHeight / scale) + "px";
     canvas.style.zoom = String(scale);
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
+    if (frame) {
+      $("widgetPreviewHost").style.height = Math.ceil(naturalHeight * scale) + "px";
+    } else {
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    }
+  }
+
+  function switchPage(page) {
+    if (!applicationMode || !["overview", "widgets"].includes(page)) return;
+    activePage = page;
+    const isOverview = page === "overview";
+    $("overviewHost").hidden = !isOverview;
+    $("widgetPage").hidden = isOverview;
+    $(isOverview ? "overviewHost" : "widgetPreviewHost").appendChild($("resourceWatch"));
+    $("appShell").dataset.page = page;
+    $("appPageTitle").textContent = isOverview ? "總覽" : "桌面小工具";
+    $("appPageSubtitle").textContent = isOverview
+      ? "CPU、GPU、記憶體、磁碟與網路狀態"
+      : "預覽桌面小工具，與應用程式視窗分開管理";
+    for (const key of ["Overview", "Widgets"]) {
+      const button = $("nav" + key);
+      const selected = button.dataset.pageTarget === page;
+      button.classList.toggle("is-active", selected);
+      if (selected) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    }
+    fitToViewport();
+  }
+
+  if (applicationMode) {
+    $("appShell").hidden = false;
+    document.body.classList.add("application-mode");
+    $("navOverview").addEventListener("click", () => switchPage("overview"));
+    $("navWidgets").addEventListener("click", () => switchPage("widgets"));
+    $("appSettings").addEventListener("click", () => $("settingsButton").click());
+    switchPage("overview");
   }
 
   window.addEventListener("resize", fitToViewport, {passive: true});
@@ -248,7 +288,8 @@
       ? `IPv4: ${text(s.netIp)}` : "所有網路介面");
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
-    setText("versionText", "v" + text(s.version,"0.0.3"));
+    setText("versionText", "v" + text(s.version,"0.0.5"));
+    if (applicationMode) setText("appVersion", "v" + text(s.version,"0.0.5"));
     const disks = s.disks || [];
     const inventory = JSON.stringify(disks.map(d => [d.name, d.model, d.sizeText]));
     const disksChanged = inventory !== lastDiskInventory;
@@ -297,7 +338,7 @@
     chartSeries("network", net.length ? net : null, max * 1.12);
     setText("networkGraphMax", formatRate(max));
     // 硬碟數量變化時重新計算內容高度，避免下一列硬碟被裁掉。
-    if (disksChanged) fitToViewport();
+    if (disksChanged && (!applicationMode || activePage === "widgets")) fitToViewport();
   }
 
   function updateMode() {
@@ -305,6 +346,11 @@
     badge.textContent = isDemo ? "示範資料 · 非實機" :
       (connected ? "即時資料" : "連線中 · 等待 KDE 感測器");
     badge.classList.toggle("is-live",connected);
+    if (applicationMode) {
+      $("appLiveStatus").textContent = isDemo ? "示範資料" :
+        (connected ? "即時監控" : "等待監控資料");
+      $("appLiveStatus").classList.toggle("is-live", connected);
+    }
     badge.hidden = connected;
   }
   // Public integration API for an eventual QML/QtWebChannel bridge.

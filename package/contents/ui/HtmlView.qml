@@ -8,7 +8,8 @@ import QtWebChannel 1.0
 Item {
     id: view
     property var manager
-    property string version: "0.0.3"
+    property string version: "0.0.5"
+    property string viewMode: "widget"
     signal configureRequested()
 
     Layout.minimumWidth: 240
@@ -107,7 +108,7 @@ Item {
     WebEngineView {
         id: page
         anchors.fill: parent
-        url: Qt.resolvedUrl("../web/index.html")
+        url: Qt.resolvedUrl("../web/index.html?mode=" + view.viewMode)
         webChannel: channel
         backgroundColor: "#24272c"
 

@@ -252,3 +252,16 @@ ResourceWatch/
 ## 授權
 
 本專案採用 [MIT License](LICENSE)。
+
+## 應用程式視窗與桌面小工具（導覽介面）
+
+ResourceWatch 目前共用同一套 Plasma 6 `SensorManager.qml` 感測器、排程器與 HTML 監控卡片，依執行容器顯示不同的版面：
+
+- **應用程式視窗**：從 KDE 應用程式選單啟動「ResourceWatch 資源監控」，或執行 `plasmawindowed io.github.local.resourcewatch`。左側有「總覽」、「桌面小工具」與「設定」。預設視窗約 1220×790（視螢幕可用大小調整），最小 900×580；可自由放大且內容可捲動。
+- **桌面小工具**：從 KDE Plasma 桌面「新增小工具」加入 ResourceWatch，仍使用既有緊湊監控卡片與依容器等比縮放的版面。最小建議尺寸 360×410，與應用程式視窗的位置和大小彼此獨立。
+- **桌面小工具分頁**：展示相同監控資料的緊湊版面預覽。它**不會**自行新增或移動 Plasma 桌面元件；實際小工具位置、尺寸、移除仍由 Plasma 桌面管理。
+- **設定**：側邊欄「設定」透過原本 `HtmlView.qml` → `configGeneral.qml` 開啟 KDE 設定頁，沒有建立第二套設定資料。
+
+應用程式選單的啟動器定義於 `packaging/io.github.local.resourcewatch.desktop`，`./install.sh upgrade` 會安裝到 `~/.local/share/applications/`。目前的「應用程式視窗」由 KDE 的 `plasmawindowed` 承載 Plasmoid，屬於**獨立視窗模式**，不是另外編譯的 Qt 原生執行檔。這避免監控後端出現兩套不一致的實作，日後若決定抽離成完全獨立的桌面應用，可再重構啟動與設定生命週期。
+
+HTML 由 `index.html`、`styles.css`、`application.css`、`app.js` 組成；`?mode=application` 使用應用程式版面，`?mode=widget` 使用原來的 Widget 版面。QtWebChannel 提供感測器快照，兩種版面不會自行存取硬體。
