@@ -63,7 +63,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   選擇後呼叫 `update_settings`，被拒絕時回到已儲存的值；已儲存但不在清單中的值（例如拔除的網卡）會保留為選項。
   主題：`localStorage` 的 `resourcewatch-theme`（`light`／`dark`，無法存取時改用系統 `prefers-color-scheme`），寫入 `<html data-theme>`；屬於顯示偏好，不放進 Rust `Settings`。
   側欄毛玻璃：開關即後端設定 `sidebarGlass`（`update_settings`，失敗時回到已儲存值）；啟動時呼叫 `get_window_info`，本次視窗已套用模糊（`glass`）且設定為開時設 `<html data-glass="on">`
-  （關閉後側欄立即改為不透明；視窗本身要重新啟動才改為不透明）。提示文字依「設定值、啟動時的設定值、本次視窗是否有模糊」說明：重新啟動後生效／不透明較省 CPU／桌面環境不支援。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
+  （關閉後側欄立即改為不透明；視窗本身要重新啟動才改為不透明）。提示文字依「設定值、啟動時的設定值、本次視窗是否有模糊」說明：重新啟動後生效／不透明較省 CPU 且 NVIDIA 上縮放較順／開啟時 NVIDIA 上縮放內容會落後／桌面環境不支援。側欄收合偏好存於 `resourcewatch-sidebar-collapsed`，寬度 ≤760 px（`matchMedia`）時一律收合。
   `setText(key)` 更新所有 `data-bind=key` 元素且只在文字改變時寫入 DOM；環形圖與進度條以 CSSOM（`el.style`）設定，因 CSP `style-src 'self'` 不允許行內 style 屬性，
   百分比為 0 或缺失時隱藏環形弧線；SVG path 相同時不重設；硬碟列只在清單變動時重建（以 DOM API 建立，不用 innerHTML），每個 `data-disk-list` 各建一份；
   網路上傳／下載兩條線共用同一個縱軸上限。目前頁面不是監控頁（`PAGES[].live`，即設定與桌面小工具）時只保存快照，切回監控頁才繪製。
@@ -102,9 +102,12 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 `create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland **且**設定 `sidebarGlass` 為開時才設為透明並呼叫
 `blur::enable()`，成功則 `AppState.glass = true`；`sidebarGlass` 關閉時建立不透明視窗、不請求模糊（透明視窗讓 UI 程序 CPU 約 2.5 倍，實測閒置與縮放時皆然）。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
 `run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
-`prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：GTK 後端為 X11／XWayland 且載入 NVIDIA 核心模組
-（`/sys/module/nvidia`）、使用者也沒有自行設定時，設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`，避免 WebKitGTK 的 DMA-BUF 繪製失敗造成空白視窗；
-原生 Wayland 不設定。判斷邏輯 `needs_dmabuf_workaround()` 為純函式並有單元測試。
+`prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：載入 NVIDIA 核心模組（`/sys/module/nvidia`）且使用者沒有自行設定時，
+設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 的條件為「X11／XWayland」或「原生 Wayland 且 `sidebarGlass` 關閉」：X11 上 DMA-BUF 繪製失敗會讓視窗空白；
+原生 Wayland 上每次縮放都要重新配置 GBM 緩衝區，網頁內容落後視窗邊框 0.3–0.5 秒並露出空白（螢幕錄影確認，關閉 DMA-BUF 後順暢）；
+但關閉 DMA-BUF 時透明視窗的側欄畫不出來（整塊空白，與 X11 透明視窗相同），所以毛玻璃開啟時保留 DMA-BUF。
+`sidebarGlass` 由 `early_config_dir()`（`$XDG_CONFIG_HOME` 或 `~/.config` ＋ `APP_IDENTIFIER`，單元測試確認與 `tauri.conf.json` 一致）與
+`settings_store::peek_sidebar_glass()` 在 WebKit 啟動前讀取。判斷邏輯 `needs_dmabuf_workaround()` 為純函式並有單元測試。
 `sample_live(count, interval)` 不開視窗、直接用 `Monitor` 取樣並回傳 JSON，供 `examples/sample.rs` 與系統工具交叉比對。
 
 | Command | 輸入 | 輸出 | 錯誤 |
@@ -173,6 +176,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 - 載入：檔案不存在 → 預設值、無警告（首次啟動）；無法讀取 → 預設值＋警告，不動原檔；不是合法 JSON 或不是物件 →
   原檔改名為 `config.json.corrupt-<unix 秒>`（同秒重複時加序號）保留，使用預設值並警告；個別欄位無效或型別錯誤 → 該欄位用預設值、
   其餘有效欄位保留，並警告；未知欄位忽略；接受 `networkInterface` 作為 `netInterface` 的別名。
+- `peek_sidebar_glass(dir)`：只讀出 `sidebarGlass`（缺檔、損壞、型別錯誤 → 預設 `true`），不備份、不警告，供 `prepare_environment` 在 WebKit 啟動前使用；正式載入與問題回報仍由 `load()` 處理。
 - 寫入：建立目錄 → 寫入同目錄的唯一暫存檔（`.config.json.tmp-<pid>-<序號>`）→ `fsync` → 原子 `rename` 覆蓋 → `fsync` 目錄；
   失敗時刪除暫存檔並回傳錯誤，原檔不變。呼叫端（`commit_settings`）以 settings 鎖序列化所有寫入。
 

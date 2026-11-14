@@ -50,9 +50,9 @@
     $("sidebarGlass").checked = glassSetting;
     let hint;
     if (glassSetting !== glassAtStart && glassAtStart !== null) {
-      hint = glassSetting ? "重新啟動後生效" : "重新啟動後改用不透明視窗（較省 CPU）";
-    } else if (!glassSetting) hint = "側欄與視窗不透明（較省 CPU）";
-    else if (glassActive) hint = "側欄半透明並模糊桌面背景（透明視窗較耗 CPU）";
+      hint = glassSetting ? "重新啟動後生效" : "重新啟動後改用不透明視窗（較省 CPU，NVIDIA 上縮放視窗較順）";
+    } else if (!glassSetting) hint = "側欄與視窗不透明（較省 CPU，NVIDIA 上縮放視窗較順）";
+    else if (glassActive) hint = "側欄半透明並模糊桌面背景（較耗 CPU；NVIDIA 上縮放視窗時內容會落後，關閉可改善）";
     else hint = "目前桌面環境不支援視窗模糊（需要 Wayland 上的 KDE Plasma 模糊特效），側欄維持不透明";
     $("sidebarGlassHint").textContent = hint;
   }

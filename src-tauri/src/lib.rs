@@ -409,14 +409,19 @@ pub fn sample_live(count: usize, interval: Duration) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// WebKitGTK's DMA-BUF renderer fails on X11/XWayland with the NVIDIA
-/// proprietary driver ("Failed to create GBM buffer", blank window). Native
-/// Wayland works. Returns whether the workaround variable should be set:
-/// only when the user has not set it, the GTK backend is X11, and the NVIDIA
-/// kernel module is loaded.
+/// WebKitGTK's DMA-BUF renderer misbehaves with the NVIDIA proprietary driver:
+/// on X11/XWayland the window stays blank ("Failed to create GBM buffer"); on
+/// native Wayland every resize step needs new GBM buffers, so the page lags
+/// the window border by 0.3-0.5 s and blank areas show while resizing.
+/// Without DMA-BUF, though, a transparent Wayland window leaves the sidebar
+/// unpainted, so with `sidebarGlass` on Wayland keeps DMA-BUF (glass, laggy
+/// resize) and with it off turns DMA-BUF off (opaque, smooth resize).
+/// Returns whether the workaround variable should be set; a value the user
+/// set always wins.
 fn needs_dmabuf_workaround(
     var: impl Fn(&str) -> Option<String>,
     nvidia_module_loaded: bool,
+    sidebar_glass: bool,
 ) -> bool {
     if var("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() || !nvidia_module_loaded {
         return false;
@@ -427,16 +432,30 @@ fn needs_dmabuf_workaround(
         Some(b) if b.starts_with("wayland") => false,
         _ => !present("WAYLAND_DISPLAY") && present("DISPLAY"),
     };
-    x11
+    x11 || !sidebar_glass
 }
+
+/// Tauri's `app_config_dir()` before the app exists: `$XDG_CONFIG_HOME` or
+/// `~/.config`, plus the identifier from `tauri.conf.json`.
+fn early_config_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(base.join(APP_IDENTIFIER))
+}
+const APP_IDENTIFIER: &str = "io.github.local.resourcewatch";
 
 /// Must be called at the very start of `main`, before any thread exists
 /// (`std::env::set_var` is not thread-safe).
 pub fn prepare_environment() {
     let nvidia = std::path::Path::new("/sys/module/nvidia").exists();
-    if needs_dmabuf_workaround(|k| std::env::var(k).ok(), nvidia) {
+    let glass = early_config_dir().map_or(Settings::default().sidebar_glass, |d| {
+        settings_store::peek_sidebar_glass(&d)
+    });
+    if needs_dmabuf_workaround(|k| std::env::var(k).ok(), nvidia, glass) {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        eprintln!("ResourceWatch: X11 + NVIDIA detected, set WEBKIT_DISABLE_DMABUF_RENDERER=1");
+        eprintln!("ResourceWatch: NVIDIA driver detected, set WEBKIT_DISABLE_DMABUF_RENDERER=1");
     }
 }
 
@@ -459,39 +478,46 @@ mod env_tests {
     use super::needs_dmabuf_workaround;
     use std::collections::HashMap;
 
-    fn check(vars: &[(&str, &str)], nvidia: bool) -> bool {
+    fn check(vars: &[(&str, &str)], nvidia: bool, glass: bool) -> bool {
         let m: HashMap<String, String> = vars
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        needs_dmabuf_workaround(|k| m.get(k).cloned(), nvidia)
+        needs_dmabuf_workaround(|k| m.get(k).cloned(), nvidia, glass)
     }
 
     #[test]
     fn dmabuf_workaround_decision() {
+        let wayland = [("WAYLAND_DISPLAY", "wayland-1"), ("DISPLAY", ":0")];
         assert!(check(
-            &[("GDK_BACKEND", "x11"), ("WAYLAND_DISPLAY", "wayland-1")],
+            &[("GDK_BACKEND", "x11"), ("WAYLAND_DISPLAY", "w")],
+            true,
             true
         ));
-        assert!(check(&[("DISPLAY", ":0")], true), "plain X11 session");
+        assert!(check(&[("DISPLAY", ":0")], true, true), "plain X11 session");
         assert!(
-            !check(&[("WAYLAND_DISPLAY", "wayland-1"), ("DISPLAY", ":0")], true),
-            "native Wayland"
+            !check(&wayland, true, true),
+            "Wayland + glass keeps DMA-BUF"
         );
-        assert!(!check(
-            &[("GDK_BACKEND", "wayland"), ("DISPLAY", ":0")],
-            true
-        ));
-        assert!(!check(&[("GDK_BACKEND", "x11")], false), "no NVIDIA driver");
+        assert!(
+            check(&wayland, true, false),
+            "Wayland without glass: smooth resize"
+        );
+        assert!(!check(&[("GDK_BACKEND", "wayland")], true, true));
+        assert!(!check(&wayland, false, false), "no NVIDIA driver");
         assert!(
             !check(
-                &[
-                    ("GDK_BACKEND", "x11"),
-                    ("WEBKIT_DISABLE_DMABUF_RENDERER", "0")
-                ],
-                true
+                &[("DISPLAY", ":0"), ("WEBKIT_DISABLE_DMABUF_RENDERER", "0")],
+                true,
+                false
             ),
             "user choice wins"
         );
+    }
+
+    #[test]
+    fn identifier_matches_tauri_conf() {
+        let conf = include_str!("../tauri.conf.json");
+        assert!(conf.contains(&format!("\"identifier\": \"{}\"", super::APP_IDENTIFIER)));
     }
 }

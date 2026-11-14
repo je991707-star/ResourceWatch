@@ -39,7 +39,7 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
   請在主機上執行 release 執行檔。
 - **RAM 速度**：一般使用者通常無法讀取 SMBIOS。若顯示 `--`，可自行建立快取
   `${XDG_STATE_HOME:-~/.local/state}/resourcewatch/ram_speed.json`，格式為 `{"speedsMTs": [3200, 3200]}`。
-- X11／XWayland 搭配 NVIDIA 專有驅動時，程式會自動設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`，避免 WebKitGTK 視窗空白。
+- 搭配 NVIDIA 專有驅動時，程式會自動設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`：X11 上避免 WebKitGTK 視窗空白；Wayland 上只在「側欄毛玻璃」關閉時設定（縮放時內容才跟得上視窗邊框；開啟毛玻璃時為了讓透明側欄正常繪製而保留 DMA-BUF，縮放會落後）。
 
 開發用環境變數：
 

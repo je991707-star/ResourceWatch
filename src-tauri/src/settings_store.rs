@@ -37,6 +37,17 @@ pub struct SettingsStore {
 /// Field-by-field validation of a stored JSON object. Unknown keys are
 /// ignored (forward compatibility); `networkInterface` is accepted as an
 /// alias of `netInterface`.
+/// `sidebarGlass` from `<dir>/config.json` without side effects (no backup of
+/// a corrupt file, no warning): `prepare_environment` needs it before WebKit
+/// starts; the normal load in `setup` reports problems later.
+pub fn peek_sidebar_glass(dir: &Path) -> bool {
+    fs::read_to_string(dir.join(FILE_NAME))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| parse_stored(&v).ok())
+        .map_or(Settings::default().sidebar_glass, |(s, _)| s.sidebar_glass)
+}
+
 pub fn parse_stored(value: &Value) -> Result<(Settings, Vec<String>), String> {
     let obj = value.as_object().ok_or("設定檔內容不是 JSON 物件")?;
     let mut settings = Settings::default();
@@ -367,5 +378,19 @@ mod tests {
         let l = store.load();
         assert_eq!(l.warning, None, "file is always complete, valid JSON");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1, "no temp files left");
+    }
+
+    #[test]
+    fn peek_sidebar_glass_has_no_side_effects() {
+        let dir = temp_root("cfg-peek");
+        assert!(peek_sidebar_glass(&dir), "missing file → default");
+        fs::write(dir.join(FILE_NAME), r#"{"sidebarGlass": false}"#).unwrap();
+        assert!(!peek_sidebar_glass(&dir));
+        fs::write(dir.join(FILE_NAME), "not json").unwrap();
+        assert!(peek_sidebar_glass(&dir), "corrupt → default");
+        assert!(
+            dir.join(FILE_NAME).exists(),
+            "corrupt file is left for load() to back up"
+        );
     }
 }
