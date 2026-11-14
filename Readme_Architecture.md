@@ -29,7 +29,8 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
-  儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
+  感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`）；兩處都有 °C／°F 切換（`data-temp-unit`）。
+  儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
 - `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；側欄為中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色）。
@@ -48,6 +49,8 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   `setText(key)` 更新所有 `data-bind=key` 元素且只在文字改變時寫入 DOM；環形圖與進度條以 CSSOM（`el.style`）設定，因 CSP `style-src 'self'` 不允許行內 style 屬性，
   百分比為 0 或缺失時隱藏環形弧線；SVG path 相同時不重設；硬碟列只在清單變動時重建（以 DOM API 建立，不用 innerHTML），每個 `data-disk-list` 各建一份；
   網路上傳／下載兩條線共用同一個縱軸上限。目前頁面不是監控頁（`PAGES[].live`，即設定與桌面小工具）時只保存快照，切回監控頁才繪製。
+  溫度單位：`localStorage` `resourcewatch-temp-unit`（`c`／`f`）；後端一律送 °C，`tempText()` 只在選 °F 時換算 `"48.6 °C"` 這類字串，感測器列以 `formatTemp()` 格式化，風扇顯示 `N RPM`；
+  感測器列只在清單（chip／label／kind）變動時重建。
   Uptime 以快照 `uptimeSeconds` 為錨點、`performance.now()` 每秒更新文字，不呼叫 IPC。
   設定欄位 `change` 時先做前端範圍檢查，再呼叫 `update_settings`；錯誤依 `CommandError.field` 顯示在對應欄位下，
   寫檔失敗（`settingsWriteFailed`，`field` 為 `null`）顯示在剛修改的欄位下。欄位錯誤文字直接寫入（不經 `setText()`，以免空值顯示成 `--`）。
@@ -184,6 +187,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `disks` | `{name, model, sizeText, transport}[]` | 只在清單變動時重建 DOM |
 | `diskRates` | `{[name]: {read: number\|null, write: number\|null}}` | B/s |
 | `diskUsage` | `{[name]: Metric}` | 該硬碟上所有已掛載檔案系統的已用／總量（pair）；未掛載的硬碟不出現；每 10 秒更新 |
+| `sensors` | `{chip, label, kind: "temp"\|"fan", value: number\|null}[]` | 所有 hwmon 溫度（°C）與風扇（RPM），依晶片順序 |
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
@@ -238,6 +242,12 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
   `k10temp`/`zenpower` 取 `Tdie`，其次 `Tctl`；`cpu_thermal` 等 SoC 取第一個輸入。超出 −40～150 °C 視為無效。
 - 型號：`/proc/cpuinfo` 的 `model name`（或 `Hardware`），啟動與手動重新偵測時讀取。
 - 核心／執行緒（`parse_topology`）：同一份 cpuinfo，邏輯 CPU 數＝`processor` 項目數，實體核心數＝不重複的（`physical id`, `core id`）組合（多插槽時 core id 會重複）；沒有 core id（許多 ARM）時核心數為 `None`。
+
+### src/collectors/sensors.rs
+
+感測器清單：啟動與硬體重新偵測時掃描所有有 `name` 的 `/sys/class/hwmon/hwmon*`，列出 `tempN_input` 與 `fanN_input`（共用 `cpu.rs` 的 `hwmon_inputs`），
+標籤取 `*_label`，沒有時用輸入名稱（`temp1`、`fan2`）。每次取樣只讀這些 `_input` 檔：溫度沿用 CPU 感測器的範圍檢查（−40～150 °C，`read_millicelsius`），
+風扇 0～100 000 RPM，其餘為 `None`。NVML 的 GPU 溫度不在 hwmon 中，另由 `gpuTempText` 提供。
 
 ### src/collectors/memory.rs
 

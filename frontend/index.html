@@ -120,11 +120,12 @@
         </section>
 
         <section class="card" aria-labelledby="sensorsTitle">
-          <h2 id="sensorsTitle">感測器</h2>
+          <h2 id="sensorsTitle">感測器 <span class="unit-toggle" role="group" aria-label="溫度單位"><button type="button" data-temp-unit="c">°C</button><button type="button" data-temp-unit="f">°F</button></span></h2>
           <dl class="rows">
             <div><dt>CPU 溫度</dt><dd data-bind="cpuTemp">--</dd></div>
             <div><dt>GPU 溫度</dt><dd data-bind="gpuTemp">--</dd></div>
           </dl>
+          <dl class="rows sensor-list" data-sensor-list="8"></dl>
           <button type="button" class="more-link" data-goto="sensors">顯示更多…</button>
         </section>
 
@@ -235,11 +236,16 @@
       <!-- Sensors -->
       <section class="app-page" id="sensorsPage" hidden aria-label="感測器">
         <section class="card">
-          <h2>溫度</h2>
+          <h2>溫度 <span class="unit-toggle" role="group" aria-label="溫度單位"><button type="button" data-temp-unit="c">°C</button><button type="button" data-temp-unit="f">°F</button></span></h2>
           <dl class="rows">
             <div><dt>CPU（<span data-bind="cpuName">--</span>）</dt><dd data-bind="cpuTemp">--</dd></div>
             <div><dt>GPU（<span data-bind="gpuName">--</span>）</dt><dd data-bind="gpuTemp">--</dd></div>
           </dl>
+        </section>
+        <section class="card">
+          <h2>所有感測器（hwmon）</h2>
+          <dl class="rows sensor-list" data-sensor-list="all"></dl>
+          <p class="empty-note" data-sensor-empty>未偵測到 hwmon 感測器</p>
         </section>
         <section class="card">
           <h2>時脈</h2>

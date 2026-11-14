@@ -4,6 +4,7 @@
 //! (see `Readme_Architecture.md`), plus `dataSource`, which tells the UI
 //! whether values are mock data or real measurements.
 
+use crate::collectors::sensors::SensorKind;
 use crate::format::{self, MISSING};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -112,6 +113,15 @@ pub struct DiskRate {
     pub write: Option<f64>,
 }
 
+/// One hwmon reading: `value` is °C (`temp`) or RPM (`fan`), `null` when missing.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Sensor {
+    pub chip: String,
+    pub label: String,
+    pub kind: SensorKind,
+    pub value: Option<f64>,
+}
+
 /// History series; missing samples stay `null`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +191,8 @@ pub struct Snapshot {
     /// Used / total of the filesystems mounted from each disk (pair Metric);
     /// disks with nothing mounted are absent. Refreshed every 10 s.
     pub disk_usage: BTreeMap<String, Metric>,
+    /// Every hwmon temperature and fan input, in chip order.
+    pub sensors: Vec<Sensor>,
     pub net_has_interface: bool,
     pub net_ip_available: bool,
     pub net_ip: String,

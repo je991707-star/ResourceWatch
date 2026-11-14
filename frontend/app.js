@@ -238,6 +238,65 @@
     }
   }
 
+  // ---------------------------------------------------------------- temperatures and sensors
+  // °C / °F is a display preference (localStorage); the backend always sends °C.
+  const UNIT_KEY = "resourcewatch-temp-unit";
+  let tempUnit = "c";
+  try { tempUnit = localStorage.getItem(UNIT_KEY) === "f" ? "f" : "c"; } catch { /* storage blocked */ }
+  const formatTemp = (c) => !Number.isFinite(c) ? "--"
+    : tempUnit === "f" ? `${(c * 9 / 5 + 32).toFixed(0)} °F` : `${c.toFixed(1)} °C`;
+  // Backend texts look like "48.6 °C"; convert them only when °F is chosen.
+  function tempText(value) {
+    const m = /^(-?\d+(?:\.\d+)?) °C$/.exec(String(value ?? ""));
+    return m && tempUnit === "f" ? formatTemp(Number(m[1])) : value;
+  }
+  const unitButtons = all("[data-temp-unit]");
+  function applyUnit() {
+    for (const b of unitButtons) b.setAttribute("aria-pressed", String(b.dataset.tempUnit === tempUnit));
+  }
+  for (const b of unitButtons) {
+    b.addEventListener("click", () => {
+      tempUnit = b.dataset.tempUnit;
+      try { localStorage.setItem(UNIT_KEY, tempUnit); } catch { /* storage blocked */ }
+      applyUnit();
+      render();
+    });
+  }
+  applyUnit();
+
+  const sensorLists = all("[data-sensor-list]");
+  const sensorEmptyNotes = all("[data-sensor-empty]");
+  let sensorInventory = null;
+  let sensorNodes = []; // per list: value <dd> per shown sensor
+  function renderSensors(sensors) {
+    const list = Array.isArray(sensors) ? sensors : [];
+    const inventory = JSON.stringify(list.map((x) => [x.chip, x.label, x.kind]));
+    if (inventory !== sensorInventory) {
+      // Rebuilt only on startup / hardware refresh.
+      sensorNodes = sensorLists.map((host) => {
+        const limit = host.dataset.sensorList === "all" ? Infinity : Number(host.dataset.sensorList);
+        const rows = list.slice(0, limit).map((x) => {
+          const row = document.createElement("div");
+          const dt = document.createElement("dt");
+          dt.textContent = dt.title = `${text(x.chip)} · ${text(x.label)}`;
+          const dd = document.createElement("dd");
+          row.append(dt, dd);
+          return { row, dd };
+        });
+        host.replaceChildren(...rows.map((r) => r.row));
+        return rows.map((r) => r.dd);
+      });
+      for (const note of sensorEmptyNotes) note.hidden = list.length > 0;
+      sensorInventory = inventory;
+    }
+    for (const nodes of sensorNodes) {
+      nodes.forEach((dd, i) => {
+        const x = list[i];
+        writeText(dd, x.kind === "fan" ? (Number.isFinite(x.value) ? `${Math.round(x.value)} RPM` : "--") : formatTemp(x.value));
+      });
+    }
+  }
+
   // ---------------------------------------------------------------- disks
   const diskLists = all("[data-disk-list]");
   const diskEmptyNotes = all("[data-disk-empty]");
@@ -315,7 +374,8 @@
     setText("cpuSpeed", s.cpuFreqText);
     setText("cpuCores", s.cpuCores);
     setText("cpuThreads", s.cpuThreads);
-    setText("cpuTemp", s.cpuTempText);
+    setText("cpuTemp", tempText(s.cpuTempText));
+    renderSensors(s.sensors);
     setRing("cpu", s.cpu);
     renderCoreBars(s.cpuPerCore);
     if (Number.isFinite(s.uptimeSeconds)) {
@@ -332,7 +392,7 @@
     setText("gpuHeading", "GPU" + (s.gpuIndex ?? 0));
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
-    setText("gpuTemp", s.gpuTempText);
+    setText("gpuTemp", tempText(s.gpuTempText));
     setText("gpuVram", pairText(s.vram));
     setText("encoder", metricText(s.encoder));
     setText("decoder", metricText(s.decoder));

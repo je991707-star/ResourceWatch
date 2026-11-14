@@ -4,10 +4,11 @@
 //! with "Mock"). It reads no hardware and starts no process, and must never be
 //! shown as real data. The default source is the live [`crate::monitor::Monitor`].
 
+use crate::collectors::sensors::SensorKind;
 use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, Metric, RamBreakdown, Snapshot,
+    format_uptime, DataSource, DiskInfo, DiskRate, Metric, RamBreakdown, Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -187,6 +188,43 @@ impl MockSource {
                     )
                 })
                 .collect(),
+            sensors: [
+                (
+                    "coretemp",
+                    "Package id 0",
+                    SensorKind::Temp,
+                    49.0 + 3.0 * (t * 0.11).sin(),
+                ),
+                (
+                    "coretemp",
+                    "Core 0",
+                    SensorKind::Temp,
+                    47.0 + 3.0 * (t * 0.13).sin(),
+                ),
+                (
+                    "coretemp",
+                    "Core 1",
+                    SensorKind::Temp,
+                    46.0 + 3.0 * (t * 0.17).sin(),
+                ),
+                ("nvme", "Composite", SensorKind::Temp, 38.9),
+                ("acpitz", "temp1", SensorKind::Temp, 27.8),
+                (
+                    "mock8686",
+                    "CPU Fan",
+                    SensorKind::Fan,
+                    1200.0 + 80.0 * (t * 0.2).sin(),
+                ),
+                ("mock8686", "System Fan", SensorKind::Fan, 860.0),
+            ]
+            .into_iter()
+            .map(|(chip, label, kind, v)| Sensor {
+                chip: chip.to_string(),
+                label: label.to_string(),
+                kind,
+                value: Some(v),
+            })
+            .collect(),
             net_has_interface,
             net_ip_available: self.ip.is_some(),
             net_ip: self.ip.clone().unwrap_or_else(|| "--".to_string()),

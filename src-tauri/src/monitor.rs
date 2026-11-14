@@ -11,6 +11,7 @@ use crate::collectors::{
     gpu::{GpuCollector, GpuReading},
     memory::{self, MemReading},
     network::{self, NetCollector, NetReading},
+    sensors::{self, SensorInput},
     system, Roots,
 };
 use crate::format::{clamp_percent, format_bytes, MISSING};
@@ -18,7 +19,7 @@ use crate::history::{disk_totals, HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
     format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, RamBreakdown,
-    Snapshot,
+    Sensor, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -40,6 +41,8 @@ struct Readings {
     net: NetReading,
     uptime: Option<f64>,
     mem_pressure: Option<f64>,
+    /// Same order as `Monitor::sensors`.
+    sensors: Vec<Option<f64>>,
 }
 
 pub struct Monitor {
@@ -56,6 +59,7 @@ pub struct Monitor {
     machine_model: Option<String>,
     ram_speed: Option<String>,
     disks: Vec<DiskDevice>,
+    sensors: Vec<SensorInput>,
     /// disk → (used, total) bytes of its mounted filesystems.
     disk_usage: BTreeMap<String, (u64, u64)>,
     usage_at: Instant,
@@ -97,6 +101,7 @@ impl Monitor {
             machine_model: system::machine_model(&roots),
             ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
             disks: disk::discover(&roots),
+            sensors: sensors::discover(&roots),
             disk_usage: BTreeMap::new(),
             usage_at: Instant::now(),
             ip: network::ipv4_address(&settings.net_interface),
@@ -146,6 +151,8 @@ impl Monitor {
                 self.ram_speed =
                     system::ram_speed_text(&self.roots, system::ram_cache_path().as_deref());
                 self.gpu.rediscover();
+                self.sensors = sensors::discover(&self.roots);
+                self.last.sensors.clear();
             }
         }
     }
@@ -165,6 +172,7 @@ impl Monitor {
             net: self.net.sample_at(now),
             uptime: system::uptime_seconds(&self.roots),
             mem_pressure: memory::pressure(&self.roots),
+            sensors: self.sensors.iter().map(sensors::read).collect(),
         };
         let mut snap = self.build(s);
         let (disk_read, disk_write) = disk_totals(snap.disk_rates.values());
@@ -287,6 +295,17 @@ impl Monitor {
                         d.name.clone(),
                         Metric::pair(Some(*used as f64), Some(*total as f64)),
                     ))
+                })
+                .collect(),
+            sensors: self
+                .sensors
+                .iter()
+                .enumerate()
+                .map(|(i, input)| Sensor {
+                    chip: input.chip.clone(),
+                    label: input.label.clone(),
+                    kind: input.kind,
+                    value: r.sensors.get(i).copied().flatten(),
                 })
                 .collect(),
             net_has_interface: s.net_interface != "all",

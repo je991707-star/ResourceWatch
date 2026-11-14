@@ -10,6 +10,7 @@ pub mod disk;
 pub mod gpu;
 pub mod memory;
 pub mod network;
+pub mod sensors;
 pub mod system;
 
 use std::fs;

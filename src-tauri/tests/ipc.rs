@@ -97,6 +97,7 @@ fn snapshot_follows_contract_and_is_live_by_default() {
         "disks",
         "diskRates",
         "diskUsage",
+        "sensors",
         "netHasInterface",
         "netIpAvailable",
         "netIp",

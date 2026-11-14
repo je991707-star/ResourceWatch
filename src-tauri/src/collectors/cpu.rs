@@ -69,15 +69,21 @@ pub enum TempSource {
     None,
 }
 
-fn hwmon_inputs(dir: &std::path::Path) -> Vec<(PathBuf, String)> {
-    list_dir(dir, |n| n.starts_with("temp") && n.ends_with("_input"))
-        .into_iter()
-        .map(|input| {
-            let label_path = PathBuf::from(input.to_string_lossy().replace("_input", "_label"));
-            let label = read_trimmed(&label_path).unwrap_or_default();
-            (input, label)
-        })
-        .collect()
+/// `<kind>N_input` files of one hwmon chip with their `_label` (empty if none);
+/// `kind` is `temp` or `fan`.
+pub(super) fn hwmon_inputs(dir: &std::path::Path, kind: &str) -> Vec<(PathBuf, String)> {
+    list_dir(dir, |n| {
+        n.strip_prefix(kind)
+            .and_then(|r| r.strip_suffix("_input"))
+            .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+    })
+    .into_iter()
+    .map(|input| {
+        let label_path = PathBuf::from(input.to_string_lossy().replace("_input", "_label"));
+        let label = read_trimmed(&label_path).unwrap_or_default();
+        (input, label)
+    })
+    .collect()
 }
 
 /// Finds the CPU temperature sensor among `/sys/class/hwmon/hwmon*`.
@@ -90,7 +96,7 @@ pub fn discover_temp(roots: &Roots) -> TempSource {
     // Preference order: Intel, AMD, then common SoC drivers.
     for (dir, name) in &named {
         if name == "coretemp" {
-            let inputs = hwmon_inputs(dir);
+            let inputs = hwmon_inputs(dir, "temp");
             let cores: Vec<PathBuf> = inputs
                 .iter()
                 .filter(|(_, l)| l.starts_with("Core "))
@@ -106,7 +112,7 @@ pub fn discover_temp(roots: &Roots) -> TempSource {
     }
     for (dir, name) in &named {
         if name == "k10temp" || name == "zenpower" {
-            let inputs = hwmon_inputs(dir);
+            let inputs = hwmon_inputs(dir, "temp");
             for want in ["Tdie", "Tctl"] {
                 if let Some((p, _)) = inputs.iter().find(|(_, l)| l == want) {
                     return TempSource::Single(p.clone());
@@ -119,7 +125,7 @@ pub fn discover_temp(roots: &Roots) -> TempSource {
     }
     for (dir, name) in &named {
         if matches!(name.as_str(), "cpu_thermal" | "cpu-thermal" | "soc_thermal") {
-            if let Some((p, _)) = hwmon_inputs(dir).first() {
+            if let Some((p, _)) = hwmon_inputs(dir, "temp").first() {
                 return TempSource::Single(p.clone());
             }
         }
@@ -128,7 +134,7 @@ pub fn discover_temp(roots: &Roots) -> TempSource {
 }
 
 /// hwmon reports millidegrees Celsius. Implausible values are rejected.
-fn read_millicelsius(path: &std::path::Path) -> Option<f64> {
+pub(super) fn read_millicelsius(path: &std::path::Path) -> Option<f64> {
     let c = read_i64(path)? as f64 / 1000.0;
     (-40.0..=150.0).contains(&c).then_some(c)
 }
