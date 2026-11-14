@@ -126,7 +126,7 @@
 .is-collapsed .sidebar-toggle svg { transform: scaleX(-1); }
 @media (max-width: 760px) {
   .sidebar-toggle { display: none; }
-  .host-block--gpu { display: none; }
+  .host-block--model { display: none; }
 }
 @media (max-width: 420px) {
   .summary { grid-template-columns: minmax(0, 1fr); }

@@ -13,6 +13,35 @@ pub fn uptime_seconds(roots: &Roots) -> Option<f64> {
 
 /// Configured (else rated) speed in MT/s of an installed DIMM from one raw
 /// SMBIOS type 17 structure. Port of legacy `parse_smbios_type17`.
+/// Kernel host name (`/proc/sys/kernel/hostname`).
+pub fn hostname(roots: &Roots) -> Option<String> {
+    super::read_trimmed(&roots.proc("sys/kernel/hostname"))
+}
+
+/// Firmware filler that vendors leave in DMI fields.
+fn is_placeholder(s: &str) -> bool {
+    let l = s.to_ascii_lowercase();
+    [
+        "to be filled",
+        "system product name",
+        "default string",
+        "not applicable",
+        "not specified",
+        "none",
+        "o.e.m.",
+    ]
+    .iter()
+    .any(|p| l.contains(p))
+}
+
+/// Machine model from DMI (`product_name`, else `board_name`), readable
+/// without root; firmware placeholders are treated as missing.
+pub fn machine_model(roots: &Roots) -> Option<String> {
+    ["product_name", "board_name"].iter().find_map(|f| {
+        super::read_trimmed(&roots.sys(&format!("class/dmi/id/{f}"))).filter(|v| !is_placeholder(v))
+    })
+}
+
 pub fn parse_smbios_type17(blob: &[u8]) -> Option<u32> {
     if blob.len() < 0x17 || blob[0] != 17 {
         return None;
@@ -108,6 +137,29 @@ mod tests {
         b[0x15..0x17].copy_from_slice(&rated.to_le_bytes());
         b[0x20..0x22].copy_from_slice(&configured.to_le_bytes());
         b
+    }
+
+    #[test]
+    fn hostname_and_machine_model() {
+        let r = temp_root("dmi");
+        write(&r, "proc/sys/kernel/hostname", "H97M\n");
+        write(
+            &r,
+            "sys/class/dmi/id/product_name",
+            "To be filled by O.E.M.\n",
+        );
+        write(&r, "sys/class/dmi/id/board_name", "H97M-D3H\n");
+        let rt = roots(&r);
+        assert_eq!(hostname(&rt).as_deref(), Some("H97M"));
+        assert_eq!(
+            machine_model(&rt).as_deref(),
+            Some("H97M-D3H"),
+            "placeholder skipped"
+        );
+        write(&r, "sys/class/dmi/id/product_name", "ThinkPad T14\n");
+        assert_eq!(machine_model(&rt).as_deref(), Some("ThinkPad T14"));
+        let empty = roots(&temp_root("dmi-none"));
+        assert_eq!((hostname(&empty), machine_model(&empty)), (None, None));
     }
 
     #[test]

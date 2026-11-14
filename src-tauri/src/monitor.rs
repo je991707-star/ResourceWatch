@@ -46,6 +46,8 @@ pub struct Monitor {
     gpu: GpuCollector,
     net_interface: String,
     cpu_model: Option<String>,
+    hostname: Option<String>,
+    machine_model: Option<String>,
     ram_speed: Option<String>,
     disks: Vec<DiskDevice>,
     ip: Option<String>,
@@ -58,6 +60,10 @@ pub struct Monitor {
 // positive integers), so `None` is the only "missing" case.
 fn temp_text(c: Option<f64>, decimals: usize) -> String {
     c.map_or_else(|| MISSING.to_string(), |c| format!("{c:.decimals$} °C"))
+}
+
+fn text_or_missing(v: &Option<String>) -> String {
+    v.clone().unwrap_or_else(|| MISSING.to_string())
 }
 
 fn freq_text(mhz: Option<f64>) -> String {
@@ -77,6 +83,8 @@ impl Monitor {
             gpu: GpuCollector::new(&roots, settings.gpu_index),
             net_interface: settings.net_interface.clone(),
             cpu_model: cpu::cpu_model(&roots),
+            hostname: system::hostname(&roots),
+            machine_model: system::machine_model(&roots),
             ram_speed: system::ram_speed_text(&roots, system::ram_cache_path().as_deref()),
             disks: disk::discover(&roots),
             ip: network::ipv4_address(&settings.net_interface),
@@ -112,6 +120,8 @@ impl Monitor {
             }
             RefreshKind::Hardware => {
                 self.cpu_model = cpu::cpu_model(&self.roots);
+                self.hostname = system::hostname(&self.roots);
+                self.machine_model = system::machine_model(&self.roots);
                 self.ram_speed =
                     system::ram_speed_text(&self.roots, system::ram_cache_path().as_deref());
                 self.gpu.rediscover();
@@ -187,6 +197,8 @@ impl Monitor {
         Snapshot {
             data_source: DataSource::Live,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            hostname: text_or_missing(&self.hostname),
+            machine_model: text_or_missing(&self.machine_model),
             cpu_name: self
                 .cpu_model
                 .clone()
@@ -273,6 +285,7 @@ mod tests {
         );
         write(&r, "proc/uptime", "100.5 1.0\n");
         write(&r, "proc/cpuinfo", "model name : Test CPU\n");
+        write(&r, "proc/sys/kernel/hostname", "testhost\n");
         let s = Settings::default();
         let mut m = Monitor::with_roots(roots(&r), &s);
         m.sample(Instant::now(), &s);
@@ -281,6 +294,8 @@ mod tests {
         assert_eq!(snap.cpu.display_value, "50%");
         assert_eq!(snap.ram.display_value, "75%");
         assert_eq!(snap.cpu_name, "Test CPU");
+        assert_eq!(snap.hostname, "testhost");
+        assert_eq!(snap.machine_model, "--");
         assert_eq!(snap.uptime_seconds, Some(100.5));
         assert_eq!(snap.swap.percent, None, "no swap configured: no percentage");
         assert_eq!(snap.history.cpu, vec![None, Some(50.0)]);

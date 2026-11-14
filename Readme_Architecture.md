@@ -26,7 +26,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`tauri.conf.json` 的 `build.frontendDist` 指向此目錄）。只負責顯示，不存取硬體、檔案或網路。
 
 - `index.html`：左側導覽「儀表板」「儲存裝置」「網路」「感測器」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
-  頂部主機資訊列：CPU 型號、運作時間、GPU 名稱、RAM 總量與速度、即時／模擬狀態。
+  頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
   儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器與記憶體歷史圖；磁碟清單與讀寫速率；網路上傳／下載雙線圖），各卡片「顯示更多…」（`data-goto`）切換到對應詳細頁。
   儲存裝置／網路／感測器詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
@@ -163,6 +163,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 |---|---|---|
 | `dataSource` | `"live"\|"mock"` | Tauri 版新增；`"mock"` 時前端顯示「模擬資料 · 非實機」 |
 | `version` | string | 應用版本 |
+| `hostname`, `machineModel` | string | 主機名稱、機型（DMI）；啟動與硬體重新偵測時讀取，缺失 `"--"` |
 | `cpuName` | string | 缺失為 `"--"` |
 | `cpu` | Metric | 見下方 Metric 子物件 |
 | `cpuFreqText`, `cpuTempText`, `uptimeText` | string | 已格式化文字，缺失 `"--"` |
@@ -207,7 +208,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
   同一個週期時間戳 `now`；組成快照、寫入歷史，歷史陣列每週期只產生一次。
 - `peek()`：只用上次讀值組成快照，不讀硬體、不寫歷史。
 - 溫度／時脈文字不再重複做有限值檢查：collectors 只會輸出有限值（hwmon／NVML 整數已檢查範圍、cpufreq 為正整數平均），`None` 是唯一缺失情況。
-- `refresh(kind)`：IPv4 重新查詢；硬碟清單重新掃描並重設 I/O 計數（下一個樣本無速率）；硬體資訊重新讀 CPU 型號、RAM 速度並重掃 GPU。
+- `refresh(kind)`：IPv4 重新查詢；硬碟清單重新掃描並重設 I/O 計數（下一個樣本無速率）；硬體資訊重新讀 CPU 型號、主機名稱、機型、RAM 速度並重掃 GPU。
 - `apply_settings()`：`gpuIndex` 改變時切換 GPU；`netInterface` 改變時切換統計介面，並因為是使用者明確操作而重新查詢一次 IPv4。
 - 啟動後 5 秒內缺失的指標標為 `status: "loading"`（速率需兩次取樣），之後為 `"unavailable"`。
 - 文字格式：CPU 時脈 `x.xx GHz`、CPU 溫度一位小數、GPU 溫度整數、`°C`。
@@ -238,6 +239,7 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 
 ### src/collectors/system.rs
 
+- 主機名稱：`/proc/sys/kernel/hostname`。機型：DMI `/sys/class/dmi/id/product_name`，佔位字串（`To be filled by O.E.M.`、`System Product Name`、`Default string` 等）時改用 `board_name`，都沒有則未知；一般使用者可讀。
 - Uptime：`/proc/uptime` 第一欄（含睡眠時間，等同 CLOCK_BOOTTIME），每次取樣讀取；前端以此為錨點每秒內插。
 - RAM 速度：先讀 `/sys/firmware/dmi/entries/17-*/raw`（SMBIOS Type 17，configured 優先、其次 rated；一般使用者通常無權限），
   再讀舊版相同的快取 `${XDG_STATE_HOME:-~/.local/state}/resourcewatch/ram_speed.json`（`{"speedsMTs":[…]}`）；

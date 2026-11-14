@@ -130,6 +130,8 @@ impl MockSource {
         Snapshot {
             data_source: DataSource::Mock,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            hostname: "mock-host".to_string(),
+            machine_model: "Mock Machine".to_string(),
             cpu_name: "Mock CPU（模擬資料）".to_string(),
             cpu: cpu_m,
             cpu_freq_text: format!("{:.2} GHz", 3.0 + 0.4 * (t * 0.23).sin()),

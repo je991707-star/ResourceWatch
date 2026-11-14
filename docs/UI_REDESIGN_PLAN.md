@@ -50,7 +50,7 @@
 - 已知限制：執行中關閉 KWin 模糊特效時前端不會得知（側欄仍半透明但不模糊）；非 KDE 的 Wayland 合成器若支援 ext-background-effect-v1 也會生效（NOT TESTED）。
 
 ### 2.3 頂部資訊列對齊參考圖
-- [ ] 左：電腦圖示＋主機名稱＋運作時間；右：機型（DMI `product_name`）＋CPU 型號——等 Phase 3.1 提供 `hostname`／`machineModel` 後一起完成。
+- [x] 左：電腦圖示＋主機名稱＋運作時間；右：機型（DMI `product_name`，佔位字串時用 `board_name`）＋CPU 型號（與 Phase 3.1 一起完成）。
 - [x] 側欄頂部獨立一列的收合按鈕（只剩圖示，偏好存 `localStorage` `resourcewatch-sidebar-collapsed`；≤760 px 自動收合並隱藏按鈕）。
 
 ---
@@ -59,7 +59,7 @@
 
 | # | 項目 | 來源 | 快照欄位（暫定） | 用在 |
 |---|---|---|---|---|
-| 3.1 | 主機名稱、機型 | `/proc/sys/kernel/hostname`；`/sys/class/dmi/id/product_name`（一般使用者可讀） | `hostname`, `machineModel` | 頂部資訊列 |
+| 3.1 ✅ | 主機名稱、機型 | `/proc/sys/kernel/hostname`；`/sys/class/dmi/id/product_name`（一般使用者可讀） | `hostname`, `machineModel` | 頂部資訊列 |
 | 3.2 | CPU 核心／執行緒數 | `/proc/cpuinfo`（`physical id`＋`core id` 去重）、邏輯 CPU 數 | `cpuCores`, `cpuThreads` | 摘要「處理器」 |
 | 3.3 | 每核心使用率 | `/proc/stat` `cpuN` 行，重用 `collectors/cpu.rs` `parse_stat_line`／`usage_between` | `cpuPerCore: (number\|null)[]` | 處理器卡片左側小長條 |
 | 3.4 | 記憶體細分＋壓力 | `/proc/meminfo`：應用程式＝Total−Free−Buffers−Cached−SReclaimable、快取＝Buffers+Cached+SReclaimable、可用＝MemFree；`/proc/pressure/memory` `some avg10` | `ramBreakdown {app, cache, free}`, `history.memPressure` | 記憶體卡片多段堆疊條＋Pressure 圖、摘要記憶體環 |

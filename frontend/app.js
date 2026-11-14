@@ -266,6 +266,8 @@
     pendingRender = false;
     const s = state;
     if (!s) return;
+    setText("hostname", s.hostname);
+    setText("machineModel", s.machineModel);
     setText("cpuName", s.cpuName);
     setText("cpuUsage", metricText(s.cpu));
     setText("cpuSpeed", s.cpuFreqText);

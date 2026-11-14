@@ -68,6 +68,8 @@ fn snapshot_follows_contract_and_is_live_by_default() {
     assert_eq!(snap["dataSource"], "live");
     for key in [
         "version",
+        "hostname",
+        "machineModel",
         "cpuName",
         "cpu",
         "cpuFreqText",

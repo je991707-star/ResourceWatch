@@ -131,6 +131,9 @@ pub struct History {
 pub struct Snapshot {
     pub data_source: DataSource,
     pub version: String,
+    /// Read at startup and on hardware refresh; `"--"` when unknown.
+    pub hostname: String,
+    pub machine_model: String,
     pub cpu_name: String,
     pub cpu: Metric,
     pub cpu_freq_text: String,
