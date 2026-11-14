@@ -1,7 +1,7 @@
 //! Snapshot sent to the frontend (`get_snapshot` command / `snapshot` event).
 //!
 //! Field names follow the legacy v0.0.5 HTML snapshot JSON contract
-//! (see `Readme_Architecture.md`), plus `dataSource`, which tells the UI
+//! (see `docs/Readme_Architecture.md`), plus `dataSource`, which tells the UI
 //! whether values are mock data or real measurements.
 
 use crate::collectors::sensors::SensorKind;
