@@ -6,6 +6,7 @@ use crate::monitor::Monitor;
 use crate::settings::Settings;
 use crate::snapshot::Snapshot;
 use serde::Deserialize;
+use std::time::Instant;
 
 /// Manual refresh actions (`refresh_devices` command).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -34,9 +35,10 @@ impl Source {
         }
     }
 
-    pub fn sample(&mut self, s: &Settings) -> Snapshot {
+    /// One monitoring cycle at the scheduler's timestamp `now`.
+    pub fn sample(&mut self, now: Instant, s: &Settings) -> Snapshot {
         match self {
-            Source::Live(m) => m.sample(s),
+            Source::Live(m) => m.sample(now, s),
             Source::Mock(m) => m.sample(s),
         }
     }

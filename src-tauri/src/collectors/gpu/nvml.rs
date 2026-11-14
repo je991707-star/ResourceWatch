@@ -16,14 +16,16 @@ const NAME_BUFFER: usize = 96;
 #[derive(Default)]
 struct Utilization {
     gpu: c_uint,
-    memory: c_uint,
+    /// Required for the C layout; not used.
+    _memory: c_uint,
 }
 
 #[repr(C)]
 #[derive(Default)]
 struct Memory {
     total: c_ulonglong,
-    free: c_ulonglong,
+    /// Required for the C layout; not used.
+    _free: c_ulonglong,
     used: c_ulonglong,
 }
 
@@ -130,7 +132,6 @@ impl Nvml {
         let mut u = Utilization::default();
         // SAFETY: valid out-pointer.
         let ok = unsafe { (self.util)(d.0, &mut u) } == NVML_SUCCESS;
-        let _ = u.memory;
         ok.then(|| percent(u.gpu)).flatten()
     }
 
@@ -162,7 +163,6 @@ impl Nvml {
         let mut m = Memory::default();
         // SAFETY: valid out-pointer.
         let ok = unsafe { (self.mem)(d.0, &mut m) } == NVML_SUCCESS;
-        let _ = m.free;
         (ok && m.total > 0 && m.used <= m.total).then_some((m.used as f64, m.total as f64))
     }
 }

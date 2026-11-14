@@ -13,11 +13,11 @@ use crate::collectors::{
     network::{self, NetCollector, NetReading},
     system, Roots,
 };
-use crate::format::{format_bytes, valid, MISSING};
+use crate::format::{format_bytes, MISSING};
 use crate::history::{HistoryBuffer, HistorySample};
 use crate::settings::Settings;
 use crate::snapshot::{
-    format_uptime, DataSource, DiskInfo, DiskRate, Metric, MetricStatus, Snapshot,
+    format_uptime, DataSource, DiskInfo, DiskRate, History, Metric, MetricStatus, Snapshot,
 };
 use crate::source::RefreshKind;
 use std::collections::BTreeMap;
@@ -53,12 +53,15 @@ pub struct Monitor {
     history: HistoryBuffer,
 }
 
+// No extra finiteness check: collectors only produce finite values here
+// (hwmon/NVML integers already range-checked, cpufreq is an average of
+// positive integers), so `None` is the only "missing" case.
 fn temp_text(c: Option<f64>, decimals: usize) -> String {
-    valid(c).map_or_else(|| MISSING.to_string(), |c| format!("{c:.decimals$} °C"))
+    c.map_or_else(|| MISSING.to_string(), |c| format!("{c:.decimals$} °C"))
 }
 
 fn freq_text(mhz: Option<f64>) -> String {
-    valid(mhz).map_or_else(|| MISSING.to_string(), |m| format!("{:.2} GHz", m / 1000.0))
+    mhz.map_or_else(|| MISSING.to_string(), |m| format!("{:.2} GHz", m / 1000.0))
 }
 
 impl Monitor {
@@ -116,17 +119,18 @@ impl Monitor {
         }
     }
 
-    /// Reads all per-interval collectors, records history, returns a snapshot.
-    pub fn sample(&mut self, s: &Settings) -> Snapshot {
+    /// One monitoring cycle: reads every per-interval collector with the
+    /// cycle's shared timestamp `now`, records history, returns a snapshot.
+    pub fn sample(&mut self, now: Instant, s: &Settings) -> Snapshot {
         self.last = Readings {
             cpu: self.cpu.sample(),
             mem: memory::sample(&self.roots),
             gpu: self.gpu.sample(),
-            disks: self.disk_io.sample(&self.disks),
-            net: self.net.sample(),
+            disks: self.disk_io.sample_at(&self.disks, now),
+            net: self.net.sample_at(now),
             uptime: system::uptime_seconds(&self.roots),
         };
-        let snap = self.build(s);
+        let mut snap = self.build(s);
         self.history.push(
             HistorySample {
                 cpu: snap.cpu.percent,
@@ -140,15 +144,16 @@ impl Monitor {
             },
             s.history_points,
         );
-        Snapshot {
-            history: self.history.to_history(),
-            ..snap
-        }
+        // History is materialised once per cycle (build() leaves it empty).
+        snap.history = self.history.to_history();
+        snap
     }
 
     /// Snapshot of the last readings; performs no I/O on the collectors.
     pub fn peek(&self, s: &Settings) -> Snapshot {
-        self.build(s)
+        let mut snap = self.build(s);
+        snap.history = self.history.to_history();
+        snap
     }
 
     fn build(&self, s: &Settings) -> Snapshot {
@@ -227,7 +232,7 @@ impl Monitor {
             net_ip: self.ip.clone().unwrap_or_else(|| MISSING.to_string()),
             net_up: g(Metric::rate(r.net.up)),
             net_down: g(Metric::rate(r.net.down)),
-            history: self.history.to_history(),
+            history: History::default(),
         }
     }
 }
@@ -242,7 +247,7 @@ mod tests {
         let r = temp_root("monitor-empty");
         let s = Settings::default();
         let mut m = Monitor::with_roots(roots(&r), &s);
-        let snap = m.sample(&s);
+        let snap = m.sample(Instant::now(), &s);
         assert_eq!(snap.data_source, DataSource::Live);
         assert_eq!(snap.cpu.percent, None);
         assert_eq!(
@@ -270,9 +275,9 @@ mod tests {
         write(&r, "proc/cpuinfo", "model name : Test CPU\n");
         let s = Settings::default();
         let mut m = Monitor::with_roots(roots(&r), &s);
-        m.sample(&s);
+        m.sample(Instant::now(), &s);
         write(&r, "proc/stat", "cpu  200 0 100 900 0 0 0 0 0 0\n");
-        let snap = m.sample(&s);
+        let snap = m.sample(Instant::now(), &s);
         assert_eq!(snap.cpu.display_value, "50%");
         assert_eq!(snap.ram.display_value, "75%");
         assert_eq!(snap.cpu_name, "Test CPU");

@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 分支 | `refactor/rust-tauri` |
-| 狀態 | 架構遷移規劃／逐步實作。Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2）；統一排程器、設定持久化、功能對等驗證尚未完成，**舊版 Plasma QML + Python + HTML 仍保留** |
+| 狀態 | 架構遷移規劃／逐步實作。Tauri 版已由 Rust collectors 讀取實際硬體（Phase 2），並由正式統一排程器驅動、設定可持久化（Phase 3，實機睡眠恢復未驗證）；功能對等驗證尚未完成，**舊版 Plasma QML + Python + HTML 仍保留** |
 | 基礎 | ResourceWatch v0.0.5 系列的監控功能與 HTML 介面 |
 | 專案路徑 | `/var/home/h97m/Projects/ResourceWatch` |
 | 相關文件 | 執行規則：`CLAUDE.md`；檔案職責、JSON 契約、新舊來源對照：`Readme_Architecture.md` |
@@ -221,13 +221,75 @@ Future: Plasma Widget (QML shell + optional HTML view)
 - 取樣迴圈仍是 Phase 1 的暫時實作（每次取樣讀全部 collector）；統一排程器與睡眠恢復測試屬 Phase 3
 - 資源占用比較（舊版 vs 新版）屬 Phase 4，尚未量測
 
-### Phase 3 — 排程、歷史與設定
+### Phase 3 — 排程、歷史與設定（實作完成，實機睡眠恢復待驗證）
 
-- [ ] 共用 `updateInterval` 的統一排程器
-- [ ] 歷史資料緩衝與前端快照事件
-- [ ] 設定讀寫、驗證、恢復預設值及手動刷新按鈕
-- [ ] 測試 100／500／10000 ms 更新頻率與睡眠恢復行為
-- [ ] 確認沒有每次更新重複啟動 Python 程序的路徑
+- [x] 共用 `updateInterval` 的統一排程器 → `src-tauri/src/scheduler.rs`（單一執行緒 `rw-scheduler`、單調時鐘、固定網格、
+  不重疊、略過過期週期不補跑、可動態改間隔、可停止並 join、週期 panic 不終止排程器）；取代 Phase 1／2 的暫時取樣迴圈
+- [x] 歷史資料緩衝與前端快照事件 → 每個週期 `Monitor::sample(now)` → `HistoryBuffer` → `snapshot` 事件 → `latest`；
+  同一週期的硬碟／網路速率共用時間戳；歷史陣列每週期只產生一次
+- [x] 設定讀寫、驗證、恢復預設值 → `src-tauri/src/settings_store.rs`（`<Tauri app config dir>/config.json`、原子寫入、
+  損壞檔改名保留、逐欄位回退預設）；`commit_settings` 以「驗證 → 寫檔 → 套用 Monitor → 更新記憶體 → 排程器」順序執行，寫檔失敗不套用
+- [x] 手動刷新按鈕（IPv4、硬碟清單、硬體資訊）→ 沿用 `refresh_devices`，與排程週期以 source 鎖互斥，不重啟排程器；
+  切換 GPU 改用偵測時快取的名稱與後端，不重新掃描
+- [x] 測試 100／500／10000 ms → 單元測試（合成時鐘）、IPC 測試與主機實測（下表）
+- [ ] 實機睡眠恢復 → `NOT TESTED`（未在使用者工作階段執行 suspend）；已以合成時鐘模擬一小時時間跳躍、以及睡眠後長間隔速率計算
+- [x] 確認沒有每次更新重複啟動 Python 的路徑 → 實測執行期間子程序只有 WebKit 固定兩個，PID 前後相同
+- 新增 IPC：`get_settings_info`（設定檔路徑、載入警告）、`get_scheduler_stats`；`reset_settings` 可能回傳 `settingsWriteFailed`
+- 前端：設定頁顯示設定檔路徑與載入警告；修正欄位下方在沒有錯誤時顯示紅色 `--` 的既有 bug（`setFieldError` 不再經 `setText()`）
+- 依本次指示：**未 commit、未 push、未建 tag、未改版本號**
+
+**測試證據（2026-11-14）**
+
+- `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo check` 通過
+- `cargo test`：單元測試 62/62（新增排程器 9：100／500／10000 ms 固定網格無漂移、超時略過、耗時等於間隔、一小時時間跳躍只跑一次、
+  動態改間隔、執行緒不重疊、50 次改間隔仍為同一執行緒且可乾淨停止、panic 後繼續、10 s 間隔下停止立即生效；
+  設定檔 6：無檔案、存檔重載與格式、逐欄位回退與別名、損壞檔保留、目錄唯讀寫入失敗且原檔不變、8 執行緒同時寫入不產生殘缺檔；
+  另新增 GPU 切換不重新掃描、網路睡眠後長間隔不產生尖峰）
+- IPC 整合測試 9/9（新增：重新啟動後設定保留且排程器以儲存值啟動、非法輸入不寫檔不改排程、損壞檔回報與備份、
+  40 次快速修改後磁碟／記憶體／排程器一致、唯讀目錄寫入失敗不改變任何狀態、排程器實際以 100 ms 運作並餵給 `get_snapshot`）
+- 所有測試使用暫存目錄；確認使用者真實設定目錄 `~/.config/io.github.local.resourcewatch` 在測試後仍不存在
+- `node --check frontend/app.js` 通過；舊版 `tests/static_check.sh`、`application_layout_test.py` 仍通過
+
+**效能測試（主機 Bazzite KDE Wayland 原生、release 版、視窗顯示總覽、Xeon E3-1231 v3 + Quadro P620）**
+
+每個間隔啟動一次（暫存 `XDG_CONFIG_HOME` 放入對應設定），預熱 10 秒後量測 60 秒；CPU 為「單一核心的百分比」，來自 `/proc/<pid>/stat`
+utime+stime（解析度 10 ms），各只量一次、未重複取平均；RSS 含共用函式庫。
+
+| 間隔 | 主程序 CPU | WebKit 子程序 CPU | 主程序 RSS | 子程序 RSS 合計 | 實際取樣頻率 | 略過 | 單次取樣耗時 平均／最大 | 啟動延遲 平均／最大 |
+|---|---|---|---|---|---|---|---|---|
+| 100 ms | 5.81% | 9.53% | 203 MiB | 367 MiB | 10.0／s（每 10 s 100–101 次） | 0 | 1.29／2.85 ms | 0.10／0.84 ms |
+| 500 ms | 1.35% | 2.10% | 202 MiB | 308 MiB | 2.0／s（每 10 s 20–21 次） | 0 | 1.25／3.01 ms | 0.09／0.17 ms |
+| 10000 ms | 0.88% | 0.96% | 203 MiB | 356 MiB | 0.1／s | 0 | 1.41／2.33 ms | 0.09／0.14 ms |
+
+主程序內部依執行緒拆分（另一次 30 秒量測）：
+
+| 間隔 | `rw-scheduler`（Rust 取樣＋序列化＋送出事件） | 主執行緒（GTK／WebKit UI） | 其他執行緒 |
+|---|---|---|---|
+| 100 ms | 1.23% | 3.73% | 0.90% |
+| 500 ms | 0.17% | 1.20% | 0.40% |
+| 10000 ms | < 0.03%（低於量測解析度） | 0.40% | 0.13% |
+
+- Rust 後端成本與間隔成正比且很小；主要成本是 WebKit 繪製（子程序）與 GTK 主執行緒。10000 ms 時仍有約 1–2% 的基本成本，
+  主要來自 UI（含前端每秒更新一次運作時間文字），不是取樣
+- 子程序：三種間隔皆只有 `WebKitWebProcess`、`WebKitNetworkProcess`，量測開始與結束 PID 相同 → 沒有意外的外部程序
+
+**圖形介面**
+
+- 原生 Wayland：啟動、即時資料與圖表更新正常（截圖）
+- XWayland（`GDK_BACKEND=x11`，因原生 Wayland 不允許外部工具操作視窗）以 `xdotool`／`wmctrl` 自動化：
+  要求 500×400 時視窗維持 640×480（最小尺寸生效）；640×480 下側欄收合為圖示、內容可捲動；鍵盤切到設定頁；
+  輸入 99 → 欄位旁顯示錯誤、未寫檔；輸入 1250 → `config.json` 寫入 1250；關閉視窗 → 輸出 `scheduler stopped`、程序結束；
+  重新啟動 → 設定頁顯示 1250、排程器統計 `interval_ms=1250`
+- 原生 Wayland 下的關閉流程：`NOT TESTED`（無法以外部工具關閉原生 Wayland 視窗；XWayland 下已驗證同一段 `RunEvent::Exit` 程式）
+
+**已知限制**
+
+- XWayland＋NVIDIA 下 WebKitGTK 出現 `Failed to create GBM buffer`，畫面空白；設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 後正常。
+  原生 Wayland 不受影響；程式目前**沒有**自動設定此變數（Phase 4 評估）
+- 實機 suspend／resume `NOT TESTED`
+- 效能數據各只量一次，未計算變異；未與舊版 Plasma 實作比較（屬 Phase 4）
+- 設定目錄無法解析時只保存在記憶體（設定頁會顯示），此情況未在實機發生過
+- 設定檔格式損壞時會改名保留後使用預設值；若改名本身失敗（目錄不可寫），之後的儲存也會失敗，不會覆蓋原檔
 
 ### Phase 4 — 功能對等與效能驗證
 

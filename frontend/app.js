@@ -283,7 +283,11 @@
   const fields = Object.fromEntries(Object.keys(SPECS).map((k) => [k, $(k)]));
 
   function setFieldError(key, message) {
-    setText(key + "Error", message || "");
+    // Not setText(): that renders an empty value as "--", which would show a
+    // bogus error under every valid field.
+    const el = $(key + "Error");
+    const next = message || "";
+    if (el && el.textContent !== next) el.textContent = next;
     if (message) fields[key].setAttribute("aria-invalid", "true");
     else fields[key].removeAttribute("aria-invalid");
   }
@@ -323,6 +327,8 @@
         setFieldError(key, "");
         fields[key].value = String(settings[key]);
       } catch (e) {
+        // invalidSetting → that field; settingsWriteFailed (field null) → the
+        // edited field, so the error stays next to what the user changed.
         setFieldError(e?.field || key, errorMessage(e));
       }
     });
@@ -355,11 +361,24 @@
       const settings = await invoke("reset_settings");
       if (document.activeElement) document.activeElement.blur();
       displaySettings(settings);
-      showFeedback("已恢復預設值。", false);
+      showFeedback("已恢復預設值並儲存。", false);
     } catch (e) {
       showFeedback("恢復預設值失敗：" + errorMessage(e), true);
     }
   });
+
+  // Where settings are stored and any problem found while loading them.
+  async function showSettingsInfo() {
+    try {
+      const info = await invoke("get_settings_info");
+      setText("settingsPath", info.path ? `設定檔：${info.path}` : "設定目錄無法使用，設定只保存在記憶體中。");
+      const warning = $("settingsWarning");
+      warning.hidden = !info.loadWarning;
+      warning.textContent = info.loadWarning || "";
+    } catch (e) {
+      console.warn("ResourceWatch: settings info unavailable", e);
+    }
+  }
 
   // ---------------------------------------------------------------- startup
   async function start() {
@@ -372,6 +391,7 @@
       await listen("snapshot", (event) => receiveSnapshot(event.payload));
       await listen("settings-changed", (event) => displaySettings(event.payload));
       displaySettings(await invoke("get_settings"));
+      showSettingsInfo();
       receiveSnapshot(await invoke("get_snapshot"));
     } catch (e) {
       console.error("ResourceWatch: backend connection failed", e);

@@ -143,13 +143,9 @@ impl DiskCollector {
             .map(|t| parse_diskstats(&t))
     }
 
-    /// Rates (B/s) for each given disk. Missing device, first sample or a
-    /// counter reset yields `None` for that disk.
-    pub fn sample(&mut self, disks: &[DiskDevice]) -> BTreeMap<String, DiskRateReading> {
-        self.sample_at(disks, Instant::now())
-    }
-
-    fn sample_at(
+    /// Rates (B/s) for each given disk, using the cycle timestamp `now`.
+    /// Missing device, first sample or a counter reset yields `None`.
+    pub fn sample_at(
         &mut self,
         disks: &[DiskDevice],
         now: Instant,

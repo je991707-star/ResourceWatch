@@ -74,11 +74,8 @@ impl NetCollector {
         v
     }
 
-    pub fn sample(&mut self) -> NetReading {
-        self.sample_at(Instant::now())
-    }
-
-    fn sample_at(&mut self, now: Instant) -> NetReading {
+    /// Throughput since the previous call, using the cycle timestamp `now`.
+    pub fn sample_at(&mut self, now: Instant) -> NetReading {
         let cur = std::fs::read_to_string(&self.dev_path)
             .ok()
             .map(|t| parse_net_dev(&t));
@@ -233,6 +230,24 @@ mod tests {
         assert_eq!(
             c.sample_at(t0 + Duration::from_secs(3)),
             NetReading::default()
+        );
+    }
+
+    #[test]
+    fn long_gap_after_resume_gives_average_not_spike() {
+        let r = temp_root("net-resume");
+        write(&r, "proc/net/dev", &dev(0, (1_000, 1_000), 0));
+        let mut c = NetCollector::new(&roots(&r), "enp3s0");
+        let t0 = Instant::now();
+        c.sample_at(t0);
+        write(&r, "proc/net/dev", &dev(0, (1_000 + 3_600, 1_000), 0));
+        let s = c.sample_at(t0 + Duration::from_secs(3600));
+        assert_eq!(
+            s,
+            NetReading {
+                down: Some(1.0),
+                up: Some(0.0)
+            }
         );
     }
 

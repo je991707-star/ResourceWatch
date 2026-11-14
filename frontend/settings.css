@@ -94,6 +94,19 @@
 .refresh-feedback { min-height: 16px; margin: 8px 0 0; color: #b4d9c0; font-size: 11px; }
 .refresh-feedback.is-error { color: #f0a19f; }
 
+.settings-warning {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #7a4644;
+  border-radius: 10px;
+  background: #3b2a2a;
+  color: #f2c4c2;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-warning[hidden] { display: none; }
+#settingsPath { display: block; margin-top: 2px; color: #8f98a4; word-break: break-all; }
+
 .settings-footer { display: flex; align-items: center; gap: 14px; color: #aab1bc; font-size: 11px; line-height: 1.5; }
 .settings-footer p { margin: 0; }
 .secondary-button { border-color: #5b616b; background: #3a3f47; }

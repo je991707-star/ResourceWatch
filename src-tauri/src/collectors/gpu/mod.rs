@@ -134,11 +134,10 @@ pub fn pci_ids_lookup(text: &str, vendor: u16, device: u16) -> Option<String> {
     None
 }
 
-fn pci_ids_name(vendor: u16, device: u16) -> Option<String> {
+fn read_pci_ids() -> Option<String> {
     PCI_IDS_PATHS
         .iter()
         .find_map(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| pci_ids_lookup(&t, vendor, device))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -227,7 +226,9 @@ enum Backend {
     Drm(DrmPaths),
 }
 
-struct Selected {
+/// One GPU with everything resolved at discovery time (name, backend), so
+/// switching `gpuIndex` needs no rescan, no `pci.ids` read, no NVML lookup.
+struct Entry {
     device: GpuDevice,
     name: Option<String>,
     backend: Backend,
@@ -235,10 +236,9 @@ struct Selected {
 
 pub struct GpuCollector {
     roots: Roots,
-    devices: Vec<GpuDevice>,
+    entries: Vec<Entry>,
     nvml: Option<Nvml>,
     nvml_tried: bool,
-    selected: Option<Selected>,
     index: u32,
 }
 
@@ -246,65 +246,76 @@ impl GpuCollector {
     pub fn new(roots: &Roots, index: u32) -> Self {
         let mut c = Self {
             roots: roots.clone(),
-            devices: Vec::new(),
+            entries: Vec::new(),
             nvml: None,
             nvml_tried: false,
-            selected: None,
             index,
         };
         c.rediscover();
         c
     }
 
-    /// Manual hardware re-detection: rescans DRM cards and reselects.
+    /// Startup / manual hardware re-detection: rescans DRM cards and resolves
+    /// each card's backend and name once.
     pub fn rediscover(&mut self) {
-        self.devices = discover(&self.roots);
-        if !self.nvml_tried && self.devices.iter().any(|d| d.vendor == Vendor::Nvidia) {
+        let devices = discover(&self.roots);
+        if !self.nvml_tried && devices.iter().any(|d| d.vendor == Vendor::Nvidia) {
             self.nvml_tried = true;
             match Nvml::load() {
                 Ok(n) => self.nvml = Some(n),
                 Err(e) => eprintln!("ResourceWatch: NVML unavailable, NVIDIA metrics limited: {e}"),
             }
         }
-        self.select(self.index);
+        let mut pci_db: Option<Option<String>> = None; // read lazily, at most once
+        let nvml = self.nvml.as_ref();
+        self.entries = devices
+            .into_iter()
+            .map(|device| {
+                let handle = (device.vendor == Vendor::Nvidia)
+                    .then(|| nvml.zip(device.pci.as_deref()))
+                    .flatten()
+                    .and_then(|(n, pci)| n.device_by_pci(pci));
+                let mut name = handle.and_then(|h| nvml.and_then(|n| n.name(h)));
+                if name.is_none() {
+                    name = pci_db
+                        .get_or_insert_with(read_pci_ids)
+                        .as_deref()
+                        .and_then(|db| pci_ids_lookup(db, device.vendor_id, device.device_id));
+                }
+                let backend = match handle {
+                    Some(h) => Backend::Nvml(h),
+                    None => Backend::Drm(drm_paths(&device)),
+                };
+                Entry {
+                    device,
+                    name,
+                    backend,
+                }
+            })
+            .collect();
     }
 
+    /// Switches to another already-discovered GPU (no hardware scan).
     pub fn select(&mut self, index: u32) {
         self.index = index;
-        self.selected = self.devices.get(index as usize).cloned().map(|device| {
-            let nv = (device.vendor == Vendor::Nvidia)
-                .then(|| self.nvml.as_ref().zip(device.pci.as_deref()))
-                .flatten()
-                .and_then(|(n, pci)| n.device_by_pci(pci).map(|h| (n, h)));
-            match nv {
-                Some((n, h)) => Selected {
-                    name: n
-                        .name(h)
-                        .or_else(|| pci_ids_name(device.vendor_id, device.device_id)),
-                    device,
-                    backend: Backend::Nvml(h),
-                },
-                None => Selected {
-                    name: pci_ids_name(device.vendor_id, device.device_id),
-                    backend: Backend::Drm(drm_paths(&device)),
-                    device,
-                },
-            }
-        });
+    }
+
+    fn selected(&self) -> Option<&Entry> {
+        self.entries.get(self.index as usize)
     }
 
     pub fn index(&self) -> u32 {
         self.index
     }
     pub fn name(&self) -> Option<&str> {
-        self.selected.as_ref()?.name.as_deref()
+        self.selected()?.name.as_deref()
     }
     pub fn vendor(&self) -> Option<Vendor> {
-        self.selected.as_ref().map(|s| s.device.vendor)
+        self.selected().map(|s| s.device.vendor)
     }
     /// `nvml` | `drm` | `unavailable`
     pub fn source(&self) -> &'static str {
-        match self.selected.as_ref().map(|s| &s.backend) {
+        match self.selected().map(|s| &s.backend) {
             Some(Backend::Nvml(_)) => "nvml",
             Some(Backend::Drm(_)) => "drm",
             None => "unavailable",
@@ -312,7 +323,7 @@ impl GpuCollector {
     }
 
     pub fn sample(&self) -> GpuReading {
-        match self.selected.as_ref().map(|s| &s.backend) {
+        match self.selected().map(|s| &s.backend) {
             Some(Backend::Nvml(h)) => {
                 let Some(n) = self.nvml.as_ref() else {
                     return GpuReading::default();
@@ -409,6 +420,22 @@ mod tests {
         let c = GpuCollector::new(&roots(&r), 0);
         assert_eq!(c.vendor(), Some(Vendor::Intel));
         assert_eq!(c.sample(), GpuReading::default());
+    }
+
+    #[test]
+    fn switching_gpu_uses_cached_discovery() {
+        let r = temp_root("gpu-switch");
+        fake_card(&r, "card0", "0000:03:00.0", "0x1002", "0x73bf", "0x030000");
+        fake_card(&r, "card1", "0000:00:02.0", "0x8086", "0x3e92", "0x030000");
+        let mut c = GpuCollector::new(&roots(&r), 0);
+        assert_eq!(c.vendor(), Some(Vendor::Amd));
+        std::fs::remove_dir_all(r.join("sys")).unwrap(); // no rescan possible now
+        c.select(1);
+        assert_eq!((c.vendor(), c.source()), (Some(Vendor::Intel), "drm"));
+        c.select(0);
+        assert_eq!(c.vendor(), Some(Vendor::Amd));
+        c.select(7);
+        assert_eq!(c.source(), "unavailable");
     }
 
     #[test]
