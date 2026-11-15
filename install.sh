@@ -15,7 +15,8 @@ ICON="$HOME/.local/share/icons/hicolor/128x128/apps/$ID.png"
 build() {
     local cmd="cd '$ROOT/src-tauri' && cargo tauri build --no-bundle"
     # 容器優先：主機（例如 Bazzite）常有 cargo 卻缺 WebKitGTK 等開發函式庫
-    if command -v distrobox >/dev/null 2>&1 && distrobox list 2>/dev/null | grep -qw "$BOX"; then
+    # 直接進容器試一次：`distrobox list` 在另一個 enter 剛結束時偶爾列不出容器，會誤退回主機建置
+    if command -v distrobox >/dev/null 2>&1 && distrobox enter "$BOX" -- true >/dev/null 2>&1; then
         distrobox enter "$BOX" -- bash -lc "$cmd"
     elif cargo tauri --version >/dev/null 2>&1; then
         bash -c "$cmd"

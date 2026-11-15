@@ -24,7 +24,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 ## install.sh
 
 使用者空間安裝／更新／解除安裝，不需要 sudo、不分層、不重開機（適用 Bazzite 等不可變系統）。
-- `install`（預設）：有 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內執行 `cargo tauri build --no-bundle`，
+- `install`（預設）：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名；以 `distrobox enter … -- true` 探測，`distrobox list` 偶爾漏列）時在容器內執行 `cargo tauri build --no-bundle`，
   否則用主機的 cargo-tauri；先 `pkill -x resourcewatch` 再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到
   `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、啟動器到
   `~/.local/share/applications/resourcewatch.desktop`（檔名必須等於視窗的 Wayland app_id＝執行檔名 `resourcewatch`，KWin 才會在標題列與工作列顯示應用圖示；同時刪除舊版的 `io.github.local.resourcewatch.desktop` 啟動器）。
