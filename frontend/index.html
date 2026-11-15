@@ -136,10 +136,11 @@
 
         <section class="card" aria-labelledby="sensorsTitle">
           <h2 id="sensorsTitle">Sensors <span class="unit-toggle" role="group" aria-label="Temperature unit"><button type="button" data-temp-unit="c">°C</button><button type="button" data-temp-unit="f">°F</button></span></h2>
-          <dl class="rows">
-            <div><dt>CPU temperature</dt><dd data-bind="cpuTemp">--</dd></div>
-            <div><dt>GPU temperature</dt><dd data-bind="gpuTemp">--</dd></div>
+          <dl class="kv">
+            <div><dt>CPU</dt><dd data-bind="cpuTemp">--</dd></div>
+            <div><dt>GPU</dt><dd data-bind="gpuTemp">--</dd></div>
           </dl>
+          <h3 class="panel-sub panel-sub--rule">Details</h3>
           <dl class="rows sensor-list" data-sensor-list="8"></dl>
           <button type="button" class="more-link" data-goto="sensors">Show more…</button>
         </section>
@@ -169,21 +170,22 @@
         <section class="card" aria-labelledby="cpuTitle">
           <h2 id="cpuTitle">Processor</h2>
           <div class="cpu-chart">
-            <div><div class="chart-heading"><span>Cores</span></div><div class="core-bars" data-core-bars aria-label="Per-core usage"></div></div>
-            <div><div class="chart-heading"><span>Usage</span><span data-bind="cpuUsage">--</span></div>
+            <div><h3 class="panel-sub">Cores</h3><div class="core-bars" data-core-bars aria-label="Per-core usage"></div></div>
+            <div><h3 class="panel-sub">Usage<span class="panel-val" data-bind="cpuUsage">--</span></h3>
           <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU usage history"><g data-chart="cpu" data-color="cpu"><path class="area"></path></g></svg></div></div>
           </div>
+          <h3 class="panel-sub panel-sub--rule">Top processes</h3>
           <dl class="rows proc-list" data-proc-list="cpu" aria-label="Top 5 by CPU"></dl>
           <button type="button" class="more-link" data-goto="apps">Show applications…</button>
         </section>
 
         <section class="card" aria-labelledby="diskIoTitle">
           <h2 id="diskIoTitle">Disk I/O</h2>
-          <div class="chart-heading"><span>Speed (all disks)</span><span data-bind="diskIoMax">--</span></div>
+          <h3 class="panel-sub">Speed (all disks)<span class="panel-val" data-bind="diskIoMax">--</span></h3>
           <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Disk read/write history"><g data-chart="diskWrite" data-color="disk-write"><path class="area"></path></g><g data-chart="diskRead" data-color="disk-read"><path class="area"></path></g></svg></div>
-          <ul class="legend legend--row">
-            <li><i class="dot" data-color="disk-read"></i>Read<strong data-bind="diskReadNow">--</strong></li>
-            <li><i class="dot" data-color="disk-write"></i>Write<strong data-bind="diskWriteNow">--</strong></li>
+          <ul class="mem-legend mem-legend--2">
+            <li><span><i class="dot" data-color="disk-read"></i>Read</span><strong data-bind="diskReadNow">--</strong></li>
+            <li><span><i class="dot" data-color="disk-write"></i>Write</span><strong data-bind="diskWriteNow">--</strong></li>
           </ul>
           <button type="button" class="more-link" data-goto="storage">Show more…</button>
         </section>
@@ -193,16 +195,20 @@
           <div class="bar bar--wide bar--stack" role="img" aria-label="Memory composition">
             <span data-bar="ramApp" data-color="ram"></span><span data-bar="ramCache" data-color="mem-cache"></span><span data-bar="ramFree" data-color="mem-free"></span><span data-bar="ramOther" data-color="mem-other"></span>
           </div>
-          <ul class="legend legend--row legend--stack">
-            <li><i class="dot" data-color="ram"></i>Used<strong data-bind="ramApp">--</strong></li>
-            <li><i class="dot" data-color="mem-cache"></i>Cached<strong data-bind="ramCache">--</strong></li>
-            <li><i class="dot" data-color="mem-free"></i>Free<strong data-bind="ramFree">--</strong></li>
-            <li><i class="dot" data-color="mem-other"></i>Other<strong data-bind="ramOther">--</strong></li>
-            <li><i class="dot dot--track"></i>Total<strong data-bind="ramTotal">--</strong></li>
+          <ul class="mem-legend">
+            <li><span><i class="dot" data-color="ram"></i>Used</span><strong data-bind="ramApp">--</strong></li>
+            <li><span><i class="dot" data-color="mem-cache"></i>Cached</span><strong data-bind="ramCache">--</strong></li>
+            <li><span><i class="dot" data-color="mem-free"></i>Free</span><strong data-bind="ramFree">--</strong></li>
+            <li><span><i class="dot" data-color="mem-other"></i>Other</span><strong data-bind="ramOther">--</strong></li>
           </ul>
-          <dl class="rows"><div><dt>Speed</dt><dd data-bind="ramSpeed">--</dd></div></dl>
-          <div class="chart-heading"><span>Pressure (PSI, 10 s avg)</span><span data-bind="memPressure">--</span></div>
+          <dl class="kv kv--3">
+            <div><dt>Total</dt><dd data-bind="ramTotal">--</dd></div>
+            <div><dt>Speed</dt><dd data-bind="ramSpeed">--</dd></div>
+            <div><dt>Pressure</dt><dd data-bind="memPressure">--</dd></div>
+          </dl>
+          <h3 class="panel-sub">Pressure history<span class="panel-val">PSI, 10 s avg</span></h3>
           <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Memory pressure history"><g data-chart="memPressure" data-color="ram"><path class="area"></path></g></svg></div>
+          <h3 class="panel-sub panel-sub--rule">Top processes</h3>
           <dl class="rows proc-list" data-proc-list="memory" aria-label="Top 5 by memory"></dl>
           <button type="button" class="more-link" data-goto="apps">Show applications…</button>
         </section>

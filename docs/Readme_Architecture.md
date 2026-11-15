@@ -41,7 +41,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   SUMMARY（第一張）：CPU／GPU／RAM 三個環形圖（`data-color` 為 `sum-cpu`／`sum-gpu`／`sum-ram`，環內為溫度＋時脈、溫度＋GPU 時脈 `gpuClock`、使用率＋總量）；
   Memory 四段堆疊條 Used／Cached／Free／Other（`ramApp`、`ramCache`、`ramFree`、`ramOther`）；Storage：‹ › 切換硬碟，名稱為「大寫裝置名 · 型號」，Total／Used／Free。
   NETWORK（第二張）：標題列 NIC 選單（`.title-pill`，`data-all-label="all"`）；本機 IP＋MAC 與閘道 IP＋MAC（`netGatewayMac`），圖示為內嵌的 Font Awesome Free SVG（desktop、network-wired，翻頁鈕為 caret-right／水平翻轉，CC BY 4.0 註記保留在標記中）；
-  上傳（上）／下載（下）鏡像長條圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
+  上傳（上）／下載（下）鏡像長條圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘儀表板卡片沿用 SUMMARY 的版面元素：粗體小節標題 `.panel-sub`（右側可帶灰字數值 `.panel-val`）、分隔線小節 `.panel-sub--rule`（Details、Top processes；下方清單為空時以 `:has(+ :empty)` 隱藏）、置中圖例 `.mem-legend`（磁碟 I/O 用兩欄 `.mem-legend--2`）、`kv` 數值格（感測器 CPU／GPU、記憶體 Total／Speed／Pressure）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
   處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取（上）／寫入（下）鏡像長條圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單（與 NIC 相同的 `.title-pill`，選項只顯示 `GPU0`、`GPU1`…，完整名稱顯示在卡片內）），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
   電池卡片（`#batteryCard`，`battery` 為 `null` 時隱藏）：百分比、狀態、剩餘／充滿時間、進度條、健康度、循環次數與容量。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`，相鄰的同一晶片感測器歸在晶片名稱標題 `.sensor-group` 下，列名只顯示標籤；卡片則以「晶片 · 標籤」顯示）；兩處都有 °C／°F 切換（`data-temp-unit`）。

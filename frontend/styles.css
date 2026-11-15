@@ -227,10 +227,18 @@ html, body {
 .gauge-text strong { font-size: 14px; font-weight: 500; }
 .gauge-text small { color: var(--muted); font-size: 10px; }
 .card .panel-sub { margin: 12px 0 8px; font-size: 13px; font-weight: 700; }
+.card .panel-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card h2 + .panel-sub, .cpu-chart .panel-sub { margin-top: 0; }
+.panel-val { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+/* Section break like SUMMARY's dividers; hidden while the list under it is empty. */
+.panel-sub--rule { padding-top: 12px; border-top: 1px solid var(--card-border); }
+.panel-sub--rule:has(+ :empty) { display: none; }
+.panel-sub--rule + .proc-list, .panel-sub--rule + .sensor-list { margin-top: 0; padding-top: 0; border-top: 0; }
 .mem-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 0; padding: 0 0 12px; border-bottom: 1px solid var(--card-border); list-style: none; font-size: 11px; }
 .mem-legend li { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .mem-legend span { display: flex; align-items: center; gap: 4px; }
 .mem-legend strong { color: var(--muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.mem-legend--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .storage-head { display: flex; align-items: center; justify-content: space-between; }
 .storage-name { margin: 0 0 6px; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .pager svg { width: 18px; height: 18px; fill: currentColor; }
