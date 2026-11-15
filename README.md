@@ -30,11 +30,12 @@ ResourceWatch 是 Linux 桌面的系統資源監控程式，可即時查看 **CP
 cd src-tauri
 cargo tauri dev            # 開發執行
 cargo tauri build          # release 執行檔與 deb／rpm 套件
-cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd ..                      # 根目錄是 Cargo workspace（crates/core＋src-tauri）
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 
 - 安裝到使用者目錄（建置＋執行檔、啟動器、圖示）：`./install.sh`；解除安裝：`./install.sh uninstall`
-- release 執行檔：`src-tauri/target/release/resourcewatch`
+- release 執行檔：`target/release/resourcewatch`（workspace 共用根目錄的 `target/`）
 - **NVIDIA**：NVML（`libnvidia-ml.so.1`）由主機的驅動提供。在沒有整合 NVIDIA 的 distrobox 容器內執行時，GPU 使用率、溫度與 VRAM 會顯示 `--`；
   請在主機上執行 release 執行檔。
 - **RAM 速度**：一般使用者通常無法讀取 SMBIOS。若顯示 `--`，可自行建立快取
@@ -48,7 +49,7 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 | `RESOURCEWATCH_MOCK=1` | 改用標示為「模擬資料 · 非實機」的假資料（UI 開發用） |
 | `RESOURCEWATCH_DEBUG_STATS=1` | 每 10 秒與結束時在 stderr 輸出排程器統計 |
 
-與系統工具比對數值：`cargo run --release --example sample -- 6 1000`（每秒輸出一筆快照 JSON）。
+與系統工具比對數值：`cargo run --release -p resourcewatch-core --example sample -- 6 1000`（每秒輸出一筆快照 JSON）。
 
 ## 文件
 

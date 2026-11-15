@@ -3,12 +3,14 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。
 修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。介面改版計畫見 `UI_REDESIGN_PLAN.md`；v0.2.0 改版計畫（改用 Slint）見 `REDESIGN_V0.2.md`。所有文件（除根目錄 `README.md`、`CLAUDE.md`）集中在 `docs/`；安裝見根目錄 `install.sh`。
 
-> 目前狀態：桌面應用為 Rust + Tauri 2（`src-tauri/` + `frontend/`），由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
+> 目前狀態：桌面應用為 Rust + Tauri 2（`src-tauri/` + `frontend/`），根目錄是 Cargo workspace：不依賴介面工具組的資料收集、排程、設定在 `crates/core`，
+> Tauri 版（之後的 Slint 版亦同）依賴它。由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
 > 設定儲存於使用者設定目錄。舊版「Plasma QML + Python + HTML」（v0.0.5）已從此分支移除，可由 `main`、`v0.0.5` Tag 或
 > `legacy/plasma-qml` 分支取回。Plasma 桌面小工具屬 Phase 5，尚未實作。
 
 ```text
 src-tauri/src/lib.rs ── AppState{settings(+SettingsStore → config.json), source, latest, scheduler}
+        │   （以下 scheduler／source／collectors／settings_store 皆在 crates/core）
         │   scheduler.rs: rw-scheduler 執行緒（唯一）每個 updateInterval 一個週期：
         │     source.sample(now) → emit "snapshot" → latest
         │   source: Source::Live(Monitor) ─ collectors/{cpu,memory,system,disk,network,sensors,battery,process,gpu(+nvml)}
@@ -25,7 +27,7 @@ frontend/index.html + app.js（window.__TAURI__ invoke / listen）
 
 使用者空間安裝／更新／解除安裝，不需要 sudo、不分層、不重開機（適用 Bazzite 等不可變系統）。
 - `install`（預設）：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名；以 `distrobox enter … -- true` 探測，`distrobox list` 偶爾漏列）時在容器內執行 `cargo tauri build --no-bundle`，
-  否則用主機的 cargo-tauri；先 `pkill -x resourcewatch` 再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到
+  否則用主機的 cargo-tauri；先 `pkill -x resourcewatch` 再把 workspace 根目錄的 `target/release/resourcewatch` 安裝到 `~/.local/bin/resourcewatch`、圖示到
   `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、啟動器到
   `~/.local/share/applications/resourcewatch.desktop`（檔名必須等於視窗的 Wayland app_id＝執行檔名 `resourcewatch`，KWin 才會在標題列與工作列顯示應用圖示；同時刪除舊版的 `io.github.local.resourcewatch.desktop` 啟動器）。
   偵測到舊版 Plasma Widget 仍安裝時只印出移除指令，不自動移除。
@@ -111,86 +113,27 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
   `main.rs` 在取得 `Blur` 後立即套用，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）依實際邏輯尺寸重設；最大化時半徑 0。`WINDOW_RADIUS`（16）必須與 `poc.slint` 外層 `border-radius` 一致。
 - 建置：`distrobox enter resourcewatch-dev -- bash -lc 'cd spikes/slint-poc && cargo build --release'`；Slint 鎖在 `=1.18.1`（`unstable-winit-030` 的 API 可能在小版本變動）。
 
-## src-tauri/
+## Cargo.toml（workspace 根目錄）
 
-Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm）、`cargo build`；檢查：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`。
-開發環境為 distrobox `resourcewatch-dev`（Fedora 44）。
+Cargo workspace：成員 `crates/core`、`src-tauri`；`exclude = ["spikes"]`（`spikes/*` 各自帶空的 `[workspace]`，獨立建置）。
+`[profile.release]`（`lto`、`codegen-units = 1`、`strip`）只能寫在 workspace 根目錄；`Cargo.lock` 與建置輸出 `target/` 也在根目錄（`.gitignore` 忽略 `/target/`）。
+檢查一律在根目錄執行：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`。
 
-### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json、icons/
+## crates/core/
 
-- 套件 `resourcewatch` 0.1.0（Tauri 版自己的版號，與 Plasma 套件 0.0.5 分開；rpm 版號不允許 `-`）；lib 名稱 `resourcewatch_lib`。
-  依賴：`tauri`、`serde`、`serde_json`、`libloading`（執行期載入 NVML，不在連結時依賴 NVIDIA）、`libc`（`getifaddrs`）；
-  Linux 專用：`gtk`、`gdkwayland-sys`（取得 GTK 視窗的 `wl_display`／`wl_surface`，兩者原本就在 Tauri 依賴樹內）、
-  `wayland-client`＋`wayland-backend`（`client_system`，接手 GTK 既有的 Wayland 連線）、`wayland-protocols`（`staging`，ext-background-effect-v1）、
-  `wayland-protocols-plasma`（舊版 KWin 的 `org_kde_kwin_blur`），皆只供 `blur.rs` 使用；
-  dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。`rust-version = 1.85`。
-- `tauri.conf.json`：identifier `io.github.local.resourcewatch`；視窗 `main` 初始 1220×790、最小 640×480、可自由縮放、不設最大值；
-  `"create": false`：不由設定檔自動建立，而由 `lib.rs` `create_main_window()` 以這份設定建立（透明與否依顯示後端決定）；
-  CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
-- `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
-- `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。`frontend/app-icon.png` 是 `icons/64x64.png` 的複本（側欄品牌圖示；前端只能讀 `frontend/` 內的檔案），換圖示時一起更新。
+套件 `resourcewatch-core`（lib 名稱 `resourcewatch_core`），不依賴任何介面工具組：硬體 collectors、快照模型、排程器、設定與設定檔、模擬資料。
+依賴：`serde`、`serde_json`、`libloading`（執行期載入 NVML，不在連結時依賴 NVIDIA）、`libc`（`getifaddrs`）。`rust-version = 1.85`。
+模組之間以 `crate::` 互相引用，不引用任何 UI 層程式；介面層（`src-tauri`）透過 `use resourcewatch_core::{…}` 取用，模組皆為 `pub mod`。
 
 ### src/lib.rs
 
-應用組裝與 IPC。`configure_with(builder, config_dir)` 註冊所有 Command，並在 Tauri `setup` 中：解析設定目錄
-（`None` → `app.path().app_config_dir()`，即 `$XDG_CONFIG_HOME/io.github.local.resourcewatch`，通常為 `~/.config/io.github.local.resourcewatch`；
-測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 建立主視窗 → 啟動唯一的排程器。
-`create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland **且**設定 `sidebarGlass` 為開時才設為透明並呼叫
-`blur::enable()`，成功則 `AppState.glass = true`；`sidebarGlass` 關閉時建立不透明視窗、不請求模糊（透明視窗讓 UI 程序 CPU 約 2.5 倍，實測閒置與縮放時皆然）。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
-`run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
-`prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：載入 NVIDIA 核心模組（`/sys/module/nvidia`）且使用者沒有自行設定時，
-設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 的條件為「X11／XWayland」或「原生 Wayland 且 `sidebarGlass` 關閉」：X11 上 DMA-BUF 繪製失敗會讓視窗空白；
-原生 Wayland 上每次縮放都要重新配置 GBM 緩衝區，網頁內容落後視窗邊框 0.3–0.5 秒並露出空白（螢幕錄影確認，關閉 DMA-BUF 後順暢）；
-但關閉 DMA-BUF 時透明視窗的側欄畫不出來（整塊空白，與 X11 透明視窗相同），所以毛玻璃開啟時保留 DMA-BUF。
-`sidebarGlass` 由 `early_config_dir()`（`$XDG_CONFIG_HOME` 或 `~/.config` ＋ `APP_IDENTIFIER`，單元測試確認與 `tauri.conf.json` 一致）與
-`settings_store::peek_sidebar_glass()` 在 WebKit 啟動前讀取。判斷邏輯 `needs_dmabuf_workaround()` 為純函式並有單元測試。
-`sample_live(count, interval)` 不開視窗、直接用 `Monitor` 取樣並回傳 JSON，供 `examples/sample.rs` 與系統工具交叉比對。
-
-| Command | 輸入 | 輸出 | 錯誤 |
-|---|---|---|---|
-| `get_snapshot` | — | 排程器最近一次產生的 `Snapshot`（不觸發硬體讀取；排程器尚未產生時才用上次讀值組成） | — |
-| `get_settings` | — | `Settings` | — |
-| `get_settings_info` | — | `{path: string \| null, loadWarning: string \| null}`：設定檔路徑與啟動載入時的問題 | — |
-| `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證並**已寫入磁碟**的 `Settings`，並發出 `settings-changed` | `invalidSetting`（含 `field`）；`settingsWriteFailed`（`field: null`，記憶體／排程器／磁碟皆不變）；型別錯誤為 Tauri 反序列化錯誤字串 |
-| `reset_settings` | — | 預設 `Settings`（已寫入磁碟），並發出 `settings-changed` | `settingsWriteFailed` |
-| `get_scheduler_stats` | — | `SchedulerStats`（間隔、週期數、略過數、panic 數、耗時與延遲） | — |
-| `get_processes` | — | `ProcessInfo[]`：`{pid, name, cpu: number \| null, memory}`（`collectors/process.rs`；CPU 為與上次呼叫之間的整機比例；mock 時為固定假清單）。只取 source 鎖（實機約 500 個程序時單次約 10 ms），不經排程器、不發事件 | — |
-| `get_window_info` | — | `{glass: bool}`：合成器已對主視窗套用背景模糊（前端據此決定側欄是否半透明） | — |
-| `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}`：IPv4／硬碟清單／CPU 型號＋RAM 速度＋GPU 清單與名稱 | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
-
-| Event | Payload | 時機 |
-|---|---|---|
-| `snapshot` | `Snapshot` | 每個 `updateInterval` 一次；手動刷新後立即一次 |
-| `settings-changed` | `Settings` | 設定更新或恢復預設後 |
-
-`AppState` 分成獨立的鎖（中毒時復原而非崩潰）：`settings`（目前設定 `Arc<Settings>`、`SettingsStore`、載入警告）、`source`（Monitor／Mock）、
-`latest`（最新快照）、`scheduler`（`OnceLock`，只能設定一次 → 不會有第二個排程器）與 `glass`（`AtomicBool`，只在 setup 寫入）。鎖順序固定為 settings → source；
-排程週期只先短暫取 settings（複製 `Arc`）再取 source，不會巢狀，因此不會死結。命令不再等待整個取樣持有的大鎖。
-
-排程週期（`start_scheduler`）：`source.sample(now, &settings)`（只持有 source 鎖）→ `emit("snapshot")`（以參考序列化，不複製快照）→
-存入 `latest`。`RESOURCEWATCH_DEBUG_STATS=1` 時每 10 秒與結束時在 stderr 輸出 `RW_STATS …`。執行期間不啟動任何外部程序。
-
-設定變更（`commit_settings`，整段持有 settings 鎖，因此連續或同時的修改會依序處理）：驗證 → 與目前值相同則直接回傳 →
-寫入 `config.json`（失敗即回傳錯誤，不套用任何變更）→ `Source::apply_settings`（切換 GPU／網路介面）→ 更新記憶體 →
-間隔有變才 `Scheduler::set_interval` → 發出 `settings-changed`。因此磁碟、記憶體與排程器不會長期不一致。
-手動刷新在呼叫端執行緒進行，以 source 鎖與排程週期互斥，不重啟排程器。
-
-### src/blur.rs（Linux）
-
-主視窗的合成器背景模糊（側欄毛玻璃），只用於原生 Wayland。透過 `gdk_wayland_display_get_wl_display`／`gdk_wayland_window_get_wl_surface`
-取得 GTK 的連線與 surface，以 `Backend::from_foreign_display` 共用同一連線（不另開連線）：
-- 優先 `ext_background_effect_manager_v1`（KWin 6.8 起提供，舊協定已不再公開）：綁定後 roundtrip 讀取 `capabilities`，含 `blur` 才建立
-  `ext_background_effect_surface_v1` 並以涵蓋整個 surface 的 `wl_region` 呼叫 `set_blur_region`（合成器會裁切到 surface 大小）。
-- 沒有新協定時使用 `org_kde_kwin_blur_manager`（僅在 KWin 模糊特效載入時公開），不設 region 即整個 surface。（舊版 KWin 路徑 NOT TESTED）
-- 兩者都是 double-buffered，於 GTK 下一次 `wl_surface.commit`（每次重繪）生效。顯示區不透明，因此整個 surface 模糊只會從側欄透出。
-- 事件佇列刻意洩漏（`mem::forget`），避免之後的 capability 事件送到已釋放的佇列；因此執行中關閉 KWin 模糊特效後，前端不會得知（側欄仍半透明但不模糊）。
-- 回傳 `Err(原因)` 時於 stderr 輸出 `sidebar blur unavailable: …`，前端保持不透明側欄。
+宣告所有模組（`robustness` 僅 `#[cfg(test)]`）。`sample_live(count, interval)` 不開視窗、直接用 `Monitor` 取樣並回傳 JSON，供 `examples/sample.rs` 與系統工具交叉比對。
 
 ### src/settings.rs
 
 `Settings {updateInterval, historyPoints, gpuIndex, netInterface, sidebarGlass}`，預設與範圍沿用舊版 v0.0.5 的 KConfig `main.xml`：
 `updateInterval` 100–10000／步進 50、`historyPoints` 10–120／步進 10、`gpuIndex` 0–15、`netInterface` 為 `all`（空值亦視為 `all`）
-或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell；`sidebarGlass` 布林、預設 `true`，只在建立視窗時讀取（`lib.rs` `create_main_window`），改變後下次啟動生效。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
+或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell；`sidebarGlass` 布林、預設 `true`，只在建立視窗時讀取（`src-tauri/src/lib.rs` `create_main_window`），改變後下次啟動生效。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
 持久化見 `src/settings_store.rs`。
 
 ### src/scheduler.rs
@@ -401,7 +344,81 @@ SMBIOS 無權限且沒有快取時 RAM 速度為未知。
 
 ### examples/sample.rs
 
-`cargo run --example sample -- [次數] [間隔ms]`：以 `sample_live()` 輸出每次快照的 JSON 行，供與 `kstatsviewer`、`nvidia-smi`、`free` 等比對。不隨應用打包。
+`cargo run -p resourcewatch-core --example sample -- [次數] [間隔ms]`：以 `sample_live()` 輸出每次快照的 JSON 行，供與 `kstatsviewer`、`nvidia-smi`、`free` 等比對。不隨應用打包。
+
+## src-tauri/
+
+Rust + Tauri 2 桌面應用（workspace 成員），資料層來自 `crates/core`。建置：在此目錄 `cargo tauri build`（release + deb／rpm，輸出在根目錄 `target/release/`）；檢查見上方 workspace 根目錄。
+開發環境為 distrobox `resourcewatch-dev`（Fedora 44）。
+
+### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json、icons/
+
+- 套件 `resourcewatch` 0.1.0（Tauri 版自己的版號，與 Plasma 套件 0.0.5 分開；rpm 版號不允許 `-`）；lib 名稱 `resourcewatch_lib`。
+  依賴：`resourcewatch-core`（path `../crates/core`）、`tauri`、`serde`、`serde_json`；release profile 由 workspace 根目錄決定；
+  Linux 專用：`gtk`、`gdkwayland-sys`（取得 GTK 視窗的 `wl_display`／`wl_surface`，兩者原本就在 Tauri 依賴樹內）、
+  `wayland-client`＋`wayland-backend`（`client_system`，接手 GTK 既有的 Wayland 連線）、`wayland-protocols`（`staging`，ext-background-effect-v1）、
+  `wayland-protocols-plasma`（舊版 KWin 的 `org_kde_kwin_blur`），皆只供 `blur.rs` 使用；
+  dev 依賴啟用 `tauri` 的 `test` feature 供 IPC 測試。`rust-version = 1.85`。
+- `tauri.conf.json`：identifier `io.github.local.resourcewatch`；視窗 `main` 初始 1220×790、最小 640×480、可自由縮放、不設最大值；
+  `"create": false`：不由設定檔自動建立，而由 `lib.rs` `create_main_window()` 以這份設定建立（透明與否依顯示後端決定）；
+  CSP 僅允許本機資源與 Tauri IPC；`withGlobalTauri: true`；打包目標 deb、rpm。
+- `capabilities/default.json`：`main` 視窗只有 `core:default`（含事件監聽）；未安裝 fs／shell／http 等外掛。
+- `icons/`：由 `icons/source/app-icon.png` 以 `cargo tauri icon` 產生，只保留 Linux 需要的 PNG。`frontend/app-icon.png` 是 `icons/64x64.png` 的複本（側欄品牌圖示；前端只能讀 `frontend/` 內的檔案），換圖示時一起更新。
+
+### src/lib.rs
+
+應用組裝與 IPC。`configure_with(builder, config_dir)` 註冊所有 Command，並在 Tauri `setup` 中：解析設定目錄
+（`None` → `app.path().app_config_dir()`，即 `$XDG_CONFIG_HOME/io.github.local.resourcewatch`，通常為 `~/.config/io.github.local.resourcewatch`；
+測試傳入暫存目錄）→ 載入設定 → 建立 `AppState` → 建立主視窗 → 啟動唯一的排程器。
+`create_main_window()`：以 `tauri.conf.json` 的 `main` 設定建立視窗（測試用 mock 設定沒有視窗時略過）；GDK 顯示為原生 Wayland **且**設定 `sidebarGlass` 為開時才設為透明並呼叫
+`blur::enable()`，成功則 `AppState.glass = true`；`sidebarGlass` 關閉時建立不透明視窗、不請求模糊（透明視窗讓 UI 程序 CPU 約 2.5 倍，實測閒置與縮放時皆然）。X11／XWayland 一律不透明：WebKitGTK 在 X11 透明視窗（含停用 DMA-BUF 繪製時）會漏畫頁面的一部分（實測側欄整塊空白）。`configure(builder)` = `configure_with(builder, None)`。
+`run()` 在 `RunEvent::Exit`（關閉最後一個視窗）時呼叫 `AppState::shutdown()` 停止並 join 排程器執行緒。
+`prepare_environment()`（由 `src/main.rs` 在建立任何執行緒之前呼叫）：載入 NVIDIA 核心模組（`/sys/module/nvidia`）且使用者沒有自行設定時，
+設定 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 的條件為「X11／XWayland」或「原生 Wayland 且 `sidebarGlass` 關閉」：X11 上 DMA-BUF 繪製失敗會讓視窗空白；
+原生 Wayland 上每次縮放都要重新配置 GBM 緩衝區，網頁內容落後視窗邊框 0.3–0.5 秒並露出空白（螢幕錄影確認，關閉 DMA-BUF 後順暢）；
+但關閉 DMA-BUF 時透明視窗的側欄畫不出來（整塊空白，與 X11 透明視窗相同），所以毛玻璃開啟時保留 DMA-BUF。
+`sidebarGlass` 由 `early_config_dir()`（`$XDG_CONFIG_HOME` 或 `~/.config` ＋ `APP_IDENTIFIER`，單元測試確認與 `tauri.conf.json` 一致）與
+`settings_store::peek_sidebar_glass()` 在 WebKit 啟動前讀取。判斷邏輯 `needs_dmabuf_workaround()` 為純函式並有單元測試。
+
+| Command | 輸入 | 輸出 | 錯誤 |
+|---|---|---|---|
+| `get_snapshot` | — | 排程器最近一次產生的 `Snapshot`（不觸發硬體讀取；排程器尚未產生時才用上次讀值組成） | — |
+| `get_settings` | — | `Settings` | — |
+| `get_settings_info` | — | `{path: string \| null, loadWarning: string \| null}`：設定檔路徑與啟動載入時的問題 | — |
+| `update_settings` | `{patch: SettingsPatch}`（部分欄位，未知鍵拒絕） | 驗證並**已寫入磁碟**的 `Settings`，並發出 `settings-changed` | `invalidSetting`（含 `field`）；`settingsWriteFailed`（`field: null`，記憶體／排程器／磁碟皆不變）；型別錯誤為 Tauri 反序列化錯誤字串 |
+| `reset_settings` | — | 預設 `Settings`（已寫入磁碟），並發出 `settings-changed` | `settingsWriteFailed` |
+| `get_scheduler_stats` | — | `SchedulerStats`（間隔、週期數、略過數、panic 數、耗時與延遲） | — |
+| `get_processes` | — | `ProcessInfo[]`：`{pid, name, cpu: number \| null, memory}`（`collectors/process.rs`；CPU 為與上次呼叫之間的整機比例；mock 時為固定假清單）。只取 source 鎖（實機約 500 個程序時單次約 10 ms），不經排程器、不發事件 | — |
+| `get_window_info` | — | `{glass: bool}`：合成器已對主視窗套用背景模糊（前端據此決定側欄是否半透明） | — |
+| `refresh_devices` | `{kind: "ipv4" \| "disks" \| "hardware"}`：IPv4／硬碟清單／CPU 型號＋RAM 速度＋GPU 清單與名稱 | 刷新後的 `Snapshot`，並立即發出 `snapshot` | 未知 `kind` 為反序列化錯誤 |
+
+| Event | Payload | 時機 |
+|---|---|---|
+| `snapshot` | `Snapshot` | 每個 `updateInterval` 一次；手動刷新後立即一次 |
+| `settings-changed` | `Settings` | 設定更新或恢復預設後 |
+
+`AppState` 分成獨立的鎖（中毒時復原而非崩潰）：`settings`（目前設定 `Arc<Settings>`、`SettingsStore`、載入警告）、`source`（Monitor／Mock）、
+`latest`（最新快照）、`scheduler`（`OnceLock`，只能設定一次 → 不會有第二個排程器）與 `glass`（`AtomicBool`，只在 setup 寫入）。鎖順序固定為 settings → source；
+排程週期只先短暫取 settings（複製 `Arc`）再取 source，不會巢狀，因此不會死結。命令不再等待整個取樣持有的大鎖。
+
+排程週期（`start_scheduler`）：`source.sample(now, &settings)`（只持有 source 鎖）→ `emit("snapshot")`（以參考序列化，不複製快照）→
+存入 `latest`。`RESOURCEWATCH_DEBUG_STATS=1` 時每 10 秒與結束時在 stderr 輸出 `RW_STATS …`。執行期間不啟動任何外部程序。
+
+設定變更（`commit_settings`，整段持有 settings 鎖，因此連續或同時的修改會依序處理）：驗證 → 與目前值相同則直接回傳 →
+寫入 `config.json`（失敗即回傳錯誤，不套用任何變更）→ `Source::apply_settings`（切換 GPU／網路介面）→ 更新記憶體 →
+間隔有變才 `Scheduler::set_interval` → 發出 `settings-changed`。因此磁碟、記憶體與排程器不會長期不一致。
+手動刷新在呼叫端執行緒進行，以 source 鎖與排程週期互斥，不重啟排程器。
+
+### src/blur.rs（Linux）
+
+主視窗的合成器背景模糊（側欄毛玻璃），只用於原生 Wayland。透過 `gdk_wayland_display_get_wl_display`／`gdk_wayland_window_get_wl_surface`
+取得 GTK 的連線與 surface，以 `Backend::from_foreign_display` 共用同一連線（不另開連線）：
+- 優先 `ext_background_effect_manager_v1`（KWin 6.8 起提供，舊協定已不再公開）：綁定後 roundtrip 讀取 `capabilities`，含 `blur` 才建立
+  `ext_background_effect_surface_v1` 並以涵蓋整個 surface 的 `wl_region` 呼叫 `set_blur_region`（合成器會裁切到 surface 大小）。
+- 沒有新協定時使用 `org_kde_kwin_blur_manager`（僅在 KWin 模糊特效載入時公開），不設 region 即整個 surface。（舊版 KWin 路徑 NOT TESTED）
+- 兩者都是 double-buffered，於 GTK 下一次 `wl_surface.commit`（每次重繪）生效。顯示區不透明，因此整個 surface 模糊只會從側欄透出。
+- 事件佇列刻意洩漏（`mem::forget`），避免之後的 capability 事件送到已釋放的佇列；因此執行中關閉 KWin 模糊特效後，前端不會得知（側欄仍半透明但不模糊）。
+- 回傳 `Err(原因)` 時於 stderr 輸出 `sidebar blur unavailable: …`，前端保持不透明側欄。
 
 ### tests/ipc.rs
 

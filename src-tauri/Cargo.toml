@@ -14,18 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+resourcewatch-core = { path = "../crates/core" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# NVML is loaded at runtime (no link-time NVIDIA dependency).
-libloading = "0.8"
-# getifaddrs() for IPv4 lookup without spawning `ip`.
-libc = "0.2"
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

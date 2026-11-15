@@ -30,7 +30,7 @@ case "${1:-install}" in
     install)
         build
         pkill -x resourcewatch 2>/dev/null || true # 執行中的舊版會佔住執行檔
-        install -Dm755 "$ROOT/src-tauri/target/release/resourcewatch" "$BIN"
+        install -Dm755 "$ROOT/target/release/resourcewatch" "$BIN"
         install -Dm644 "$ROOT/src-tauri/icons/128x128.png" "$ICON"
         mkdir -p "$(dirname "$DESKTOP")"
         rm -f "$OLD_DESKTOP"

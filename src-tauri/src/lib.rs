@@ -1,8 +1,8 @@
 //! ResourceWatch Tauri application.
 //!
-//! Snapshots come from the live `monitor::Monitor` (Rust collectors reading
-//! `/proc`, sysfs, hwmon and NVML), or from `mock::MockSource` when
-//! `RESOURCEWATCH_MOCK=1` is set for UI development. One
+//! Data collection, scheduling and settings live in `resourcewatch_core`
+//! (`crates/core`): snapshots come from the live `monitor::Monitor`, or from
+//! `mock::MockSource` when `RESOURCEWATCH_MOCK=1` is set for UI development. One
 //! `scheduler::Scheduler` thread drives every monitoring cycle.
 //!
 //! IPC contract
@@ -13,18 +13,8 @@
 
 #[cfg(target_os = "linux")]
 mod blur;
-mod collectors;
-mod format;
-mod history;
-mod mock;
-mod monitor;
-#[cfg(test)]
-mod robustness;
-mod scheduler;
-mod settings;
-mod settings_store;
-mod snapshot;
-mod source;
+
+use resourcewatch_core::{collectors, scheduler, settings, settings_store, snapshot, source};
 
 use scheduler::{Scheduler, SchedulerStats};
 use serde::Serialize;
@@ -391,22 +381,6 @@ fn create_main_window<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 
 pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     configure_with(builder, None)
-}
-
-/// Headless sampling for cross-checking against system tools
-/// (`cargo run --example sample`). Returns `count` live snapshots taken
-/// `interval` apart; no window, no Tauri runtime, no settings file.
-pub fn sample_live(count: usize, interval: Duration) -> Vec<serde_json::Value> {
-    let settings = Settings::default();
-    let mut m = monitor::Monitor::new(&settings);
-    (0..count)
-        .map(|i| {
-            if i > 0 {
-                std::thread::sleep(interval);
-            }
-            serde_json::to_value(m.sample(Instant::now(), &settings)).unwrap_or_default()
-        })
-        .collect()
 }
 
 /// WebKitGTK's DMA-BUF renderer misbehaves with the NVIDIA proprietary driver:

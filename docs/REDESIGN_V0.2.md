@@ -150,10 +150,12 @@
 
 注意：PoC 只有一張卡片，完整儀表板的 RSS／CPU 會更高，Phase 7 依「輕量目標」重測。
 
-## Phase 1：抽出 `crates/core` `[ ]`
-- [ ] 建立 workspace，把不依賴 Tauri 的模組與測試搬到 `crates/core`。
-- [ ] Tauri 版改成依賴 core，行為不變，現有測試全部通過。
-- [ ] `install.sh` 暫時照舊建置 Tauri 版，確保改版期間仍可安裝使用。
+## Phase 1：抽出 `crates/core` `[x]`
+- [x] 建立 workspace，把不依賴 Tauri 的模組與測試搬到 `crates/core`。
+  - 根目錄 `Cargo.toml`（成員 `crates/core`、`src-tauri`，`exclude = ["spikes"]`）；release profile、`Cargo.lock`、`target/` 移到根目錄。
+  - `git mv` 搬移 `collectors/`、`format`、`history`、`mock`、`monitor`、`robustness`、`scheduler`、`settings`、`settings_store`、`snapshot`、`source` 與 `examples/sample.rs`；`sample_live` 也移到 core。
+- [x] Tauri 版改成依賴 core，行為不變，現有測試全部通過：搬移前後皆 96 個測試（core 83、Tauri lib 2、`tests/ipc.rs` 11），fmt／clippy `-D warnings` 通過；安裝後實際啟動正常，`sample` 範例輸出快照正常。
+- [x] `install.sh` 暫時照舊建置 Tauri 版，確保改版期間仍可安裝使用：只改執行檔來源為根目錄 `target/release/resourcewatch`，實際執行 `./install.sh` 成功。
 
 ## Phase 2：Slint 外殼 `[ ]`
 - [ ] 視窗、三層玻璃、自訂標題列。
