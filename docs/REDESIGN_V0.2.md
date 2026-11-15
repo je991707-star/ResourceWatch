@@ -163,7 +163,7 @@
   最小化／最大化直接用 Window 內建的 `minimized`／`maximized`（與實際視窗雙向同步）。實機截圖確認模糊與三層效果；KWin 讀到 `desktopFileName=resourcewatch`。
 - [x] 右上角按鈕圖示跟隨系統風格（Phase 0 延後項目）：KWin 視窗裝飾主題不是圖示主題，無法讀取；改以 1 px `Path` 自繪 KDE 預設 Breeze 樣式（細橫線、方框、重疊方框、叉），顏色跟隨深淺色 token，取代 PoC 讀 Papirus 圖示的做法。
 - [x] 側欄導覽：儀表板、儲存裝置、網路、感測器、應用程式、設定；可收合（56／208 px，160 ms 過渡，狀態存入 `sidebarCollapsed`）。各頁目前為佔位內容，標示實作的 Phase。
-- [x] 深淺色 token（Slint `global Theme`），跟隨系統或手動切換：`system` 取 `Palette.color-scheme`（XDG portal，系統切換即時生效）；側欄主題鈕循環 跟隨系統 → 深色 → 淺色，存入 `theme`。截圖確認深色與淺色。
+- [x] 深淺色 token（Slint `global Theme`），跟隨系統或手動切換：`system` 取 `Palette.color-scheme`（XDG portal；實機啟動時正確判定深色，系統執行中切換未實測）；側欄主題鈕循環 跟隨系統 → 深色 → 淺色，存入 `theme`。截圖確認深色與淺色；實際點擊切換與存檔待使用者操作確認（存檔邏輯有單元測試）。
 - [x] 頂部主機資訊列（主機名稱、運作時間、機型、CPU 型號）、模擬模式提示：與 `hostname`、`uptime`、DMI、`/proc/cpuinfo` 比對一致；`RESOURCEWATCH_MOCK=1` 時顯示「模擬資料 · 非實機」。
 - [x] 設定讀寫接上 core 的 `settings_store`：與 Tauri 版共用 `~/.config/io.github.local.resourcewatch/config.json`；core `Settings` 新增 `theme`／`tempUnit`／`sidebarCollapsed`（含驗證、容錯、單元測試，IPC 測試同步更新）；沒有變更時不寫檔。
 
