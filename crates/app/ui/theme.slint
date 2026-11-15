@@ -8,20 +8,23 @@ export global Theme {
     in-out property <bool> glass: true;
     out property <bool> dark: mode == "dark" || (mode == "system" && Palette.color-scheme != ColorScheme.light);
 
+    // Neutral (untinted) greys throughout. Glass mode follows the classic
+    // glassmorphism look: a light veil over the compositor-blurred desktop, white
+    // translucent cards and a 1px white edge, so the backdrop stays visible.
     // Layer 1: window glass. Translucent only while the compositor blurs it.
-    out property <color> window-glass: glass ? (dark ? #0d1424b8 : #eef2f8c4) : (dark ? #121826 : #eceff5);
+    out property <color> window-glass: glass ? (dark ? #1c1c1c59 : #ffffff59) : (dark ? #161616 : #f0f0f0);
     // Layer 2: floating sidebar; layer 3: content cards (one step brighter).
-    out property <color> sidebar-glass: dark ? #ffffff0d : #ffffff59;
-    out property <color> card-glass: dark ? #ffffff14 : #ffffffa6;
+    out property <color> sidebar-glass: dark ? #ffffff12 : #ffffff4d;
+    out property <color> card-glass: dark ? #ffffff1a : #ffffff80;
     // 1px inner highlight: brighter top edge, darker bottom edge.
-    out property <color> edge-top: dark ? #ffffff2e : #ffffffe6;
-    out property <color> edge-bottom: dark ? #ffffff0d : #0000001a;
-    out property <color> shadow: dark ? #00000066 : #1a24401f;
+    out property <color> edge-top: dark ? #ffffff4d : #ffffffcc;
+    out property <color> edge-bottom: dark ? #ffffff1f : #00000014;
+    out property <color> shadow: dark ? #00000059 : #0000001f;
 
     // Vibrancy foregrounds.
-    out property <color> text: dark ? #f2f4f8 : #10151f;
-    out property <color> text-secondary: dark ? #ffffffa3 : #10151f99;
-    out property <color> text-tertiary: dark ? #ffffff66 : #10151f66;
+    out property <color> text: dark ? #f5f5f5 : #111111;
+    out property <color> text-secondary: dark ? #ffffffa6 : #111111a0;
+    out property <color> text-tertiary: dark ? #ffffff6b : #11111170;
     out property <color> hover: dark ? #ffffff14 : #0000000d;
     out property <color> selected: dark ? #ffffff24 : #ffffffcc;
     out property <color> danger: #e5484d;

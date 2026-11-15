@@ -199,7 +199,8 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 ### ui/theme.slint
 
 `global Theme`：`mode`（`system`／`dark`／`light`，來自設定）、`glass`；`dark` 在 `system` 時取 std-widgets 的 `Palette.color-scheme`（Slint 在 Linux 透過 XDG portal 監聽系統深淺色，切換系統主題即時生效）。
-深淺兩套完整 token：三層材質（`window-glass`，`glass` 為 false 時改不透明色；`sidebar-glass`；`card-glass` 比底層亮一階）、1 px 高光 `edge-top`（較亮）／`edge-bottom`（較暗）、`shadow`、
+深淺兩套完整 token，全部是不帶色偏的中性灰（不偏藍）。毛玻璃模式採 glassmorphism 風格：視窗只蓋一層淡紗（深色 `#1c1c1c` 35%、淺色白 35%）讓模糊後的桌面透出，卡片為白色半透明（深色 10%、淺色 50%），1 px 白色邊（上緣 30%）。
+三層材質（`window-glass`，`glass` 為 false 時改不透明的 `#161616`／`#f0f0f0`；`sidebar-glass`；`card-glass` 比底層亮一階）、1 px 高光 `edge-top`（較亮）／`edge-bottom`（較暗）、`shadow`、
 前景 `text`／`text-secondary`／`text-tertiary`（vibrancy）、`hover`、`selected`、`danger`、`warning-*`（模擬模式標籤），以及指標色（CPU 青、GPU 紫、RAM 藍、上傳綠、下載藍、讀取紅、寫入藍，依深淺調整亮度）。
 
 ### ui/glass.slint
@@ -265,9 +266,10 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 SENSORS（°C／°F、CPU／GPU 溫度、前 8 個感測器）、GRAPHICS（GPU 膠囊、使用率環、名稱、VRAM、Temp／Encode／Decode）、PROCESSOR（各核心直條、使用率圖、CPU 前 5 程序）、
 DISK I/O（讀寫鏡像圖、目前速率）、MEMORY（組成、Total／Speed／Pressure、壓力歷史、記憶體前 5 程序）、DISKS（每顆硬碟的速率、型號、使用量）、BATTERY（沒有電池時 `visible: false`、不佔空間）。
 「Show more…」／「Show applications…」呼叫 `goto(頁)`：Sensors → 感測器、Disk I/O／Disks → 儲存裝置、Processor／Memory → 應用程式。
-- 瀑布流：欄數＝`floor((可用寬 + 12) / (300 + 12))` 夾在 1–3，欄寬平分；卡片依固定順序放到目前最短的一欄。Slint 沒有迴圈，所以 9 個步驟展開為屬性鏈（`h/col/y/inc` 與各欄底部 `a/b/c`），
+- 卡片間距 20 px。瀑布流：欄數＝`floor((可用寬 + 20) / (300 + 20))` 夾在 1–3，欄寬平分；卡片依固定順序放到目前最短的一欄。Slint 沒有迴圈，所以 9 個步驟展開為屬性鏈（`h/col/y/inc` 與各欄底部 `a/b/c`），
   `pick()` 取最短欄（同高取左邊）；高度取卡片 `preferred-height`（隱藏卡片為 0、不加間距）。內容放在 std-widgets 的 `ScrollView`，內容高度＝最高欄。
 - `ChartCanvas.width`（720）：儀表板圖表畫布寬度，Rust 也讀它產生路徑。
+- `LegendChip`：圖表圖例（圓點＋標籤一行、數值在下一行），同一列的圖例平分寬度，窄欄也不會超出卡片。
 
 ### ui/gallery.slint
 
@@ -276,7 +278,7 @@ DISK I/O（讀寫鏡像圖、目前速率）、MEMORY（組成、Total／Speed�
 ### ui/app.slint
 
 `App`（匯出 `Theme`、`Gallery`、`Dash`、`ChartCanvas` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
-第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
+第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄（外距 14 px、側欄與右欄間 18 px、標題列與內容間 14 px）；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
 第 1 頁（儀表板）為 `Dashboard`，其餘頁目前只顯示頁名與預計實作的 Phase（佔位）；`page` 改變時呼叫 `page-changed`。`animated` 由 Rust 在啟動後開啟，傳給側欄。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
 
 

@@ -18,17 +18,23 @@ component Divider inherits Rectangle {
     background: Theme.edge-bottom;
 }
 
-component LegendChip inherits HorizontalLayout {
+// Legend entry for a chart: dot + label, value below; chips share the row
+// width equally so they fit narrow columns.
+component LegendChip inherits VerticalLayout {
     in property <string> label;
     in property <string> value;
     in property <color> dot;
-    spacing: 6px;
-    VerticalLayout {
-        alignment: center;
-        Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: dot; }
+    horizontal-stretch: 1;
+    spacing: 2px;
+    HorizontalLayout {
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: dot; }
+        }
+        Text { text: label; font-size: 11px; color: Theme.text-secondary; vertical-alignment: center; horizontal-stretch: 1; }
     }
-    Text { text: label; font-size: 12px; color: Theme.text-secondary; vertical-alignment: center; }
-    Value { text: value; width: 84px; font-size: 12px; font-weight: 600; color: Theme.text; }
+    Value { text: value; font-size: 13px; font-weight: 600; color: Theme.text; }
 }
 
 component HeadingRow inherits HorizontalLayout {
@@ -104,7 +110,7 @@ component PagerButton inherits Rectangle {
 export component Dashboard inherits Rectangle {
     // Page index to open (1 storage, 3 sensors, 4 applications).
     callback goto(int);
-    property <length> gap: 12px;
+    property <length> gap: 20px;
     property <length> min-card: 300px;
     property <length> avail: sv.visible-width;
     property <int> cols: max(1, min(3, floor((avail + gap) / (min-card + gap))));
@@ -243,7 +249,6 @@ export component Dashboard inherits Rectangle {
                 spacing: 16px;
                 LegendChip { label: "Download"; value: Dash.net-down-mbps; dot: Theme.net-down; }
                 LegendChip { label: "Upload"; value: Dash.net-up-mbps; dot: Theme.net-up; }
-                Rectangle { horizontal-stretch: 1; }
             }
         }
 
@@ -335,7 +340,6 @@ export component Dashboard inherits Rectangle {
                 spacing: 16px;
                 LegendChip { label: "Read"; value: Dash.disk-read-now; dot: Theme.disk-read; }
                 LegendChip { label: "Write"; value: Dash.disk-write-now; dot: Theme.disk-write; }
-                Rectangle { horizontal-stretch: 1; }
             }
             MoreLink { text: "Show more…"; activated => { root.goto(1); } }
         }
