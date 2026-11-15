@@ -28,6 +28,68 @@ component TitleButton inherits Rectangle {
     ta := TouchArea { clicked => { root.clicked(); } }
 }
 
+// Quarter-arc of a 1px edge; `commands` places the arc for one corner.
+component EdgeArc inherits Path {
+    in property <length> radius;
+    width: radius;
+    height: radius;
+    // Path maps the viewbox onto (size - stroke-width) shifted by half the stroke,
+    // so a viewbox of radius - 1 is 1:1 with pixels.
+    viewbox-width: radius / 1px - 1;
+    viewbox-height: radius / 1px - 1;
+    fill: transparent;
+    stroke-width: 1px;
+}
+
+// Rounded glass panel. The fill is a border-less rounded Rectangle (clean
+// anti-aliasing); the 1px edge is drawn separately because the software
+// renderer's Rectangle border double-blends pixels on the arc (bright beads =
+// jagged corners). Corners use small Paths: a Path is re-rasterised on every
+// repaint, so one window-sized Path would cost CPU on each chart update.
+component GlassPanel inherits Rectangle {
+    in property <length> radius;
+    in property <brush> fill;
+    in property <brush> edge;
+    border-radius: radius;
+    background: fill;
+    // Stroke centre-line radius (outer radius = `radius`) and viewbox extent.
+    property <float> a: radius / 1px - 0.5;
+    property <float> v: radius / 1px - 1;
+    Rectangle { x: radius; y: 0; width: parent.width - 2 * radius; height: 1px; background: edge; }
+    Rectangle { x: radius; y: parent.height - 1px; width: parent.width - 2 * radius; height: 1px; background: edge; }
+    Rectangle { x: 0; y: radius; width: 1px; height: parent.height - 2 * radius; background: edge; }
+    Rectangle { x: parent.width - 1px; y: radius; width: 1px; height: parent.height - 2 * radius; background: edge; }
+    if radius > 1px: EdgeArc {
+        x: 0;
+        y: 0;
+        radius: root.radius;
+        stroke: edge;
+        commands: "M 0 \{a} A \{a} \{a} 0 0 1 \{a} 0";
+    }
+    if radius > 1px: EdgeArc {
+        x: parent.width - root.radius;
+        y: 0;
+        radius: root.radius;
+        stroke: edge;
+        commands: "M -0.5 0 A \{a} \{a} 0 0 1 \{v} \{a}";
+    }
+    if radius > 1px: EdgeArc {
+        x: parent.width - root.radius;
+        y: parent.height - root.radius;
+        radius: root.radius;
+        stroke: edge;
+        commands: "M \{v} -0.5 A \{a} \{a} 0 0 1 -0.5 \{v}";
+    }
+    if radius > 1px: EdgeArc {
+        x: 0;
+        y: parent.height - root.radius;
+        radius: root.radius;
+        stroke: edge;
+        commands: "M \{a} \{v} A \{a} \{a} 0 0 1 0 -0.5";
+    }
+    @children
+}
+
 export component Poc inherits Window {
     in property <bool> glass: true;
     in property <string> bars-path: "";
@@ -42,6 +104,10 @@ export component Poc inherits Window {
     callback minimize();
     callback toggle-maximize();
     callback close-window();
+    // Redraw bars as soon as the chart is resized instead of on the next tick.
+    callback chart-resized();
+    changed chart-width => { root.chart-resized(); }
+    changed chart-height => { root.chart-resized(); }
 
     title: "ResourceWatch";
     no-frame: true;
@@ -53,12 +119,10 @@ export component Poc inherits Window {
     background: transparent;
 
     // Layer 1: window glass (the compositor blurs what is behind it).
-    Rectangle {
-        border-radius: maximized-state ? 0 : 16px;
-        background: glass ? #0d1424b3 : #0d1424;
-        border-width: 1px;
-        border-color: #ffffff1f;
-        clip: true;
+    GlassPanel {
+        radius: maximized-state ? 0 : 16px;
+        fill: glass ? #0d1424b3 : #0d1424;
+        edge: #ffffff1f;
 
         VerticalLayout {
             padding: 10px;
@@ -94,11 +158,10 @@ export component Poc inherits Window {
             }
 
             // Layer 3: content card.
-            Rectangle {
-                border-radius: 14px;
-                background: #ffffff14;
-                border-width: 1px;
-                border-color: #ffffff26;
+            GlassPanel {
+                radius: 14px;
+                fill: #ffffff14;
+                edge: #ffffff26;
                 drop-shadow-blur: 24px;
                 drop-shadow-color: #00000059;
                 VerticalLayout {

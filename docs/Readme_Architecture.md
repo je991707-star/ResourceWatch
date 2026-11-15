@@ -91,7 +91,10 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspace]`，不屬於任何 workspace；不被 `install.sh` 建置，Phase 7 移除或併入 `crates/app`）。量測數據與結論寫在 `REDESIGN_V0.2.md` 的 Phase 0。
 - `ui/poc.slint`：`Poc` 視窗 `no-frame`＋`background: transparent`＋`resize-border-width: 6px`（Slint 內建的無邊框邊緣縮放，winit 負責游標與 `drag_resize_window`）；
   自訂標題列用內建 `WindowMoveArea`（拖過門檻才 `drag_window()`，單擊不影響子元件），其中的 `TouchArea` 雙擊切換最大化；右上角依 KDE 順序放最小化／最大化／關閉（回呼名 `close-window`，避開內建 `close`）。
-  一層視窗玻璃（`glass` 決定半透明或不透明）＋一張卡片；長條圖是 `Path`，`viewbox` 等於自身像素尺寸，`commands` 由 Rust 產生；`chart-width`／`chart-height` 輸出給 Rust 算座標。
+  一層視窗玻璃（`glass` 決定半透明或不透明）＋一張卡片，兩者都是 `GlassPanel`；長條圖是 `Path`，`viewbox` 等於自身像素尺寸，`commands` 由 Rust 產生；`chart-width`／`chart-height` 輸出給 Rust 算座標，兩者一變（`changed`）就呼叫 `chart-resized`，Rust 立刻重算長條，不等下一次取樣。
+  `GlassPanel`：底色用無邊框的圓角 `Rectangle`，1 px 邊緣另外畫（四條 1 px `Rectangle`＋四個 r×r 的 `EdgeArc` 四分之一圓弧 `Path`）。
+  原因：軟體渲染器畫「圓角＋邊框」的 `Rectangle` 時，1 px 邊框的外緣與內緣反鋸齒落在同一像素被疊兩次，圓弧出現亮點（看起來像鋸齒）；`Path` 每次重繪都會依完整尺寸重新點陣化（無快取），所以只用在小小的四個角，整面視窗大小的 `Path` 會讓閒置 CPU 從約 0.5% 升到約 1.5%。
+  `Path` 會把 viewbox 對應到「尺寸減描邊寬」並位移半個描邊，因此 `EdgeArc` 的 viewbox 是 `radius - 1`（1:1 像素），弧線中心線半徑 `radius - 0.5`。
 - `src/main.rs`：
   - 視窗模式：`BackendSelector` 選 winit＋渲染器（`SLINT_RENDERER`，預設 `software`）→ 之後才能呼叫 `slint::set_xdg_app_id("resourcewatch")`（未選平台時呼叫會回錯「No default Slint platform」）。
     `spawn_local` 等 `winit_window()` 取得 raw-window-handle 的 `wl_display`／`wl_surface` 交給 `blur.rs`；失敗（X11、無協定、合成器關閉模糊）改成不透明。`POC_NO_GLASS=1` 直接不透明。

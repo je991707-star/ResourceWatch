@@ -87,6 +87,7 @@
 - **模糊**：沿用現有的 `blur.rs`。
   - 優先用 `ext_background_effect_manager_v1`，退回 `org_kde_kwin_blur_manager`。
   - 輸入從 GTK 改成 raw-window-handle 取得的 `wl_display`／`wl_surface`。
+- **圓角品質（軟體渲染器）**：不用 `Rectangle` 的 `border-width` 畫圓角邊框（1 px 邊框在圓弧上會重複疊色出現亮點）；玻璃面板＝無邊框圓角 `Rectangle` 底色＋1 px 直線 `Rectangle`＋四角小 `Path` 弧線。`Path` 每次重繪都重新點陣化，不可做成整面大小。
 - **模糊區域**：只模糊視窗的圓角矩形（wl_region 以每列 1 px 的長條逼近圓角），每次縮放、最大化／還原時重設；最大化時無圓角。
 - **軟體渲染器的透明**：softbuffer 0.4 在 Wayland 固定用 `Xrgb8888`（丟 alpha），需用 `[patch.crates-io]` 套修補版改成 `Argb8888`，否則視窗不透明、看不到模糊。
 - **退回**：以下情況自動改成不透明底色，介面不壞：
@@ -125,14 +126,15 @@
 
 ---
 
-## Phase 0：技術驗證 `[ ]`（自動項目完成，待使用者實際操作確認）
+## Phase 0：技術驗證 `[x]`
 目標：先證明 Slint 在這台機器（KWin Wayland＋NVIDIA 580）上做得到。任何一項不達標就停下來回報，再決定替代方案。
 驗證程式：`spikes/slint-poc/`（Slint 1.18.1，說明見 `Readme_Architecture.md`）。
 
-- [ ] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
+- [x] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
   - [x] 透明＋背景模糊有效。軟體渲染器需搭配修補過的 softbuffer（Wayland 改用 `Argb8888`，原版 `Xrgb8888` 會讓視窗不透明）；修補後全螢幕截圖確認視窗後方內容被模糊。模糊區域需設成與視窗相同的圓角矩形（`blur.rs` 的 `set_shape`，每次縮放重設），否則圓角外也被模糊，看起來像鋸齒；修正後截圖確認圓角外不再有模糊雜訊。
-  - [ ] 縮放、拖動時沒有空白，內容不會消失。待使用者操作確認。
-  - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。使用者初步確認正常；按鈕圖示改取系統圖示主題（如 Papirus），待確認。
+  - [x] 縮放、拖動時沒有空白，內容不會消失（使用者確認）。圖表原本只在 500 ms 取樣時重算，縮放時跟不上；改成圖表尺寸一變就重算，KWin 腳本放大視窗後 0.3 秒截圖確認長條已貼齊新右緣。
+  - [x] 圓角無鋸齒：視窗與卡片改用 `GlassPanel`（見「繪圖」），快照與實機截圖確認圓弧平滑、無亮點；閒置 CPU 0.45%、RSS 24 MB。
+  - [x] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常（使用者確認）。
   - [x] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示（KWin 腳本讀到 `desktopFileName=resourcewatch`，對應 `~/.local/share/applications/resourcewatch.desktop`）。
 - [x] 量測 RSS 與閒置 CPU（`/proc/<pid>/status`、`/proc/<pid>/stat`），和目前的 Tauri 版比較，數據記錄在本文件。
 - [x] 確認可以用 Slint 軟體渲染器把畫面輸出成 PNG：`slint-poc --snapshot out.png`（無視窗 `MinimalSoftwareWindow`＋`take_snapshot()`）。
@@ -144,7 +146,7 @@
 |---|---|---|---|
 | Tauri 0.1.0（`~/.local/bin/resourcewatch`，儀表板） | 3（主程式＋WebKitNetwork＋WebKitWeb） | 506 MB | 8.7% |
 | Slint PoC，femtovg | 1 | 167 MB（RssAnon 70／RssFile 102；NVIDIA EGL＋Mesa LLVM） | 0.4% |
-| Slint PoC，software（採用） | 1 | 24 MB（修補 softbuffer、開透明後 23 MB） | 0.6%（修補後 0.53%） |
+| Slint PoC，software（採用） | 1 | 24 MB（修補 softbuffer、開透明後 23 MB；`GlassPanel` 後 24 MB） | 0.6%（修補後 0.53%；`GlassPanel` 後 0.45%） |
 
 注意：PoC 只有一張卡片，完整儀表板的 RSS／CPU 會更高，Phase 7 依「輕量目標」重測。
 
@@ -155,6 +157,7 @@
 
 ## Phase 2：Slint 外殼 `[ ]`
 - [ ] 視窗、三層玻璃、自訂標題列。
+- [ ] 右上角按鈕圖示跟隨系統風格（Phase 0 延後項目）：PoC 讀圖示主題（Papirus）的 `window-*` 圖示，外觀與 KDE 視窗按鈕不一致；KDE 按鈕來自視窗裝飾主題，不是圖示主題，需另找做法。
 - [ ] 側欄導覽：儀表板、儲存裝置、網路、感測器、應用程式、設定；可收合。
 - [ ] 深淺色 token（Slint `global Theme`），跟隨系統或手動切換。
 - [ ] 頂部主機資訊列（主機名稱、運作時間、機型、CPU 型號）、模擬模式提示。

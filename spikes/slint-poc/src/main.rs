@@ -12,6 +12,7 @@ use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferTyp
 use slint::winit_030::winit::event::WindowEvent;
 use slint::winit_030::WinitWindowAccessor;
 use slint::ComponentHandle;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Duration;
@@ -94,7 +95,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut cpu = CpuSampler::default();
-    let mut history: VecDeque<f32> = VecDeque::with_capacity(KEPT_POINTS);
+    let history = Rc::new(RefCell::new(VecDeque::<f32>::with_capacity(KEPT_POINTS)));
+    let redraw = {
+        let (weak, history) = (ui.as_weak(), history.clone());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let path = bars_path(
+                &history.borrow(),
+                ui.get_chart_width(),
+                ui.get_chart_height(),
+            );
+            ui.set_bars_path(path.into());
+        }
+    };
+    ui.on_chart_resized(redraw.clone());
     let weak = ui.as_weak();
     let timer = slint::Timer::default();
     timer.start(
@@ -103,16 +117,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         move || {
             let Some(ui) = weak.upgrade() else { return };
             let Some(v) = cpu.sample() else { return };
-            if history.len() == KEPT_POINTS {
-                history.pop_front();
+            {
+                let mut history = history.borrow_mut();
+                if history.len() == KEPT_POINTS {
+                    history.pop_front();
+                }
+                history.push_back(v);
             }
-            history.push_back(v);
             // Compositor-driven maximize (e.g. KWin shortcut) also updates the corners.
             ui.set_maximized_state(ui.window().is_maximized());
             ui.set_cpu_text(format!("{:.0}%", v * 100.0).into());
-            ui.set_bars_path(
-                bars_path(&history, ui.get_chart_width(), ui.get_chart_height()).into(),
-            );
+            redraw();
         },
     );
 
