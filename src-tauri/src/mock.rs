@@ -153,7 +153,7 @@ impl MockSource {
                     disk_read,
                     disk_write,
                 },
-                settings.history_points,
+                crate::history::KEPT_POINTS,
             );
         }
 
@@ -322,8 +322,9 @@ mod tests {
         }
         assert_eq!(snap.data_source, DataSource::Mock);
         assert!(snap.cpu_name.contains("Mock"));
-        assert_eq!(snap.history.cpu.len(), 10);
-        assert_eq!(snap.history.net_down.len(), 10);
+        // historyPoints only limits what detail pages show; the buffer keeps more.
+        assert_eq!(snap.history.cpu.len(), 26);
+        assert_eq!(snap.history.net_down.len(), 26);
         let v = serde_json::to_value(&snap).unwrap();
         assert_eq!(v["dataSource"], "mock");
     }
@@ -349,19 +350,5 @@ mod tests {
         let first = m.sample(&s);
         assert_eq!(first.disk_rates["mock-sda"].read, None);
         assert!(m.sample(&s).disk_rates["mock-sda"].read.is_some());
-    }
-
-    #[test]
-    fn shrinking_history_points_truncates() {
-        let mut m = MockSource::new();
-        let mut s = Settings {
-            history_points: 30,
-            ..Settings::default()
-        };
-        for _ in 0..30 {
-            m.sample(&s);
-        }
-        s.history_points = 10;
-        assert_eq!(m.sample(&s).history.gpu.len(), 10);
     }
 }

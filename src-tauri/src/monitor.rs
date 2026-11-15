@@ -17,7 +17,7 @@ use crate::collectors::{
     system, Roots,
 };
 use crate::format::{clamp_percent, format_bytes, MISSING};
-use crate::history::{disk_totals, HistoryBuffer, HistorySample};
+use crate::history::{disk_totals, HistoryBuffer, HistorySample, KEPT_POINTS};
 use crate::settings::Settings;
 use crate::snapshot::{
     format_duration, format_uptime, BatteryInfo, DataSource, DiskInfo, DiskRate, GpuInfo, History,
@@ -210,7 +210,7 @@ impl Monitor {
                 disk_read,
                 disk_write,
             },
-            s.history_points,
+            KEPT_POINTS,
         );
         // History is materialised once per cycle (build() leaves it empty).
         snap.history = self.history.to_history();

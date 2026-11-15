@@ -60,7 +60,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
   歷史圖（`chartSeries` → `barPath`）：每個取樣一根實心長條，缺值留空，0 保留短基線；SVG 的 viewBox 寬度設為圖表實際像素寬（只拉伸縱向），長條寬度為真正的像素值，最新的在右。
-  儀表板：固定 2 px 長條、1 px 間隔，畫得下的最近取樣；其他頁面：3 px 長條平均分布在 `historyPoints` 格。成對序列（網路上傳／下載、磁碟讀／寫）為以中線鏡像的上／下兩半，共用縱軸；
+  儀表板：固定 2 px 長條、1 px 間隔，畫得下的最近取樣；其他頁面：只取最後 `historyPoints` 點，3 px 長條平均分布在 `historyPoints` 格（成對序列與壓力圖的縱軸上限取自整段保留的歷史）。成對序列（網路上傳／下載、磁碟讀／寫）為以中線鏡像的上／下兩半，共用縱軸；
   隱藏頁面不繪製（需要實際寬度），切到監控頁時立即重畫。
   `formatBytes`（與後端 `format_bytes` 同規則）、`formatMbps`（B/s × 8 ÷ 10⁶，< 100 兩位小數）；SUMMARY 的 Free＝已用 ÷ 使用率 − 已用（`diskUsage` 為 used/total pair）。
   儀表板欄數（`fitColumns()`，ResizeObserver 與每次 render 後執行）：從 3 欄開始，GRAPHICS 卡片的 `.device-name`、`.bar-label span`、`.kv dd` 任一出現截斷（`scrollWidth > clientWidth`）就減一欄並記下當時寬度；
@@ -264,8 +264,8 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 
 ### src/history.rs
 
-`HistoryBuffer`：十一條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown、memPressure、diskRead、diskWrite），每條最多 `historyPoints`（至少 2）點，
-`historyPoints` 縮小時捨棄最舊的點；非有限值存成 `None`。`disk_totals()` 加總各硬碟讀寫速率（有速率的硬碟才計入，全部沒有時為 `None`）。Monitor 與 MockSource 共用。
+`HistoryBuffer`：十一條序列（cpu、gpu、encode、decode、vram、ram、netUp、netDown、memPressure、diskRead、diskWrite），Monitor 與 MockSource 固定保留 `KEPT_POINTS`（240）點，與 `historyPoints` 無關（`historyPoints` 只決定詳細頁顯示的點數；儀表板 3 px 一格，需要足夠的點才能鋪滿寬欄），
+超過時捨棄最舊的點；非有限值存成 `None`。`disk_totals()` 加總各硬碟讀寫速率（有速率的硬碟才計入，全部沒有時為 `None`）。Monitor 與 MockSource 共用。
 
 ### src/collectors/mod.rs
 

@@ -32,6 +32,11 @@ pub fn disk_totals<'a>(
         .fold((None, None), |(r, w), d| (sum(r, d.read), sum(w, d.write)))
 }
 
+/// Points kept per series, independent of `historyPoints` (which only sets how
+/// many the detail pages show): the dashboard draws fixed 3 px bar slots and
+/// needs enough samples to fill a wide column (240 × 3 px = 720 px).
+pub const KEPT_POINTS: u32 = 240;
+
 #[derive(Debug, Default)]
 pub struct HistoryBuffer {
     cpu: VecDeque<Option<f64>>,

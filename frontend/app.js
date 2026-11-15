@@ -210,10 +210,10 @@
       shown = values.slice(-Math.floor(widthPx / slot));
     } else {
       // Fixed slot count (historyPoints) so spacing does not change while history fills up.
-      const slots = Math.max(values.length, Number(currentSettings.historyPoints) || 0, 1);
+      const slots = Math.max(Number(currentSettings.historyPoints) || 0, 1);
+      shown = values.slice(-slots); // history keeps more points than historyPoints for the dashboard
       slot = widthPx / slots;
       width = Math.min(3, slot);
-      shown = values;
     }
     const left = widthPx - shown.length * slot; // right-aligned
     const base = dir === "full" ? 100 : 50, span = dir === "full" ? 100 : 50, sign = dir === "down" ? 1 : -1;
@@ -549,6 +549,7 @@
     for (const v of h.memPressure || []) if (Number.isFinite(v) && v > pressureMax) pressureMax = v;
     chartSeries("memPressure", h.memPressure, pressureMax);
     // Paired series share one scale so the two lines are comparable.
+    // shortcut: scale comes from the whole kept history (240 points), so a detail page showing fewer points can be scaled by an older peak; slice per chart if that matters.
     const pair = (a, b, maxKey) => {
       let max = 1;
       for (const v of [...(h[a] || []), ...(h[b] || [])]) if (Number.isFinite(v) && v > max) max = v;
