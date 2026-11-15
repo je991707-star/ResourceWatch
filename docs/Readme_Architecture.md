@@ -158,6 +158,9 @@ Linux：`wayland-client`／`wayland-backend`（`client_system`，接手 winit �
 - 側欄寬度動畫在視窗顯示 300 ms 後才開啟（`animated`），儲存的收合狀態啟動時直接套用、不從展開寬度動畫縮回。
 - 毛玻璃：`sidebarGlass` 為 `true` 時 `start_blur`：`spawn_local` 等 `winit_window()`，以 raw-window-handle 的 `wl_display`／`wl_surface` 呼叫 `blur.rs`；
   成功後依視窗實際邏輯尺寸設定圓角模糊區域，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）重設，最大化時半徑 0；失敗（X11、無協定、合成器關閉模糊）設 `Theme.glass = false`，改用不透明底色。`WINDOW_RADIUS`（16）須與 `app.slint` 視窗圓角一致。
+  啟動時先以 `kwin_blur::effect_loaded()` 詢問 KWin 是否已載入 `resourcewatch_blur` 外掛（`kwin-effect/`）：已載入時 `GlassState.effect` 存模糊參數，`apply_glass` 不走上述合成器協定，
+  改以 `kwin_blur::save(開關, 參數, WINDOW_RADIUS)` 寫檔，外掛即時套用；設定頁「外觀」卡片在毛玻璃開啟時顯示模糊強度／雜訊／飽和度／對比／亮度五個數值欄
+  （`SettingsUi.blur-custom`、`blur-values`、`set-blur(index, value)`，值夾在 `kwin_blur::FIELDS` 的範圍內），未載入外掛時改顯示安裝提示並沿用合成器模糊。
 - 最小化／最大化不經 Rust：Window 內建的 `minimized`／`maximized` 屬性與實際視窗狀態雙向同步（合成器端最大化也會寫回），`app.slint` 直接設定。
 - `--snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery] [--size WxH]`（預設 1220×790；儀表板先取樣 5 次、掃描程序以取得速率與 CPU 比例）：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`；`--gallery` 改畫元件展示頁），`write_png` 以 `take_snapshot()` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
 - `--gallery [--theme dark|light]`：開啟元件展示頁視窗（`Gallery`，不透明、不請求模糊），可實際操作下拉選單、分段控制與表格排序。
@@ -195,6 +198,13 @@ Slint `Path` 用的圖表幾何，單位為像素（`BarChart` 的 viewbox 等�
 Wayland 合成器模糊：`ext_background_effect_manager_v1`（KWin 6.8+，`capabilities` 回報模糊是否開啟），否則 `org_kde_kwin_blur_manager`。`blur()` 接手 winit 的 `wl_display`／`wl_surface`，回傳 `Blur`；
 `set_shape(w, h, radius)` 以 `rounded_rect_strips`（四角每列 1 px 長條＋中段一塊，每列起點取弧線在列中心最近的像素，有單元測試）設定圓角模糊區域——模糊整個矩形時圓角外的透明區也會被模糊（KWin 還加雜訊），看起來像方角鋸齒。
 event queue 刻意洩漏（每視窗一次），避免之後的事件打到已釋放的 queue。
+
+### src/kwin_blur.rs（Linux）
+
+`resourcewatch_blur` KWin 外掛的參數檔 `~/.config/resourcewatch/kwin-blur.ini`（`[General]` 下 `enabled`、`radius` 與 `FIELDS` 的五個鍵）。
+`FIELDS`＝`(鍵, 預設, 最小, 最大)`：`strength` 15（1–15）、`noise` 0（0–100）、`saturation`／`contrast`／`brightness` 100（0–300，百分比），順序即設定頁欄位順序。
+`load()` 讀檔（缺檔、缺鍵、非數字用預設，超出範圍夾回）；`save()` 先寫暫存檔再 rename（外掛監看的是目錄，也不會讀到半個檔）；
+`effect_loaded()` 以 `busctl --user call org.kde.KWin /Effects org.kde.kwin.Effects isEffectLoaded s resourcewatch_blur` 判斷外掛是否已載入。有單元測試（往返與夾值）。
 
 ### ui/theme.slint
 
@@ -281,6 +291,23 @@ DISK I/O（讀寫鏡像圖、目前速率）、MEMORY（組成、Total／Speed�
 第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄（外距 14 px、側欄與右欄間 18 px、標題列與內容間 14 px）；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
 第 1 頁（儀表板）為 `Dashboard`，其餘頁目前只顯示頁名與預計實作的 Phase（佔位）；`page` 改變時呼叫 `page-changed`。`animated` 由 Rust 在啟動後開啟，傳給側欄。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
 
+
+## kwin-effect/
+
+KWin effect 外掛 `resourcewatch_blur`（C++，GPL-2.0-or-later）：由 KWin 6.8.2 內建 blur（`src/plugins/blur`）分支而來，只模糊視窗類別含 `resourcewatch` 的視窗，
+其他程式與系統的模糊設定不受影響，也不需要開啟系統的「模糊」特效。
+
+- `blur.cpp`／`blur.h`（`RwBlurEffect`）：dual Kawase 降採樣／升採樣流程與 shader 沿用上游；移除 X11 atom、Wayland 模糊區域協定、視窗裝飾與 KConfig。
+  模糊範圍是整個視窗矩形，圓角一律由 `onscreen_rounded` shader 以 SDF 裁切（半徑取設定檔 `radius`；全螢幕或視窗等於最大化區域時為 0），不必由程式端送圓角區域。
+  參數讀自 `~/.config/resourcewatch/kwin-blur.ini`（`QSettings`，格式見 `crates/app/src/kwin_blur.rs`）：`enabled`（缺檔視為關閉，不模糊任何視窗）、`strength`（1–15，對應上游的迭代次數＋offset 表；offset 保留小數，上游存成整數）、
+  `noise`、`saturation`／`contrast`／`brightness`（合成一個色彩矩陣）、`radius`。`QFileSystemWatcher` 監看該目錄，檔案被替換即 `loadConfig()` 並整個畫面重繪。
+  有全螢幕特效（總覽等）或視窗被變形時不模糊。
+- `main.cpp`、`metadata.json`：`KWIN_EFFECT_FACTORY_SUPPORTED`（需 OpenGL 合成）；`EnabledByDefault`，外掛檔存在即由 KWin 載入。`blur.qrc` 把 `shaders/` 編進外掛。
+- `CMakeLists.txt`：`find_package(KWin)`，`kcoreaddons_add_plugin` 安裝到 `kwin/effects/plugins`；`CMAKE_AUTOMOC_MACRO_NAMES` 加入工廠巨集（巨集內含 `Q_OBJECT`）。
+- `build.sh`：在 distrobox `resourcewatch-kwin`（與主機同版 Fedora）內編譯。KWin 只載入以完全相同版本（含 patch 版號）編譯的外掛，所以先讓容器的 `kwin-devel` 等於主機 `rpm -q kwin` 的版本
+  （套件庫沒有就從 Koji 下載該版 `kwin-devel`／`kwin-libs`／`kwin-common`）。成品複製到 `~/.local/lib64/qt6/plugins/kwin/effects/plugins/resourcewatch_blur.so`，
+  並建立 `~/.config/plasma-workspace/env/resourcewatch-blur.sh` 把 `~/.local/lib64/qt6/plugins` 加進 `QT_PLUGIN_PATH`（`/usr` 唯讀）；需重新登入才載入。KWin 更新後要重跑，未重跑時外掛不會載入，App 退回合成器模糊。
+- 驗證方式：`dbus-run-session` 內以 `QT_PLUGIN_PATH=kwin-effect/build/bin kwin_wayland --virtual` 起獨立的 KWin，`KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1` 搭配 `spectacle -b -n -f -o` 截圖，不影響目前的工作階段。
 
 ## crates/core/
 
