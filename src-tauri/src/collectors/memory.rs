@@ -12,9 +12,12 @@ pub struct MemReading {
     pub ram_total: Option<f64>,
     pub swap_used: Option<f64>,
     pub swap_total: Option<f64>,
-    /// Breakdown of `MemTotal` (sums to it): app = Total − Free − cache,
-    /// cache = Buffers + Cached + SReclaimable, free = MemFree.
+    /// Breakdown of `MemTotal` (sums to it): app = AnonPages (process
+    /// memory), cache = Buffers + Cached + SReclaimable, free = MemFree,
+    /// other = the rest (kernel, unreclaimable slab, page tables, drivers).
+    /// Without AnonPages, app is the whole rest and other is `None`.
     pub ram_app: Option<f64>,
+    pub ram_other: Option<f64>,
     pub ram_cache: Option<f64>,
     pub ram_free: Option<f64>,
 }
@@ -51,8 +54,10 @@ pub fn parse_meminfo(text: &str) -> MemReading {
         _ => None,
     };
     let consistent = app.is_some();
+    let anon = field(text, "AnonPages").and_then(|a| Some(a.min(app?)));
     MemReading {
-        ram_app: app.map(|v| v as f64),
+        ram_app: anon.or(app).map(|v| v as f64),
+        ram_other: app.zip(anon).map(|(rest, a)| (rest - a) as f64),
         ram_cache: cache.filter(|_| consistent).map(|v| v as f64),
         ram_free: free.filter(|_| consistent).map(|v| v as f64),
         ram_used: match (total, avail) {
@@ -118,6 +123,12 @@ mod tests {
         assert_eq!(m.ram_cache, Some(400.0 * k));
         assert_eq!(m.ram_free, Some(100.0 * k));
         assert_eq!(m.ram_app, Some(500.0 * k));
+        assert_eq!(m.ram_other, None, "no AnonPages: app is the whole rest");
+        let split = parse_meminfo(&format!("{text}AnonPages: 300 kB\n"));
+        assert_eq!(
+            (split.ram_app, split.ram_other),
+            (Some(300.0 * k), Some(200.0 * k))
+        );
         // Contradictory numbers (cache larger than total) give no breakdown.
         let bad = parse_meminfo("MemTotal: 10 kB\nMemFree: 5 kB\nBuffers: 0 kB\nCached: 50 kB\n");
         assert_eq!(

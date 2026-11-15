@@ -203,10 +203,11 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `gpus` | `{index, name, vendor}[]` | 所有偵測到的 GPU（`index` 即 `gpuIndex` 設定值），啟動與硬體重新偵測時更新 |
 | `gpu`, `vram`, `encoder`, `decoder` | Metric | `vram` 含 used/total |
 | `gpuTempText` | string | |
+| `gpuClockText` | string | GPU 圖形核心時脈（`x.xx GHz`），缺失 `"--"` |
 | `ram`, `swap` | Metric | 含 used/total |
 | `ramSubtitle` | string | 目前等於 `ram.totalText` |
 | `ramSpeedText` | string | 例如 `"1600 MT/s"`，缺失 `"--"` |
-| `ramBreakdown` | `{app, cache, free}`: Metric | MemTotal 的組成（used/total pair，三者相加＝總量） |
+| `ramBreakdown` | `{app, cache, free, other}`: Metric | MemTotal 的組成（used/total pair，四者相加＝總量；無 AnonPages 時 `other` 為缺失） |
 | `memPressure` | number \| null | PSI `/proc/pressure/memory` `some avg10`（%），無 PSI 時 `null` |
 | `disks` | `{name, model, sizeText, transport}[]` | 只在清單變動時重建 DOM |
 | `diskRates` | `{[name]: {read: number\|null, write: number\|null}}` | B/s |
@@ -216,7 +217,7 @@ Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm
 | `netHasInterface` | bool | `netInterface !== "all"` |
 | `netIpAvailable` | bool | 已取得 IPv4 |
 | `netIp` | string | |
-| `netInterfaceName`, `netMac`, `netGateway` | string | 使用中的介面（`all` 時為預設路由介面）、其 MAC、經由該介面的預設閘道；缺失 `"--"` |
+| `netInterfaceName`, `netMac`, `netGateway`, `netGatewayMac` | string | 使用中的介面（`all` 時為預設路由介面）、其 MAC、經由該介面的預設閘道與閘道 MAC（ARP 快取）；缺失 `"--"` |
 | `netInterfaces` | string[] | 實體介面清單（介面選單用） |
 | `netUp`, `netDown` | Metric | `rawValue` 為 B/s |
 | `history` | `{cpu, gpu, encode, decode, vram, ram, netUp, netDown, memPressure, diskRead, diskWrite}: (number\|null)[]`（`diskRead`／`diskWrite` 為所有硬碟加總 B/s） | 最多 120 點，缺失保留 `null` |
@@ -287,8 +288,9 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 ### src/collectors/memory.rs
 
 `/proc/meminfo`：RAM used = `MemTotal − MemAvailable`、Swap used = `SwapTotal − SwapFree`（與 KSystemStats 舊版數值逐位元組相同）。
-組成：應用程式＝MemTotal − MemFree − 快取、快取＝Buffers + Cached + SReclaimable（舊核心無 SReclaimable 時視為 0）、可用＝MemFree，三者相加＝總量；
-數字矛盾（快取大於總量等）時三者皆為 `None`。記憶體壓力：`/proc/pressure/memory` 的 `some avg10`（0–100，超出範圍或無 PSI 為 `None`）。
+組成：剩餘＝MemTotal − MemFree − 快取、快取＝Buffers + Cached + SReclaimable（舊核心無 SReclaimable 時視為 0）、可用＝MemFree；剩餘再分成
+應用程式＝AnonPages（不超過剩餘）與其他＝剩餘 − AnonPages（核心、不可回收 slab、page table、驅動等），四者相加＝總量；無 AnonPages 時應用程式＝剩餘、其他為 `None`；
+數字矛盾（快取大於總量等）時全部為 `None`。記憶體壓力：`/proc/pressure/memory` 的 `some avg10`（0–100，超出範圍或無 PSI 為 `None`）。
 `SwapTotal` 為 0 時保留 0（UI 顯示「0 B / --」且無百分比），欄位缺失或矛盾（Available > Total）時為 `None`。
 
 ### src/collectors/system.rs
@@ -326,15 +328,15 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 - 流量：`/proc/net/dev` 的 rx/tx bytes 差值。`all` 只加總**實體介面**（有 `/sys/class/net/<if>/device`；結果快取），排除 lo、bridge、veth、tun/VPN，避免轉送或封裝流量重複計算。
   指定介面時只看該介面；介面不存在、剛出現／消失或計數器重置的那一次略過，全部略過則為 `None`。切換介面會清除前次計數。
 - 網路細節（`details`，與 IPv4 同時機查詢）：預設路由取 `/proc/net/route` 目的地 `00000000`、旗標含 UP|GATEWAY、metric 最小者（位址為記憶體中的 `__be32`，以 `to_ne_bytes` 還原）；
-  介面：指定介面，`all` 時為預設路由介面；MAC 讀 `/sys/class/net/<if>/address`（全零視為無）；閘道只在經由該介面時顯示；實體介面清單＝有 `device` 的介面。
+  介面：指定介面，`all` 時為預設路由介面；MAC 讀 `/sys/class/net/<if>/address`（全零視為無）；閘道只在經由該介面時顯示；閘道 MAC 由 `parse_arp` 從 `/proc/net/arp` 找同介面、旗標非 0x0、非全零的項目（與 details 同時機讀取，ARP 項目之後才出現時需手動刷新）；實體介面清單＝有 `device` 的介面。
 - IPv4：`getifaddrs(3)`，取選定介面（`all` 則任一非 loopback 介面）第一個非 loopback、非 169.254 的位址。只在啟動、手動刷新、切換介面時查詢；不啟動 `ip`、不經 shell。
 
 ### src/collectors/gpu/mod.rs
 
 - 清單：`/sys/class/drm/cardN` 中 PCI class `0x03xxxx` 的裝置，依 `cardN` 排序；`gpuIndex` 即此清單的索引（舊版是 KDE 的 `gpuN`，多 GPU 時順序可能不同）。
   記錄 PCI 位址（`0000:01:00.0`）、vendor／device ID、驅動。
-- NVIDIA 且 NVML 可用：以 PCI 位址取得 NVML handle，讀使用率、NVENC、NVDEC、溫度、VRAM；名稱用 NVML。
-- 其他（AMD、Intel、NVML 不可用的 NVIDIA）：DRM sysfs。`gpu_busy_percent`（AMD）、`mem_info_vram_used/total`、裝置自身 hwmon 溫度（優先 `edge`/`pkg` 標籤）；
+- NVIDIA 且 NVML 可用：以 PCI 位址取得 NVML handle，讀使用率、NVENC、NVDEC、溫度、圖形時脈、VRAM；名稱用 NVML。
+- 其他（AMD、Intel、NVML 不可用的 NVIDIA）：DRM sysfs。`gpu_busy_percent`（AMD）、`mem_info_vram_used/total`、裝置自身 hwmon 溫度（優先 `edge`/`pkg` 標籤）；時脈：amdgpu `pp_dpm_sclk` 標 `*` 的層級（`parse_dpm_clock`），否則 i915/xe `drm/<card>/gt_cur_freq_mhz`；
   NVENC/NVDEC 一律 `None`；名稱查 `pci.ids`（`/usr/share/hwdata/pci.ids` 等，僅啟動／手動時讀取）。
 - `source()`：`nvml` | `drm` | `unavailable`（索引超出範圍）。NVML 只在偵測到 NVIDIA 卡時嘗試載入一次。
 - 偵測（啟動與 `rediscover()` 手動重新偵測）時為每張卡一次解析好名稱與讀取後端（NVML handle 或 DRM 路徑），`pci.ids` 每次偵測最多讀一次；
@@ -343,7 +345,7 @@ collector 共用工具。`Roots {proc_dir, sys_dir, run_dir}`（預設 `/proc`�
 ### src/collectors/gpu/nvml.rs
 
 以 `libloading` 在執行期載入 `libnvidia-ml.so.1`（或 `.so`），只綁定 9 個函式（init、shutdown、依 PCI 取 handle、名稱、使用率、
-encoder／decoder 使用率、溫度、memory info v1），另外選擇性載入 `nvmlDeviceGetMemoryInfo_v2`。
+encoder／decoder 使用率、溫度、memory info v1），另外選擇性載入 `nvmlDeviceGetMemoryInfo_v2` 與 `nvmlDeviceGetClockInfo`（`NVML_CLOCK_GRAPHICS`，缺少時時脈為 `None`，不影響載入）。
 VRAM 優先用 v2：其 `used` 不含驅動保留記憶體，與 `nvidia-smi` 及舊版一致（v1 的 `used` 含保留部分，本機約多 59 MiB）；
 v2 不存在（R510 以前的驅動）或失敗時退回 v1。`nvmlInit_v2` 成功後才建立物件，`Drop` 時 `nvmlShutdown`。整個程式生命週期只初始化一次。
 回傳碼非成功（含 `NOT_SUPPORTED`，例如無 NVENC 的 GT 1030）或數值不合理時為 `None`。

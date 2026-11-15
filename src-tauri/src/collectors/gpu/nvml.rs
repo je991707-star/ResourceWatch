@@ -10,6 +10,7 @@ use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void, CStr, CString};
 
 const NVML_SUCCESS: c_int = 0;
 const NVML_TEMPERATURE_GPU: c_int = 0;
+const NVML_CLOCK_GRAPHICS: c_int = 0;
 const NAME_BUFFER: usize = 96;
 
 #[repr(C)]
@@ -36,6 +37,7 @@ type FnName = unsafe extern "C" fn(Handle, *mut c_char, c_uint) -> c_int;
 type FnUtil = unsafe extern "C" fn(Handle, *mut Utilization) -> c_int;
 type FnCodec = unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int;
 type FnTemp = unsafe extern "C" fn(Handle, c_int, *mut c_uint) -> c_int;
+type FnClock = unsafe extern "C" fn(Handle, c_int, *mut c_uint) -> c_int;
 type FnMem = unsafe extern "C" fn(Handle, *mut Memory) -> c_int;
 type FnMemV2 = unsafe extern "C" fn(Handle, *mut MemoryV2) -> c_int;
 
@@ -73,6 +75,8 @@ pub struct Nvml {
     mem: FnMem,
     /// Optional: drivers older than R510 lack it; v1 is used then.
     mem_v2: Option<FnMemV2>,
+    /// Optional so a driver without it still loads; the clock is then `None`.
+    clock: Option<FnClock>,
     // Must outlive the function pointers above; dropped after `Drop::drop`.
     _lib: Library,
 }
@@ -107,6 +111,10 @@ impl Nvml {
                 .get::<FnMemV2>(b"nvmlDeviceGetMemoryInfo_v2\0")
                 .ok()
                 .map(|s| *s);
+            let clock: Option<FnClock> = lib
+                .get::<FnClock>(b"nvmlDeviceGetClockInfo\0")
+                .ok()
+                .map(|s| *s);
             // Initialise before building `Nvml`, so `Drop` (nvmlShutdown) only
             // ever runs after a successful init.
             let rc = init();
@@ -123,6 +131,7 @@ impl Nvml {
                 temp,
                 mem,
                 mem_v2,
+                clock,
                 _lib: lib,
             };
             Ok(nvml)
@@ -180,6 +189,15 @@ impl Nvml {
         // SAFETY: valid out-pointer.
         let ok = unsafe { (self.temp)(d.0, NVML_TEMPERATURE_GPU, &mut t) } == NVML_SUCCESS;
         (ok && t <= 150).then_some(f64::from(t))
+    }
+
+    /// Current graphics (shader) clock in MHz.
+    pub fn clock_mhz(&self, d: NvDevice) -> Option<f64> {
+        let f = self.clock?;
+        let mut mhz: c_uint = 0;
+        // SAFETY: valid out-pointer.
+        let ok = unsafe { f(d.0, NVML_CLOCK_GRAPHICS, &mut mhz) } == NVML_SUCCESS;
+        (ok && mhz > 0).then_some(f64::from(mhz))
     }
 
     /// (used, total) VRAM in bytes. Prefers nvmlMemory_v2 (used without the

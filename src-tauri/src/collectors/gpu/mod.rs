@@ -146,6 +146,8 @@ pub struct GpuReading {
     pub encoder: Option<f64>,
     pub decoder: Option<f64>,
     pub temp_c: Option<f64>,
+    /// Current graphics clock (MHz).
+    pub clock_mhz: Option<f64>,
     pub vram_used: Option<f64>,
     pub vram_total: Option<f64>,
 }
@@ -156,6 +158,10 @@ pub struct DrmPaths {
     vram_used: Option<PathBuf>,
     vram_total: Option<PathBuf>,
     temp: Option<PathBuf>,
+    /// amdgpu `pp_dpm_sclk` (active level marked `*`).
+    sclk: Option<PathBuf>,
+    /// i915/xe `drm/<card>/gt_cur_freq_mhz`.
+    gt_freq: Option<PathBuf>,
 }
 
 fn existing(p: PathBuf) -> Option<PathBuf> {
@@ -185,7 +191,22 @@ pub fn drm_paths(dev: &GpuDevice) -> DrmPaths {
         vram_used: existing(d.join("mem_info_vram_used")),
         vram_total: existing(d.join("mem_info_vram_total")),
         temp: card_temp_input(d),
+        sclk: existing(d.join("pp_dpm_sclk")),
+        gt_freq: existing(d.join("drm").join(&dev.card).join("gt_cur_freq_mhz")),
     }
+}
+
+/// Clock of the active `pp_dpm_sclk` level, e.g. `1: 1800Mhz *` → 1800.
+pub fn parse_dpm_clock(text: &str) -> Option<f64> {
+    let line = text.lines().find(|l| l.trim_end().ends_with('*'))?;
+    let value = line.split(':').nth(1)?.trim().trim_end_matches('*').trim();
+    let mhz: f64 = value
+        .to_ascii_lowercase()
+        .strip_suffix("mhz")?
+        .trim()
+        .parse()
+        .ok()?;
+    (mhz > 0.0 && mhz.is_finite()).then_some(mhz)
 }
 
 pub fn read_drm(p: &DrmPaths) -> GpuReading {
@@ -211,11 +232,24 @@ pub fn read_drm(p: &DrmPaths) -> GpuReading {
         .and_then(read_i64)
         .map(|m| m as f64 / 1000.0)
         .filter(|c| (-40.0..=150.0).contains(c));
+    let clock_mhz = p
+        .sclk
+        .as_deref()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|t| parse_dpm_clock(&t))
+        .or_else(|| {
+            p.gt_freq
+                .as_deref()
+                .and_then(read_u64)
+                .filter(|v| *v > 0)
+                .map(|v| v as f64)
+        });
     GpuReading {
         usage,
         encoder: None,
         decoder: None,
         temp_c,
+        clock_mhz,
         vram_used: used.map(|v| v as f64),
         vram_total: total.map(|v| v as f64),
     }
@@ -342,6 +376,7 @@ impl GpuCollector {
                     encoder: n.encoder(*h),
                     decoder: n.decoder(*h),
                     temp_c: n.temperature(*h),
+                    clock_mhz: n.clock_mhz(*h),
                     vram_used: mem.map(|m| m.0),
                     vram_total: mem.map(|m| m.1),
                 }
@@ -398,6 +433,7 @@ mod tests {
         write(&amd, "gpu_busy_percent", "37\n");
         write(&amd, "mem_info_vram_used", "1073741824\n");
         write(&amd, "mem_info_vram_total", "17163091968\n");
+        write(&amd, "pp_dpm_sclk", "0: 500Mhz\n1: 1800Mhz *\n");
         write(&amd, "hwmon/hwmon5/temp1_label", "edge\n");
         write(&amd, "hwmon/hwmon5/temp1_input", "52000\n");
         write(&amd, "hwmon/hwmon5/temp2_label", "junction\n");
@@ -411,6 +447,12 @@ mod tests {
         let reading = read_drm(&drm_paths(&devs[0]));
         assert_eq!(reading.usage, Some(37.0));
         assert_eq!(reading.temp_c, Some(52.0));
+        assert_eq!(reading.clock_mhz, Some(1800.0));
+        assert_eq!(
+            parse_dpm_clock("0: 300Mhz\n1: 900Mhz\n"),
+            None,
+            "no active level"
+        );
         assert_eq!(reading.vram_used, Some(1073741824.0));
         assert_eq!(reading.encoder, None, "no codec metric via sysfs");
 

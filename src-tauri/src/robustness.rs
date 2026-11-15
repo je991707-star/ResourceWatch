@@ -80,7 +80,9 @@ fn parsers_never_panic_on_garbage() {
             let _ = disk::udev_unescape(text);
             let _ = network::parse_net_dev(text);
             let _ = network::parse_default_route(text);
+            let _ = network::parse_arp(text, "192.168.0.1", "eth0");
             let _ = gpu::pci_ids_lookup(text, 0x10de, 0x1cb6);
+            let _ = gpu::parse_dpm_clock(text);
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
                 let _ = crate::settings_store::parse_stored(&v);
             }

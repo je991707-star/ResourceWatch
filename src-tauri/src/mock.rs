@@ -197,12 +197,13 @@ impl MockSource {
             // Mock: RAM speed unknown, to exercise the missing-value path.
             ram_speed_text: "--".to_string(),
             ram_breakdown: RamBreakdown {
-                app: Metric::pair(Some(ram_used * 0.9), Some(ram_total)),
+                app: Metric::pair(Some(ram_used * 0.6), Some(ram_total)),
                 cache: Metric::pair(Some(ram_cache), Some(ram_total)),
                 free: Metric::pair(
                     Some(ram_total - ram_used * 0.9 - ram_cache),
                     Some(ram_total),
                 ),
+                other: Metric::pair(Some(ram_used * 0.3), Some(ram_total)),
             },
             mem_pressure: Some(pressure),
             swap: Metric::pair(Some(0.0), Some(7.8 * GIB)),
@@ -277,6 +278,8 @@ impl MockSource {
             // Documentation-reserved values (RFC 7042 / RFC 5737).
             net_mac: "00:00:5e:00:53:01".to_string(),
             net_gateway: "192.0.2.1".to_string(),
+            net_gateway_mac: "00:00:5e:00:53:fe".to_string(),
+            gpu_clock_text: format!("{:.2} GHz", 0.9 + 0.3 * (t * 0.07).sin().abs()),
             net_interfaces: vec!["mock0".to_string(), "mockwl0".to_string()],
             net_up,
             net_down,

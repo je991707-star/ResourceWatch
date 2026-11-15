@@ -205,7 +205,23 @@ pub struct NetDetails {
     pub mac: Option<String>,
     /// Default gateway, when it is reached through `interface`.
     pub gateway: Option<String>,
+    /// Gateway's MAC from the kernel ARP cache (`/proc/net/arp`).
+    pub gateway_mac: Option<String>,
     pub interfaces: Vec<String>,
+}
+
+/// MAC of `ip` on `iface` in `/proc/net/arp`; incomplete (flags 0x0) and
+/// all-zero entries are ignored.
+pub fn parse_arp(text: &str, ip: &str, iface: &str) -> Option<String> {
+    text.lines().skip(1).find_map(|l| {
+        let f: Vec<&str> = l.split_whitespace().collect();
+        (f.len() >= 6
+            && f[0] == ip
+            && f[5] == iface
+            && f[2] != "0x0"
+            && f[3] != "00:00:00:00:00:00")
+            .then(|| f[3].to_string())
+    })
 }
 
 /// Looked up with the IPv4 address: startup, manual refresh, interface change.
@@ -225,10 +241,19 @@ pub fn details(roots: &Roots, selection: &str) -> NetDetails {
     let gateway = route
         .filter(|(i, _)| Some(i) == interface.as_ref())
         .map(|(_, gw)| gw.to_string());
+    // shortcut: read only when details are refreshed (startup, manual refresh,
+    // interface change); an ARP entry that appears later shows up after a refresh.
+    let gateway_mac = gateway
+        .as_deref()
+        .zip(interface.as_deref())
+        .and_then(|(gw, i)| {
+            parse_arp(&std::fs::read_to_string(roots.proc("net/arp")).ok()?, gw, i)
+        });
     NetDetails {
         interface,
         mac,
         gateway,
+        gateway_mac,
         interfaces: physical_interfaces(roots),
     }
 }
@@ -269,11 +294,27 @@ mod tests {
         std::fs::create_dir_all(r.join("sys/class/net/enp3s0/device")).unwrap();
         std::fs::create_dir_all(r.join("sys/class/net/wlp2s0/device")).unwrap();
         write(&r, "sys/class/net/lo/address", "00:00:00:00:00:00\n");
+        write(
+            &r,
+            "proc/net/arp",
+            "IP address       HW type     Flags       HW address            Mask     Device\n\
+             192.168.50.9     0x1         0x0         00:00:00:00:00:00     *        enp3s0\n\
+             192.168.50.1     0x1         0x2         e4:18:6b:4c:e3:90     *        enp3s0\n",
+        );
         let rt = roots(&r);
         let all = details(&rt, "all");
         assert_eq!(all.interface.as_deref(), Some("enp3s0"));
         assert_eq!(all.mac.as_deref(), Some("fc:aa:14:84:57:82"));
         assert_eq!(all.gateway.as_deref(), Some("192.168.50.1"));
+        assert_eq!(all.gateway_mac.as_deref(), Some("e4:18:6b:4c:e3:90"));
+        assert_eq!(
+            parse_arp(
+                "hdr\n192.168.50.9 0x1 0x0 00:00:00:00:00:00 * enp3s0\n",
+                "192.168.50.9",
+                "enp3s0"
+            ),
+            None
+        );
         assert_eq!(all.interfaces, ["enp3s0", "wlp2s0"]);
         let lo = details(&rt, "lo");
         assert_eq!(

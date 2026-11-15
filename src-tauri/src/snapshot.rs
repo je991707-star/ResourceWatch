@@ -172,6 +172,7 @@ pub struct RamBreakdown {
     pub app: Metric,
     pub cache: Metric,
     pub free: Metric,
+    pub other: Metric,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -229,6 +230,9 @@ pub struct Snapshot {
     pub net_interface_name: String,
     pub net_mac: String,
     pub net_gateway: String,
+    pub net_gateway_mac: String,
+    /// GPU graphics clock, e.g. `0.93 GHz`.
+    pub gpu_clock_text: String,
     /// Physical interfaces, for the interface picker.
     pub net_interfaces: Vec<String>,
     pub net_up: Metric,
