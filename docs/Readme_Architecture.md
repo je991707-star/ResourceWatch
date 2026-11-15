@@ -48,7 +48,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史長條圖，`<g>` 內含一個 `.area` path）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
-- `styles.css`：色彩 token（`:root` 為深色：偏冷的深中性底 `--bg` #111318、卡片 `--card` #1a1d23 比底色亮一階、淡框線；`:root[data-theme="light"]` 覆寫淺色：偏冷灰白底＋白卡片；歷史圖為實心長條、無格線與圖表底色；側欄為近黑的中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色；`--net-down` 藍、`--net-up` 綠，記憶體 `--mem-free` 綠、`--mem-other` 灰，SUMMARY 環形圖 `--sum-cpu` 青、`--sum-gpu` 紫、`--sum-ram` 藍）。
+- `styles.css`：色彩 token（`:root` 為深色：近黑深藍底 `--bg` #0d1117、卡片 `--card` #161b22 比底色亮一階、淡框線；`:root[data-theme="light"]` 覆寫淺色：冷灰白底＋白卡片，指標色同色相但加深以維持對比；指標色偏霓虹：`--cpu` 青、`--gpu` 紫、`--ram` 藍（記憶體快取沿用 `--gpu`），`--disk-read` 紅、`--disk-write` 藍；歷史圖為實心長條、無格線與圖表底色；側欄為近黑的中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色；`--net-down` 藍、`--net-up` 綠，記憶體 `--mem-free` 綠、`--mem-other` 灰，SUMMARY 環形圖 `--sum-cpu` 青、`--sum-gpu` 紫、`--sum-ram` 藍）。
   環形圖、長條、核心長條的過渡動畫（0.4 s）只在 `<html data-motion="on">` 時套用：這些屬性（stroke-dasharray、width、height）無法合成，每幀都要重排／重繪，更新間隔 500 ms 時動畫會一直跑（實測閒置 WebKit 約 70%、主程序約 50% 單核，關閉後皆約 5%）。
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
