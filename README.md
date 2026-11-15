@@ -2,7 +2,7 @@
 
 **Rust + Tauri 2 桌面應用** · Linux · MIT License
 
-ResourceWatch 是 Linux 桌面的系統資源監控程式：左側導覽、右側詳細頁，即時顯示 **CPU、記憶體、顯示卡、磁碟、網路、感測器與程序**，淺色／深色跟隨系統。
+ResourceWatch 是 Linux 桌面的系統資源監控程式：儀表板式介面，即時顯示 **CPU、記憶體、顯示卡、磁碟、網路、感測器與程序**，並內建資料夾空間分析。
 
 > v1.0.0 為全新重寫。舊版（Tauri＋毛玻璃、Slint 版、KWin 模糊外掛）保留在 `refactor/rust-tauri` 分支；v0.0.5 Plasma Widget 在 `main`／`v0.0.5` Tag。
 
