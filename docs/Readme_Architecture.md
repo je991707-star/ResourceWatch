@@ -43,7 +43,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | --- | --- | --- |
 | `snapshot` | `Snapshot` | 一次取樣；速率類欄位第一次呼叫為 `null` |
 | `processes` | `Proc[]` | 掃描所有程序；第一次呼叫 `cpu` 為 `null` |
-| `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄） |
+| `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄、發行版 logo） |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
 
@@ -52,7 +52,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### src/sys.rs
 
-解析器都吃字串、有單元測試（`stat`、`meminfo`、`pressure`、`cpuinfo`、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`）。
+解析器都吃字串、有單元測試（`stat`、`meminfo`、`pressure`、`cpuinfo`、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`、base64）。
 `Monitor` 保存上次的 CPU jiffies、磁碟扇區、網路位元組、各程序 ticks 與取樣時間，速率＝差值／實際經過秒數。
 
 JSON（camelCase）：
@@ -62,8 +62,9 @@ Snapshot {
   cpu:     { usage, cores: (number|null)[], freqMhz, temp }   // %；temp 取第一個 coretemp/k10temp/zenpower/cpu_thermal 溫度
   mem:     { total, used, available, free, cached, swapTotal, swapUsed, pressure }
            // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable；pressure = /proc/pressure/memory some avg10（%）
-  gpus:    [{ name, usage, memUsed, memTotal, temp }]
-  disks:   [{ name, model, size, readBps, writeBps }]           // 只列有 /sys/block/<n>/device 的實體磁碟
+  gpus:    [{ name, usage, memUsed, memTotal, temp, encoder, decoder }] // encoder/decoder：NVENC／NVDEC 使用率 %，非 NVIDIA 為 null
+  disks:   [{ name, model, size, readBps, writeBps, used, total, mounts }]
+           // 只列有 /sys/block/<n>/device、容量 > 0、不是光碟機（sr*）的實體磁碟；used/total/mounts 為掛載在這顆硬碟上的檔案系統加總（沒有掛載時 used/total 為 null）
   mounts:  [{ mount, device, total, used }]                     // bytes
   net:     [{ name, up, mac, ip, gateway, rxTotal, txTotal, rxBps, txBps }]
            // 只列有 /sys/class/net/<n>/device 的實體介面；up = operstate "up"；ip 為第一個 IPv4；gateway 為該介面的預設路由
@@ -71,7 +72,7 @@ Snapshot {
   uptime                                                         // 秒
 }
 Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
-SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
+SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home, osId, logo }
 ```
 
 - CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。
@@ -80,6 +81,10 @@ SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
 - 網路：IPv4 由 `getifaddrs` 取得；閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。
 - 檔案系統：`/proc/self/mountinfo` 只取 `/dev/` 裝置（排除 loop）。同一裝置會掛很多次（btrfs 子卷、ostree 的 `/etc` bind mount），
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
+- 檔案系統 → 實體硬碟（`disk_of`）：裝置路徑先 `canonicalize`（`/dev/mapper/…` → `/dev/dm-0`），dm／md 沿 `/sys/block/<n>/slaves` 往下找到分割區，
+  分割區再由 `/sys/class/block/<n>` 連結的上一層目錄得到硬碟名稱；整顆硬碟直接格式化時就是它本身。
+- 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
+  優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
 
 ### src/du.rs
@@ -93,7 +98,7 @@ SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
 
 ### src/gpu.rs
 
-- NVIDIA：`libnvidia-ml.so.1` 以 `libloading` 載入、`nvmlInit_v2` 只呼叫一次；每次取樣依索引取 handle，讀名稱、使用率、記憶體（v1 `used`）、溫度，任一呼叫失敗該欄為 `null`。函式指標與 `Library` 同生命週期（`_lib` 欄位）。
+- NVIDIA：`libnvidia-ml.so.1` 以 `libloading` 載入、`nvmlInit_v2` 只呼叫一次；每次取樣依索引取 handle，讀名稱、使用率、記憶體（v1 `used`）、溫度、編碼／解碼使用率（`nvmlDeviceGetEncoder/DecoderUtilization`，舊驅動沒有這兩個符號時為 `null`），任一呼叫失敗該欄為 `null`。函式指標與 `Library` 同生命週期（`_lib` 欄位）。
 - 其他：`/sys/class/drm/cardN/device`，vendor `0x1002` AMD、`0x8086` Intel、`0x10de`（只在 NVML 載入失敗時，例如 nouveau）；讀 `gpu_busy_percent`、`mem_info_vram_used/total`、`hwmon/*/temp1_input`。
   Intel 與 nouveau 通常沒有這些檔案，對應欄位為 `null`。名稱只有廠牌（不讀 PCI ID 資料庫）。
 
@@ -101,10 +106,16 @@ SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
 
 ### index.html
 
-骨架：左側 `nav`（收合鈕、`#pages` 由 app.js 產生、底部主題鈕）、右側 `#host` 主機列與 `#content`。`<html data-theme>` 由 app.js 設定。
+骨架：左側 `nav`（收合鈕、`#pages` 由 app.js 產生、底部「設定」與主題快速切換鈕）、右側 `#host` 主機列與 `#content`。`<html data-theme>` 由 app.js 設定。
+
+### vendor/fontawesome/
+
+Font Awesome Free 7.3.1（npm `@fortawesome/fontawesome-free`）只取 `fontawesome`／`solid`／`regular`／`brands` 四個 `.min.css` 與對應 `woff2`，授權見 `LICENSE.txt`（圖示 CC BY 4.0、字型 SIL OFL 1.1、程式 MIT；設定頁「關於」有註記）。
+App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可載入。
 
 ### style.css
 
+- 圖示一律是 Font Awesome 字型（`.i` 固定 20 px 寬、置中），不再有自繪 SVG 圖示。
 - 色彩 token 在 `:root`（淺色）與 `:root[data-theme="dark"]`（深色）；主題的「跟隨系統」由 app.js 換算成 `data-theme`，CSS 只有兩套值。
   深色為中性灰：主區 `#262627`、側欄 `#2f2f31`、卡片 `#353537`（圓角 16、無邊框、無透明、無模糊）。
 - 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／上傳／寫入／CPU 曲線藍、可用／下載綠、讀取紅、CPU 環洋紅、磁碟環青、記憶體壓力橘、交換灰。
@@ -120,12 +131,17 @@ SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
   - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈磁碟用量；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
     處理器（各執行緒直條＋使用率曲線＋前 5 程序）、記憶體（堆疊條、組成與交換、壓力曲線（上限取近期峰值、至少 10%）、前 5 程序）、網路（有預設閘道的網卡：IP／MAC／閘道、上下行曲線、累計與速率）、
     磁碟（檔案系統用量條）、顯示卡（使用率環、VRAM 條、溫度、曲線）、磁碟 I/O、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
+  - 主機列：左側為發行版 logo（`SystemInfo.logo`）；沒有 logo 檔時依 `osId` 用 Font Awesome 品牌圖示（fedora、ubuntu、debian、redhat、centos、suse），其餘用 `fa-linux`。
+  - 摘要的硬碟區與磁碟卡片以實體硬碟為單位，顯示型號（NVMe 型號的 `_` 換成空格；沒有型號時用裝置名稱）與其上檔案系統的用量；未掛載的硬碟顯示「未掛載 · 容量」，滑鼠提示有裝置名稱與掛載點。
+  - 顯示卡卡片：使用率環、VRAM、溫度、編碼器／解碼器使用率條、曲線。
+  - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；曲線固定保留 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
+    儀表板網路卡（自動＝有預設閘道者，或指定介面）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題右側綠／紅點為連線狀態；連線中的顯示位址、大字速率與累計、上下行大圖。
   - 感測器：依晶片分組。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積）、
   `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；多段時線端改平頭）。
-- 主題：`localStorage` `rw-theme`（`system` → `dark` → `light` 循環），`system` 時監聽 `prefers-color-scheme`；側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
+- 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
 - `window.__TAURI__` 不存在時改用 `window.mockInvoke`：只供在一般瀏覽器載入頁面、注入假資料檢查排版，App 內不會用到。

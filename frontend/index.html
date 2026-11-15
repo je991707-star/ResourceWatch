@@ -4,13 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ResourceWatch</title>
+  <link rel="stylesheet" href="vendor/fontawesome/css/fontawesome.min.css">
+  <link rel="stylesheet" href="vendor/fontawesome/css/solid.min.css">
+  <link rel="stylesheet" href="vendor/fontawesome/css/regular.min.css">
+  <link rel="stylesheet" href="vendor/fontawesome/css/brands.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <nav id="nav">
-    <button id="collapse" class="icon-btn" title="收合側欄"></button>
+    <button id="collapse" class="icon-btn" title="收合側欄"><i class="fa-solid fa-bars"></i></button>
     <div id="pages"></div>
-    <button id="theme" class="nav-item"></button>
+    <div class="nav-foot">
+      <button class="nav-item" data-page="settings" title="設定"><i class="i fa-solid fa-gear"></i><span class="label">設定</span></button>
+      <button id="theme" class="icon-btn"></button>
+    </div>
   </nav>
   <main>
     <header id="host"></header>

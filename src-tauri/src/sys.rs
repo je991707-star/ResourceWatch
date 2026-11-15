@@ -62,6 +62,10 @@ struct Disk {
     size: u64,
     read_bps: Option<f64>,
     write_bps: Option<f64>,
+    /// Sum over the filesystems mounted from this disk; `None` when nothing is mounted.
+    used: Option<u64>,
+    total: Option<u64>,
+    mounts: Vec<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -114,14 +118,20 @@ pub struct SystemInfo {
     cpu_cores: Option<usize>,
     cpu_threads: usize,
     home: String,
+    os_id: String,
+    logo: Option<String>,
 }
 
 pub fn system_info() -> SystemInfo {
-    let os = read("/etc/os-release")
-        .lines()
-        .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-        .map(|v| v.trim_matches('"').to_string())
-        .unwrap_or_default();
+    let release = read("/etc/os-release");
+    let field = |k: &str| {
+        release
+            .lines()
+            .find_map(|l| l.strip_prefix(k)?.strip_prefix('='))
+            .map(|v| v.trim_matches('"').to_string())
+            .unwrap_or_default()
+    };
+    let os = field("PRETTY_NAME");
     let cpuinfo = read("/proc/cpuinfo");
     let (cpu_model, cpu_cores, cpu_threads) = parse_cpuinfo(&cpuinfo);
     // Many desktop boards leave product_name as a placeholder; the board name is more useful then.
@@ -149,7 +159,86 @@ pub fn system_info() -> SystemInfo {
         cpu_cores,
         cpu_threads,
         home: std::env::var("HOME").unwrap_or_else(|_| "/".into()),
+        os_id: field("ID"),
+        logo: distro_logo(&field("LOGO")),
     }
+}
+
+/// os-release `LOGO` (an icon name) → data: URL. The page's CSP only allows 'self' and data: images,
+/// and the icon lives outside the app. Prefers the exact name, then `<name>-icon`, then SVG, then the largest PNG.
+fn distro_logo(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return None;
+    }
+    fn files(dir: &Path, depth: u8, out: &mut Vec<std::path::PathBuf>) {
+        for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() && depth > 0 {
+                files(&p, depth - 1, out);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    let mut all = Vec::new();
+    files(Path::new("/usr/share/icons/hicolor"), 3, &mut all);
+    files(Path::new("/usr/share/pixmaps"), 0, &mut all);
+    let best = all
+        .into_iter()
+        .filter_map(|p| {
+            let stem = p.file_stem()?.to_str()?;
+            let svg = match p.extension()?.to_str()? {
+                "svg" => true,
+                "png" => false,
+                _ => return None,
+            };
+            let rank = match stem {
+                s if s == name => 0,
+                s if s == format!("{name}-icon") => 1,
+                s if s.starts_with(name) && !s.contains("white") => 2,
+                _ => return None,
+            };
+            // hicolor size from a path part like "256x256"
+            let size = p
+                .components()
+                .find_map(|c| {
+                    c.as_os_str()
+                        .to_str()?
+                        .split_once('x')?
+                        .0
+                        .parse::<u32>()
+                        .ok()
+                })
+                .unwrap_or(0);
+            Some(((rank, !svg, u32::MAX - size), p))
+        })
+        .min_by(|a, b| a.0.cmp(&b.0))?
+        .1;
+    let data = fs::read(&best).ok().filter(|d| d.len() < 1 << 20)?;
+    let mime = if best.extension()? == "svg" {
+        "image/svg+xml"
+    } else {
+        "image/png"
+    };
+    Some(format!("data:{mime};base64,{}", base64(&data)))
+}
+
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            s.push(if i <= c.len() {
+                T[(n >> (18 - 6 * i)) as usize & 63] as char
+            } else {
+                '='
+            });
+        }
+    }
+    s
 }
 
 /// /proc/cpuinfo → (model name, physical cores = unique (physical id, core id), logical CPUs).
@@ -337,6 +426,29 @@ fn parse_mounts(text: &str) -> Vec<(String, String)> {
     out
 }
 
+/// `/dev/nvme0n1p3`, `/dev/mapper/luks-…` → the physical disk (`nvme0n1`) under it.
+fn disk_of(dev: &str) -> Option<String> {
+    let real = fs::canonicalize(dev).ok()?;
+    let mut name = real.file_name()?.to_str()?.to_string();
+    // device-mapper / md: follow `slaves` down to the partition underneath
+    for _ in 0..4 {
+        let slave = fs::read_dir(format!("/sys/block/{name}/slaves"))
+            .ok()
+            .and_then(|mut d| d.next()?.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned());
+        match slave {
+            Some(s) => name = s,
+            None => break,
+        }
+    }
+    if Path::new(&format!("/sys/block/{name}/device")).exists() {
+        return Some(name); // filesystem directly on the whole disk
+    }
+    // partition: /sys/class/block/nvme0n1p3 → …/nvme0n1/nvme0n1p3
+    let link = fs::read_link(format!("/sys/class/block/{name}")).ok()?;
+    Some(link.parent()?.file_name()?.to_str()?.to_string())
+}
+
 fn statvfs(path: &str) -> Option<(u64, u64)> {
     let c = CString::new(path).ok()?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -478,8 +590,12 @@ impl Monitor {
                     size: read_num(format!("/sys/block/{n}/size")).unwrap_or(0.0) as u64 * 512,
                     read_bps: rate(prev.map(|p| &p.0), r).map(|v| v * 512.0),
                     write_bps: rate(prev.map(|p| &p.1), w).map(|v| v * 512.0),
+                    used: None,
+                    total: None,
+                    mounts: Vec::new(),
                 }
             })
+            .filter(|d| d.size > 0 && !d.name.starts_with("sr")) // empty card readers, optical drives
             .collect();
         disks.sort_by(|a, b| a.name.cmp(&b.name));
         self.disk = ds;
@@ -509,7 +625,7 @@ impl Monitor {
         net.sort_by(|a, b| a.name.cmp(&b.name));
         self.net = nd;
 
-        let mounts = parse_mounts(&read("/proc/self/mountinfo"))
+        let mounts: Vec<Mount> = parse_mounts(&read("/proc/self/mountinfo"))
             .into_iter()
             .filter_map(|(mount, device)| {
                 let (total, used) = statvfs(&mount).filter(|v| v.0 > 0)?;
@@ -521,6 +637,15 @@ impl Monitor {
                 })
             })
             .collect();
+        for m in &mounts {
+            let Some(d) = disk_of(&m.device).and_then(|n| disks.iter_mut().find(|d| d.name == n))
+            else {
+                continue;
+            };
+            d.used = Some(d.used.unwrap_or(0) + m.used);
+            d.total = Some(d.total.unwrap_or(0) + m.total);
+            d.mounts.push(m.mount.clone());
+        }
 
         Snapshot {
             cpu: Cpu {
@@ -619,6 +744,14 @@ mod tests {
         );
         let p = "some avg10=1.50 avg60=0.20 avg300=0.00 total=1\nfull avg10=0.10 avg60=0.00 avg300=0.00 total=1\n";
         assert_eq!(parse_pressure(p), Some(1.5));
+    }
+
+    #[test]
+    fn base64_padding() {
+        assert_eq!(base64(b"Man"), "TWFu");
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"M"), "TQ==");
+        assert_eq!(base64(b""), "");
     }
 
     #[test]

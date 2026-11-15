@@ -8,7 +8,9 @@ let info = null;
 let procs = [];
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
-let sumDisk = 0; // SUMMARY storage flip index
+let sumDisk = 0; // SUMMARY disk flip index
+const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '' };
+let prefs = { ...DEFAULTS };
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -31,7 +33,7 @@ function bytes(b) {
 }
 const rate = (b) => (b == null ? '--' : `${bytes(b)}/s`);
 const pct = (v) => (v == null ? '--' : `${v.toFixed(0)}%`);
-const temp = (v) => (v == null ? '--' : `${v.toFixed(0)} °C`);
+const temp = (v) => (v == null ? '--' : prefs.unit === 'f' ? `${(v * 1.8 + 32).toFixed(0)} °F` : `${v.toFixed(0)} °C`);
 const ratio = (a, b) => (a == null || !b ? null : (a / b) * 100);
 function duration(s) {
   if (s == null) return '--';
@@ -39,27 +41,16 @@ function duration(s) {
   return `${d ? `${d} 天 ` : ''}${h} 小時 ${m} 分`;
 }
 
-// ── icons (24×24 line art) ──
+// ── icons: Font Awesome Free (frontend/vendor/fontawesome) ──
 const ICON = {
-  dash: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
-  apps: '<path d="M12 3 4.5 20M12 3l7.5 17M7.5 14h9M3 20h3M18 20h3"/>',
-  storage: '<path d="M3 13.5 5.8 5.5h12.4l2.8 8v5H3zM3 13.5h18M6.5 16h1M9.5 16h1"/>',
-  net: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
-  sensors: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0zM12 11v6"/>',
-  collapse: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15M15.5 10l-2 2 2 2"/>',
-  moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
-  auto: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>',
-  laptop: '<rect x="5" y="4" width="14" height="10" rx="1"/><path d="M2.5 17.5h19l-1.5 1.5H4z"/>',
-  pc: '<rect x="3.5" y="5" width="17" height="11" rx="1"/><path d="M8 19.5h8M12 16v3.5"/>',
-  router: '<path d="M3.5 13.5h17v6h-17zM6 16.5h1M9 16.5h1M7 13.5V6M17 13.5V6M12 13.5V8"/>',
-  down: '<path d="M18 6 6 18M6 9v9h9M4 21h16"/>',
-  up: '<path d="M6 18 18 6M9 6h9v9M4 21h16"/>',
-  folder: '<path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2h8.5a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>',
-  file: '<path d="M6 3.5h8l4 4v13H6zM14 3.5v4h4"/>',
-  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4h-4"/>',
+  dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
+  sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
+  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up',
+  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right',
 };
-const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24">${ICON[name]}</svg>`;
+const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
+// os-release ID → Font Awesome brand, used when the distro ships no logo file
+const BRAND = { fedora: 'fedora', ubuntu: 'ubuntu', debian: 'debian', rhel: 'redhat', centos: 'centos', opensuse: 'suse', 'opensuse-leap': 'suse', 'opensuse-tumbleweed': 'suse', sles: 'suse' };
 
 // ── drawing (SVG attributes only: the CSP forbids inline style) ──
 function bar(segs, thick) {
@@ -119,8 +110,8 @@ function memParts(m) {
   const app = Math.max(m.total - m.free - m.cached, 0);
   return [['c-yellow', '應用程式', app], ['c-blue', '快取', m.cached], ['c-green', '可用', m.free]];
 }
-const primaryNet = (s) => s.net.find((n) => n.gateway) ?? s.net.find((n) => n.up) ?? s.net[0];
-const mainMounts = (s) => [...s.mounts].sort((a, b) => b.total - a.total);
+const primaryNet = (s) => s.net.find((n) => n.name === prefs.nic) ?? s.net.find((n) => n.gateway) ?? s.net.find((n) => n.up) ?? s.net[0];
+const diskName = (d) => (d.model || d.name).replace(/_/g, ' '); // NVMe models use _ for spaces
 const topProcs = (key, n) => [...procs].filter((p) => p[key] != null).sort((a, b) => b[key] - a[key]).slice(0, n);
 
 function record(s) {
@@ -134,9 +125,9 @@ function record(s) {
 
 // ── dashboard cards ──
 function summaryCard(s) {
-  const m = s.mem, mounts = mainMounts(s);
-  sumDisk = Math.min(sumDisk, Math.max(mounts.length - 1, 0));
-  const d = mounts[sumDisk];
+  const m = s.mem, disks = s.disks.filter((x) => x.total);
+  sumDisk = Math.min(sumDisk, Math.max(disks.length - 1, 0));
+  const d = disks[sumDisk];
   const parts = memParts(m);
   const gauge = ring([
     parts.slice(0, 2).map(([cls, , v]) => [ratio(v, m.total), cls]),
@@ -145,8 +136,8 @@ function summaryCard(s) {
   ], 140);
   const right = `${legend(parts.map(([cls, k, v]) => [cls, k, bytes(v)]))}
     <div class="sect"><h3>${esc(info?.cpuModel || '處理器')}</h3>${kv([['核心', info?.cpuCores ?? '--'], ['執行緒', info?.cpuThreads ?? '--']])}</div>
-    ${d ? `<div class="sect"><h3>${esc(d.mount)}<i class="spacer"></i>
-      <button class="arrow" data-disk="-1"${sumDisk ? '' : ' disabled'}>‹</button><button class="arrow" data-disk="1"${sumDisk < mounts.length - 1 ? '' : ' disabled'}>›</button></h3>
+    ${d ? `<div class="sect"><h3>${icon('storage')}<span class="ell" title="${esc(diskName(d))}">${esc(diskName(d))}</span><i class="spacer"></i>
+      <button class="arrow" data-disk="-1"${sumDisk ? '' : ' disabled'}>‹</button><button class="arrow" data-disk="1"${sumDisk < disks.length - 1 ? '' : ' disabled'}>›</button></h3>
       ${kv([['已使用', bytes(d.used)], ['總量', bytes(d.total)], ['可用', bytes(d.total - d.used)]])}</div>` : ''}`;
   return card('摘要', `<div class="summary"><div class="gauge">${gauge}<ul>
       <li><i class="dot c-yellow"></i>${bytes(m.total)}</li>
@@ -187,8 +178,10 @@ function netCard(s) {
 }
 
 function disksCard(s) {
-  const rows = mainMounts(s).map((m) => `<tr><td class="grow">${esc(m.mount)}</td><td class="barcell">${bar([[ratio(m.used, m.total), 'c-yellow']])}</td><td class="num">${bytes(m.used)} / ${bytes(m.total)}</td></tr>`).join('');
-  return card('磁碟', rows ? `<table>${rows}</table>` : '<div class="empty">沒有掛載的磁碟</div>');
+  const rows = s.disks.map((d) => `<tr title="${esc(d.name)}${d.mounts.length ? ' · ' + esc(d.mounts.join(', ')) : ''}"><td class="grow">${icon('storage')} ${esc(diskName(d))}</td>
+    <td class="barcell">${bar([[ratio(d.used, d.total), 'c-yellow']])}</td>
+    <td class="num">${d.total ? `${bytes(d.used)} / ${bytes(d.total)}` : `未掛載 · ${bytes(d.size)}`}</td></tr>`).join('');
+  return card('磁碟', rows ? `<table>${rows}</table>` : '<div class="empty">沒有實體磁碟</div>');
 }
 
 function gpuCard(s) {
@@ -196,6 +189,8 @@ function gpuCard(s) {
   return s.gpus.map((g, i) => card('顯示卡', `<div class="cpu-row">${ring([[[g.usage, 'c-blue']]], 90, pct(g.usage))}<div>
       <b>${esc(g.name)}</b><div class="muted">溫度 ${temp(g.temp)}</div>
       ${cap('顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`)}${bar([[ratio(g.memUsed, g.memTotal), 'c-yellow']], true)}</div></div>
+      <div class="codec"><div><span>編碼器</span><b>${pct(g.encoder)}</b>${bar([[g.encoder, 'c-green']])}</div>
+        <div><span>解碼器</span><b>${pct(g.decoder)}</b>${bar([[g.decoder, 'c-magenta']])}</div></div>
       ${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}`)).join('');
 }
 
@@ -229,6 +224,18 @@ const PAGES = {
 
   storage: ['儲存', () => storagePage()],
 
+  settings: ['設定', (s) => {
+    const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-pref="${key}" data-val="${esc(v)}" class="${String(prefs[key]) === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
+    const row = (t, sub, ctl) => `<div class="set-row"><p>${t}${sub ? `<span>${sub}</span>` : ''}</p>${ctl}</div>`;
+    return `<div class="stack">${card('一般', [
+      row('主題', '', seg('theme', [['system', '跟隨系統'], ['dark', '深色'], ['light', '淺色']])),
+      row('更新間隔', `曲線保留最近 ${N} 筆`, seg('interval', [[500, '0.5 秒'], [1000, '1 秒'], [2000, '2 秒'], [5000, '5 秒']])),
+      row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
+      row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+    ].join(''))}${card('關於', `<div class="about">ResourceWatch 1.0.0 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
+      圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
+  }],
+
   net: ['網路', (s) => {
     if (!s.net.length) return card('網路', '<div class="empty">沒有實體網路介面</div>');
     return `<div class="stack">${s.net.map((n) => {
@@ -259,7 +266,7 @@ const sizeClass = (b) => `s${SIZE_STEPS.filter((t) => b >= t).length}`;
 function storagePage() {
   const head = `<div class="du-head">${icon('folder', 'folder')}<div class="path"><b>${esc(du.root?.path ?? '尚未選擇資料夾')}</b>
       <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}` : ''}</span></div>
-      <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('folder')}選擇資料夾…</button>
+      <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
       <button class="btn" data-du="rescan"${du.busy || !du.root ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;
   const rows = du.levels.map((lv, i) => {
@@ -324,7 +331,8 @@ async function duClick(t) {
 
 // ── shell ──
 function hostBar() {
-  $('#host').innerHTML = `${icon('laptop', 'laptop')}
+  const logo = info?.logo ? `<img class="logo" src="${esc(info.logo)}" alt="">` : `<i class="logo fa-brands fa-${BRAND[info?.osId] ?? 'linux'}"></i>`;
+  $('#host').innerHTML = `${logo}
     <div class="hcol"><b>${esc(info?.hostname || '--')}</b><span>運作時間：<em>${duration(snap?.uptime)}</em></span></div>
     <div class="hcol"><b>${esc(info?.model || info?.os || '--')}</b><span>${esc(info?.os || '')}</span><span>${esc(info?.cpuModel || '')}</span></div>`;
 }
@@ -342,34 +350,40 @@ function render() {
 
 function go(p) {
   page = p;
-  document.querySelectorAll('#pages .nav-item').forEach((b) => b.classList.toggle('active', b.dataset.page === p));
+  document.querySelectorAll('.nav-item[data-page]').forEach((b) => b.classList.toggle('active', b.dataset.page === p));
   $('#content').scrollTop = 0;
   if (p === 'storage' && !du.started && info) { du.started = true; duScan(info.home); }
   pollProcs();
   render();
 }
 
-// theme: system → dark → light
-const media = matchMedia('(prefers-color-scheme: dark)');
-let theme = store('rw-theme') || 'system';
-function applyTheme() {
-  document.documentElement.dataset.theme = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
-  const [ic, label] = { system: ['auto', '跟隨系統'], dark: ['moon', '深色'], light: ['sun', '淺色'] }[theme];
-  $('#theme').innerHTML = `${icon(ic)}<span class="label">${label}</span>`;
+// prefs: frontend-only display settings in localStorage
+try { prefs = { ...DEFAULTS, ...JSON.parse(store('rw-prefs') || '{}') }; } catch { /* corrupt → defaults */ }
+let timer = null;
+function setPref(key, val) {
+  prefs[key] = key === 'interval' ? +val : val;
+  store('rw-prefs', JSON.stringify(prefs));
+  applyPrefs();
+  render();
 }
-media.addEventListener('change', applyTheme);
-$('#theme').addEventListener('click', () => {
-  theme = { system: 'dark', dark: 'light', light: 'system' }[theme];
-  store('rw-theme', theme);
-  applyTheme();
-});
+const media = matchMedia('(prefers-color-scheme: dark)');
+function applyPrefs() {
+  document.documentElement.dataset.theme = prefs.theme === 'system' ? (media.matches ? 'dark' : 'light') : prefs.theme;
+  const [ic, label] = { system: ['auto', '跟隨系統'], dark: ['moon', '深色'], light: ['sun', '淺色'] }[prefs.theme] ?? ['auto', ''];
+  $('#theme').innerHTML = icon(ic);
+  $('#theme').title = `主題：${label}`;
+  clearInterval(timer);
+  timer = setInterval(tick, [500, 1000, 2000, 5000].includes(prefs.interval) ? prefs.interval : 1000);
+}
+media.addEventListener('change', applyPrefs);
+$('#theme').addEventListener('click', () => setPref('theme', { system: 'dark', dark: 'light', light: 'system' }[prefs.theme] ?? 'system'));
+document.querySelector('.nav-foot .nav-item').addEventListener('click', () => go('settings'));
 
-$('#collapse').innerHTML = icon('collapse');
 $('#nav').classList.toggle('collapsed', store('rw-collapsed') === '1');
 $('#collapse').addEventListener('click', () => store('rw-collapsed', $('#nav').classList.toggle('collapsed') ? '1' : '0'));
 
-$('#pages').innerHTML = Object.entries(PAGES).map(([k, [t]]) =>
-  `<button class="nav-item${k === page ? ' active' : ''}" data-page="${k}" title="${t}">${icon({ dash: 'dash', apps: 'apps', storage: 'storage', net: 'net', sensors: 'sensors' }[k])}<span class="label">${t}</span></button>`).join('');
+$('#pages').innerHTML = ['dash', 'apps', 'storage', 'net', 'sensors'].map((k) =>
+  `<button class="nav-item${k === page ? ' active' : ''}" data-page="${k}" title="${PAGES[k][0]}">${icon(k)}<span class="label">${PAGES[k][0]}</span></button>`).join('');
 $('#pages').addEventListener('click', (e) => { const b = e.target.closest('[data-page]'); if (b) go(b.dataset.page); });
 
 $('#content').addEventListener('click', (e) => {
@@ -377,6 +391,8 @@ $('#content').addEventListener('click', (e) => {
   if (page === 'storage') return duClick(t);
   const link = t.closest('[data-goto]');
   if (link) return go(link.dataset.goto);
+  const pref = t.closest('[data-pref]');
+  if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');
   if (flip) { sumDisk += +flip.dataset.disk; return render(); }
   const th = t.closest('th[data-sort]');
@@ -407,9 +423,8 @@ async function pollProcs() {
   }
 }
 
-applyTheme();
+applyPrefs();
 invoke('system_info').then((i) => { info = i; hostBar(); }).catch(console.error);
 tick();
 pollProcs();
-setInterval(tick, 1000);
 setInterval(pollProcs, 2000);

@@ -14,6 +14,9 @@ pub struct Gpu {
     mem_used: Option<u64>,
     mem_total: Option<u64>,
     temp: Option<f64>,
+    /// NVENC / NVDEC utilization (%); `null` for non-NVIDIA GPUs.
+    encoder: Option<f64>,
+    decoder: Option<f64>,
 }
 
 type Handle = *mut c_void;
@@ -40,6 +43,9 @@ struct Nvml {
     util: unsafe extern "C" fn(Handle, *mut Util) -> c_int,
     mem: unsafe extern "C" fn(Handle, *mut Memory) -> c_int,
     temp: unsafe extern "C" fn(Handle, c_int, *mut c_uint) -> c_int,
+    // (handle, utilization %, sampling period µs); optional so an old driver still loads.
+    encoder: Option<unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int>,
+    decoder: Option<unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int>,
     // Keeps the function pointers above valid.
     _lib: Library,
 }
@@ -60,6 +66,14 @@ impl Nvml {
                 util: *lib.get(b"nvmlDeviceGetUtilizationRates\0").ok()?,
                 mem: *lib.get(b"nvmlDeviceGetMemoryInfo\0").ok()?,
                 temp: *lib.get(b"nvmlDeviceGetTemperature\0").ok()?,
+                encoder: lib
+                    .get(b"nvmlDeviceGetEncoderUtilization\0")
+                    .ok()
+                    .map(|f| *f),
+                decoder: lib
+                    .get(b"nvmlDeviceGetDecoderUtilization\0")
+                    .ok()
+                    .map(|f| *f),
                 _lib: lib,
             })
         }
@@ -86,12 +100,20 @@ impl Nvml {
                     };
                     let (mut u, mut m, mut t) = (Util::default(), Memory::default(), 0);
                     let mem_ok = (self.mem)(h, &mut m) == 0;
+                    let codec = |f: Option<
+                        unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int,
+                    >| {
+                        let (mut u, mut period) = (0, 0);
+                        (f?(h, &mut u, &mut period) == 0).then_some(u as f64)
+                    };
                     Some(Gpu {
                         name,
                         usage: ((self.util)(h, &mut u) == 0).then_some(u.gpu as f64),
                         mem_used: mem_ok.then_some(m.used),
                         mem_total: mem_ok.then_some(m.total),
                         temp: ((self.temp)(h, 0, &mut t) == 0).then_some(t as f64),
+                        encoder: codec(self.encoder),
+                        decoder: codec(self.decoder),
                     })
                 })
                 .collect()
@@ -148,6 +170,8 @@ impl Gpus {
                 mem_used: num(dev.join("mem_info_vram_used")).map(|v| v as u64),
                 mem_total: num(dev.join("mem_info_vram_total")).map(|v| v as u64),
                 temp,
+                encoder: None,
+                decoder: None,
             }
         }));
         out
