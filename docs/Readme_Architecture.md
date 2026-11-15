@@ -41,24 +41,27 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   SUMMARY（第一張）：CPU／GPU／RAM 三個環形圖（`data-color` 為 `sum-cpu`／`sum-gpu`／`sum-ram`，環內為溫度＋時脈、溫度＋GPU 時脈 `gpuClock`、使用率＋總量）；
   Memory 四段堆疊條 Used／Cached／Free／Other（`ramApp`、`ramCache`、`ramFree`、`ramOther`）；Storage：‹ › 切換硬碟，名稱為「大寫裝置名 · 型號」，Total／Used／Free。
   NETWORK（第二張）：標題列 NIC 選單（`.title-pill`，`data-all-label="all"`）；本機 IP＋MAC 與閘道 IP＋MAC（`netGatewayMac`），圖示為內嵌的 Font Awesome Free SVG（desktop、network-wired，翻頁鈕為 caret-right／水平翻轉，CC BY 4.0 註記保留在標記中）；
-  下載／上傳雙線圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單（與 NIC 相同的 `.title-pill`，選項只顯示 `GPU0`、`GPU1`…，完整名稱顯示在卡片內）），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
+  上傳（上）／下載（下）鏡像長條圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取（上）／寫入（下）鏡像長條圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單（與 NIC 相同的 `.title-pill`，選項只顯示 `GPU0`、`GPU1`…，完整名稱顯示在卡片內）），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
   電池卡片（`#batteryCard`，`battery` 為 `null` 時隱藏）：百分比、狀態、剩餘／充滿時間、進度條、健康度、循環次數與容量。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`，相鄰的同一晶片感測器歸在晶片名稱標題 `.sensor-group` 下，列名只顯示標籤；卡片則以「晶片 · 標籤」顯示）；兩處都有 °C／°F 切換（`data-temp-unit`）。
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
-  `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
-- `styles.css`：色彩 token（`:root` 為深色：偏冷的深中性底 `--bg` #111318、卡片 `--card` #1a1d23 比底色亮一階、淡框線與格線；`:root[data-theme="light"]` 覆寫淺色：偏冷灰白底＋白卡片；圖表面積填色不透明度為 `--area-opacity`（深色 .22、淺色 .16，避免填色疊在底色上顯得混濁）；側欄為近黑的中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色；`--net-down` 藍、`--net-up` 綠，記憶體 `--mem-free` 綠、`--mem-other` 灰，SUMMARY 環形圖 `--sum-cpu` 青、`--sum-gpu` 紫、`--sum-ram` 藍）。
+  `data-bar`（進度條）、`data-chart`（歷史長條圖，`<g>` 內含一個 `.area` path）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
+- `styles.css`：色彩 token（`:root` 為深色：偏冷的深中性底 `--bg` #111318、卡片 `--card` #1a1d23 比底色亮一階、淡框線；`:root[data-theme="light"]` 覆寫淺色：偏冷灰白底＋白卡片；歷史圖為實心長條、無格線與圖表底色；側欄為近黑的中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色；`--net-down` 藍、`--net-up` 綠，記憶體 `--mem-free` 綠、`--mem-other` 灰，SUMMARY 環形圖 `--sum-cpu` 青、`--sum-gpu` 紫、`--sum-ram` 藍）。
   環形圖、長條、核心長條的過渡動畫（0.4 s）只在 `<html data-motion="on">` 時套用：這些屬性（stroke-dasharray、width、height）無法合成，每幀都要重排／重繪，更新間隔 500 ms 時動畫會一直跑（實測閒置 WebKit 約 70%、主程序約 50% 單核，關閉後皆約 5%）。
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
-  進度條、折線圖與硬碟列樣式。
+  進度條、長條圖與硬碟列樣式。
 - `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `column-count: 3` 排成由上而下的多欄卡片，欄數由 `app.js` `fitColumns()` 依 GRAPHICS 卡片文字是否被截斷調整（不使用像素門檻；儀表板卡片內距、標題、圖例、SUMMARY／NETWORK 字級已縮小，預設 1220 px 視窗可排三欄），卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
   側欄收合：`.app-shell.is-collapsed` 只剩圖示（58 px），由使用者按鈕或寬度 ≤760 px 觸發（≤760 px 時隱藏收合按鈕與頂部 GPU 資訊）。
   響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤420 px 摘要卡片改為上下排列。
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
+  歷史圖（`chartSeries` → `barPath`）：每個取樣一根實心長條，缺值留空，0 保留短基線；SVG 的 viewBox 寬度設為圖表實際像素寬（只拉伸縱向），長條寬度為真正的像素值，最新的在右。
+  儀表板：固定 2 px 長條、1 px 間隔，畫得下的最近取樣；其他頁面：3 px 長條平均分布在 `historyPoints` 格。成對序列（網路上傳／下載、磁碟讀／寫）為以中線鏡像的上／下兩半，共用縱軸；
+  隱藏頁面不繪製（需要實際寬度），切到監控頁時立即重畫。
   `formatBytes`（與後端 `format_bytes` 同規則）、`formatMbps`（B/s × 8 ÷ 10⁶，< 100 兩位小數）；SUMMARY 的 Free＝已用 ÷ 使用率 − 已用（`diskUsage` 為 used/total pair）。
   儀表板欄數（`fitColumns()`，ResizeObserver 與每次 render 後執行）：從 3 欄開始，GRAPHICS 卡片的 `.device-name`、`.bar-label span`、`.kv dd` 任一出現截斷（`scrollWidth > clientWidth`）就減一欄並記下當時寬度；
   儀表板比該欄數上次截斷時更寬才試著加回一欄（截斷就再退回），GPU 名稱改變時清除記錄；以 `style.columnCount` 設定。

@@ -16,9 +16,6 @@
   --text: #e8eaef;
   --muted: #8b919c;
   --track: #2c3038;
-  --grid: rgba(255, 255, 255, .06);
-  --chart-bg: #15181d;
-  --area-opacity: .22;
   --focus: #6ea8ff;
   --cpu: #d66be8;
   --gpu: #3d8bfd;
@@ -51,9 +48,6 @@
   --text: #161a22;
   --muted: #667085;
   --track: #e6e9ef;
-  --grid: rgba(15, 23, 42, .06);
-  --chart-bg: #f8fafc;
-  --area-opacity: .16;
   --focus: #2563eb;
   --cpu: #b544c9;
   --gpu: #2563eb;
@@ -277,20 +271,13 @@ html, body {
   font-size: 11px;
 }
 
-.plot {
-  height: 70px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--track);
-  background: var(--chart-bg);
-  border-radius: 4px 4px 0 0;
-}
+/* Bar charts (app.js barPath): solid bars, no grid or background. */
+.plot { height: 70px; overflow: hidden; }
 .plot--short { height: 48px; }
 .plot--tall { height: 200px; }
 .plot svg { display: block; width: 100%; height: 100%; }
-.plot .area { fill: var(--c); opacity: var(--area-opacity); }
-.plot .line { fill: none; stroke: var(--c); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.plot .area { fill: var(--c); }
 .plot .is-missing { display: none; }
-.grid-lines path { fill: none; stroke: var(--grid); stroke-width: .6; vector-effect: non-scaling-stroke; }
 
 /* ---------------------------------------------------------------- per-core bars */
 .cpu-chart { display: grid; grid-template-columns: minmax(48px, 30%) minmax(0, 1fr); gap: 10px; }
@@ -300,9 +287,6 @@ html, body {
   gap: 2px;
   height: 70px;
   padding: 0 2px;
-  border-bottom: 1px solid var(--track);
-  background: var(--chart-bg);
-  border-radius: 4px 4px 0 0;
 }
 .core-bars > span { flex: 1; min-width: 2px; height: 0; border-radius: 2px 2px 0 0; background: var(--cpu); }
 /* Transitions are non-composited (relayout/repaint every frame); at short intervals they would never stop. app.js sets data-motion. */

@@ -12,7 +12,6 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const SVG_NS = "http://www.w3.org/2000/svg";
   const tauri = window.__TAURI__;
   const invoke = tauri?.core?.invoke;
   const listen = tauri?.event?.listen;
@@ -111,8 +110,8 @@
       else button.removeAttribute("aria-current");
     }
     setText("pageTitle", PAGES[page].title);
-    // Snapshots are not rendered while no monitoring page is visible; catch up now.
-    if (isLive() && pendingRender) render();
+    // Hidden pages are not rendered (charts need their on-screen width); draw the shown page now.
+    if (isLive() && state) render();
     watchProcesses();
   }
   for (const [key, def] of Object.entries(PAGES)) {
@@ -191,45 +190,53 @@
   }
 
   // ---------------------------------------------------------------- charts
-  for (const g of all(".plot .grid-lines")) {
-    let d = "";
-    for (let y = 0; y <= 100; y += 25) d += `M0 ${y} H300 `;
-    for (let x = 0; x <= 300; x += 50) d += `M${x} 0 V100 `;
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d);
-    g.replaceChildren(path);
-  }
-
   const chartNodes = Object.fromEntries(Object.entries(groupBy("chart")).map(([key, roots]) => [
-    key, roots.map((root) => ({ root, line: root.querySelector(".line"), area: root.querySelector(".area") })),
+    key, roots.map((root) => ({ root, bars: root.querySelector(".area") })),
   ]));
 
-  // Missing samples (null) break the line instead of being drawn as 0.
-  function chartPaths(values, max) {
-    if (!Array.isArray(values)) return null;
-    const last = Math.max(1, values.length - 1);
-    const upper = max > 0 ? max : 1;
-    const xs = [];
-    let line = "";
-    for (let i = 0; i < values.length; i++) {
-      const value = values[i];
-      if (!Number.isFinite(value)) continue;
-      const x = (i / last * 300).toFixed(2);
-      const y = (100 - Math.min(1, Math.max(0, value) / upper) * 100).toFixed(2);
-      line += `${line ? " L" : "M"}${x} ${y}`;
-      xs.push(x);
+  // One bar per sample (missing samples leave a gap; 0 keeps a short stub so the baseline reads
+  // as a row of dots). The x axis is in real pixels (viewBox width = chart width, only y is
+  // stretched). Dashboard: fixed 2 px bars with 1 px gaps, newest at the right, as many recent
+  // samples as fit. Other pages: 3 px bars spread over historyPoints slots across the width.
+  // dir "full": from the bottom over the whole height; "up"/"down": mirrored halves around the
+  // middle for paired series (upload/read up, download/write down).
+  const MIN_BAR = 2; // viewBox units (of 100)
+  function barPath(values, max, dir, widthPx, fixed) {
+    if (!Array.isArray(values) || !values.some(Number.isFinite)) return null;
+    let slot, width, shown;
+    if (fixed) {
+      slot = 3;
+      width = 2;
+      shown = values.slice(-Math.floor(widthPx / slot));
+    } else {
+      // Fixed slot count (historyPoints) so spacing does not change while history fills up.
+      const slots = Math.max(values.length, Number(currentSettings.historyPoints) || 0, 1);
+      slot = widthPx / slots;
+      width = Math.min(3, slot);
+      shown = values;
     }
-    if (!xs.length) return null;
-    return { line, area: `M${xs[0]} 100 ${line.replace(/^M/, "L")} L${xs[xs.length - 1]} 100 Z` };
+    const left = widthPx - shown.length * slot; // right-aligned
+    const base = dir === "full" ? 100 : 50, span = dir === "full" ? 100 : 50, sign = dir === "down" ? 1 : -1;
+    const upper = max > 0 ? max : 1;
+    let d = "";
+    shown.forEach((value, i) => {
+      if (!Number.isFinite(value)) return;
+      const height = Math.max(MIN_BAR, Math.min(1, Math.max(0, value) / upper) * span);
+      d += `M${(left + i * slot + (slot - width) / 2).toFixed(2)} ${base}h${width}v${(sign * height).toFixed(2)}h${-width}Z`;
+    });
+    return d;
   }
 
-  function chartSeries(name, values, max = 100) {
-    const paths = chartPaths(values, max);
+  function chartSeries(name, values, max = 100, dir = "full") {
     for (const chart of chartNodes[name] || []) {
-      chart.root.classList.toggle("is-missing", !paths);
-      const line = paths ? paths.line : "", area = paths ? paths.area : "";
-      if ((chart.line.getAttribute("d") || "") !== line) chart.line.setAttribute("d", line);
-      if ((chart.area.getAttribute("d") || "") !== area) chart.area.setAttribute("d", area);
+      const svg = chart.root.ownerSVGElement;
+      const widthPx = Math.round(svg.clientWidth);
+      if (!widthPx) continue; // hidden page: drawn when it is shown
+      const viewBox = `0 0 ${widthPx} 100`;
+      if (svg.getAttribute("viewBox") !== viewBox) svg.setAttribute("viewBox", viewBox);
+      const d = barPath(values, max, dir, widthPx, dashboard.contains(svg));
+      chart.root.classList.toggle("is-missing", !d);
+      if ((chart.bars.getAttribute("d") || "") !== (d || "")) chart.bars.setAttribute("d", d || "");
     }
   }
 
@@ -545,8 +552,8 @@
     const pair = (a, b, maxKey) => {
       let max = 1;
       for (const v of [...(h[a] || []), ...(h[b] || [])]) if (Number.isFinite(v) && v > max) max = v;
-      chartSeries(a, h[a], max * 1.12);
-      chartSeries(b, h[b], max * 1.12);
+      chartSeries(a, h[a], max * 1.12, "up");
+      chartSeries(b, h[b], max * 1.12, "down");
       setText(maxKey, formatRate(max));
     };
     pair("netUp", "netDown", "netMax");
