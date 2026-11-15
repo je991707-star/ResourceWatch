@@ -53,7 +53,7 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
   進度條、折線圖與硬碟列樣式。
-- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 300px` 排成由上而下的多欄卡片，卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
+- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 240px` 排成由上而下的多欄卡片（每欄最小 240 px：預設 1220 px 視窗扣掉側欄與外距約剩 950 px，可排三欄；儀表板卡片內距、標題、圖例、SUMMARY／NETWORK 字級已縮小以容納約 296 px 欄寬），卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
   側欄收合：`.app-shell.is-collapsed` 只剩圖示（58 px），由使用者按鈕或寬度 ≤760 px 觸發（≤760 px 時隱藏收合按鈕與頂部 GPU 資訊）。
   響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤420 px 摘要卡片改為上下排列。
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。

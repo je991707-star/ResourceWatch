@@ -227,14 +227,14 @@ html, body {
 .gauges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--card-border); }
 .gauge-tile { position: relative; aspect-ratio: 1; max-width: 110px; width: 100%; margin: 0 auto; }
 .gauge-text { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.25; }
-.gauge-text span { font-size: 13px; }
-.gauge-text strong { font-size: 17px; font-weight: 500; }
-.gauge-text small { color: var(--muted); font-size: 11px; }
+.gauge-text span { font-size: 11px; }
+.gauge-text strong { font-size: 14px; font-weight: 500; }
+.gauge-text small { color: var(--muted); font-size: 10px; }
 .card .panel-sub { margin: 12px 0 8px; font-size: 13px; font-weight: 700; }
-.mem-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 0; padding: 0 0 12px; border-bottom: 1px solid var(--card-border); list-style: none; font-size: 12px; }
+.mem-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 0; padding: 0 0 12px; border-bottom: 1px solid var(--card-border); list-style: none; font-size: 11px; }
 .mem-legend li { display: grid; justify-items: center; gap: 2px; min-width: 0; }
-.mem-legend span { display: flex; align-items: center; gap: 6px; }
-.mem-legend strong { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.mem-legend span { display: flex; align-items: center; gap: 4px; }
+.mem-legend strong { color: var(--muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
 .storage-head { display: flex; align-items: center; justify-content: space-between; }
 .storage-name { margin: 0 0 6px; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .pager svg { width: 18px; height: 18px; fill: currentColor; }
@@ -244,11 +244,11 @@ html, body {
 .nic-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--track); color: var(--text); font-size: 11px; font-weight: 600; letter-spacing: 0; }
 .nic-pill .inline-select { min-width: 0; max-width: 140px; padding-top: 0; padding-bottom: 0; border: 0; background-color: transparent; }
 .net-endpoints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--card-border); }
-.net-endpoint { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.net-endpoint { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .net-endpoint > div { display: grid; min-width: 0; line-height: 1.3; }
-.net-endpoint strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.net-endpoint small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.net-icon { flex: none; width: 24px; height: 24px; fill: currentColor; }
+.net-endpoint strong { overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.net-endpoint small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.net-icon { flex: none; width: 20px; height: 20px; fill: currentColor; }
 
 .graphics { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; align-items: center; }
 .gauge { position: relative; width: 96px; height: 96px; }
