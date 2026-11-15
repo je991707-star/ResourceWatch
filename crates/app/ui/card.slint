@@ -22,13 +22,13 @@ export component GlassCard inherits GlassPanel {
     callback pill-selected(int);
     callback segment-selected(int);
 
-    radius: 14px;
+    radius: 20px;
     fill: Theme.card-glass;
-    edge-top: Theme.edge-top;
-    edge-bottom: Theme.edge-bottom;
-    drop-shadow-blur: 24px;
-    drop-shadow-offset-y: 6px;
-    drop-shadow-color: Theme.shadow;
+    edge-top: Theme.card-border;
+    edge-bottom: Theme.card-border;
+    drop-shadow-blur: 32px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: Theme.card-shadow;
 
     VerticalLayout {
         padding-left: 16px;

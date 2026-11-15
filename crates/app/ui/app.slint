@@ -10,8 +10,9 @@ import { WindowButtons, HostBar } from "titlebar.slint";
 import { Gallery } from "gallery.slint";
 import { Dashboard, ChartCanvas } from "dashboard.slint";
 import { Dash } from "data.slint";
+import { SettingsPage, SettingsUi } from "settings.slint";
 
-export { Theme, Gallery, Dash, ChartCanvas }
+export { Theme, Gallery, Dash, ChartCanvas, SettingsUi }
 
 export component App inherits Window {
     // Host summary, set by Rust from each snapshot.
@@ -124,7 +125,10 @@ export component App inherits Window {
                     vertical-stretch: 1;
                     goto(p) => { root.page = p; }
                 }
-                if root.page != 0: GlassPanel {
+                if root.page == pages.length: SettingsPage {
+                    vertical-stretch: 1;
+                }
+                if root.page != 0 && root.page != pages.length: GlassPanel {
                     vertical-stretch: 1;
                     radius: 14px;
                     fill: Theme.card-glass;

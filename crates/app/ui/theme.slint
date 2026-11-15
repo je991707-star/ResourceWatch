@@ -15,7 +15,11 @@ export global Theme {
     out property <color> window-glass: glass ? (dark ? #1c1c1c59 : #ffffff59) : (dark ? #161616 : #f0f0f0);
     // Layer 2: floating sidebar; layer 3: content cards (one step brighter).
     out property <color> sidebar-glass: dark ? #ffffff12 : #ffffff4d;
-    out property <color> card-glass: dark ? #ffffff1a : #ffffff80;
+    out property <color> card-glass: dark ? #ffffff26 : #ffffff73;
+    // Cards: one plain 1px border (white 30 % / faint dark in light mode) and a
+    // soft 0 8px 32px shadow, after the reference glass card, kept minimal.
+    out property <color> card-border: dark ? #ffffff40 : #00000017;
+    out property <color> card-shadow: dark ? #0000001a : #0000000f;
     // 1px inner highlight: brighter top edge, darker bottom edge.
     out property <color> edge-top: dark ? #ffffff4d : #ffffffcc;
     out property <color> edge-bottom: dark ? #ffffff1f : #00000014;
