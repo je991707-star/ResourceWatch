@@ -96,8 +96,8 @@
 .app-page:not(.dashboard):not(.app-settings-page) { display: grid; gap: 14px; max-width: 900px; }
 
 /* Masonry-like dashboard: cards flow top-to-bottom through as many columns as fit. */
-/* 240 px minimum: three columns fit the default 1220 px window (main ≈ 950 px after padding). */
-.dashboard { columns: 3 240px; column-gap: 30px; padding: 30px; }
+/* Column count: 3 by default; app.js lowers it when text in the GRAPHICS card gets cut off. */
+.dashboard { column-count: 3; column-gap: 30px; padding: 30px; }
 .dashboard > .card { padding: 12px 14px 14px; }
 .dashboard > .card > h2 { text-transform: uppercase; font-size: 14px; }
 .dashboard .legend--row { gap: 4px 12px; font-size: 11px; }

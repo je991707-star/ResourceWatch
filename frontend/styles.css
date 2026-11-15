@@ -145,7 +145,6 @@ html, body {
   font-size: 12px;
 }
 .inline-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.card-picker { margin-left: auto; font-weight: 500; letter-spacing: 0; }
 .battery-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 12px; }
 .battery-badge { padding: 1px 8px; border: 2px solid var(--text); border-radius: 6px; font-size: 14px; }
 .battery-status { margin-left: auto; color: var(--muted); }
@@ -244,8 +243,9 @@ html, body {
 .pager svg.flip { transform: scaleX(-1); }
 
 /* NETWORK: NIC picker, host / gateway endpoints */
-.nic-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--track); color: var(--text); font-size: 11px; font-weight: 600; letter-spacing: 0; }
-.nic-pill .inline-select { min-width: 0; max-width: 140px; padding-top: 0; padding-bottom: 0; border: 0; background-color: transparent; }
+/* Picker in a card title (NIC, GPU) */
+.title-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--track); color: var(--text); font-size: 11px; font-weight: 600; letter-spacing: 0; }
+.title-pill .inline-select { min-width: 0; max-width: 140px; padding-top: 0; padding-bottom: 0; border: 0; background-color: transparent; }
 .net-endpoints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--card-border); }
 .net-endpoint { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .net-endpoint > div { display: grid; min-width: 0; line-height: 1.3; }

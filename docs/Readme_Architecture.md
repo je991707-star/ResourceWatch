@@ -40,9 +40,9 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   儀表板卡片文字為英文、標題大寫（其餘頁面仍為中文；與詳細頁共用、由 JS 產生的文字如硬碟列「未掛載」仍為中文）。
   SUMMARY（第一張）：CPU／GPU／RAM 三個環形圖（`data-color` 為 `sum-cpu`／`sum-gpu`／`sum-ram`，環內為溫度＋時脈、溫度＋GPU 時脈 `gpuClock`、使用率＋總量）；
   Memory 四段堆疊條 Used／Cached／Free／Other（`ramApp`、`ramCache`、`ramFree`、`ramOther`）；Storage：‹ › 切換硬碟，名稱為「大寫裝置名 · 型號」，Total／Used／Free。
-  NETWORK（第二張）：標題列 NIC 選單（`data-all-label="all"`）；本機 IP＋MAC 與閘道 IP＋MAC（`netGatewayMac`），圖示為內嵌的 Font Awesome Free SVG（desktop、network-wired，翻頁鈕為 caret-right／水平翻轉，CC BY 4.0 註記保留在標記中）；
+  NETWORK（第二張）：標題列 NIC 選單（`.title-pill`，`data-all-label="all"`）；本機 IP＋MAC 與閘道 IP＋MAC（`netGatewayMac`），圖示為內嵌的 Font Awesome Free SVG（desktop、network-wired，翻頁鈕為 caret-right／水平翻轉，CC BY 4.0 註記保留在標記中）；
   下載／上傳雙線圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單（與 NIC 相同的 `.title-pill`，選項只顯示 `GPU0`、`GPU1`…，完整名稱顯示在卡片內）），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
   電池卡片（`#batteryCard`，`battery` 為 `null` 時隱藏）：百分比、狀態、剩餘／充滿時間、進度條、健康度、循環次數與容量。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`，相鄰的同一晶片感測器歸在晶片名稱標題 `.sensor-group` 下，列名只顯示標籤；卡片則以「晶片 · 標籤」顯示）；兩處都有 °C／°F 切換（`data-temp-unit`）。
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
@@ -53,13 +53,15 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
   進度條、折線圖與硬碟列樣式。
-- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 240px` 排成由上而下的多欄卡片（每欄最小 240 px：預設 1220 px 視窗扣掉側欄與外距約剩 950 px，可排三欄；儀表板卡片內距、標題、圖例、SUMMARY／NETWORK 字級已縮小以容納約 296 px 欄寬），卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
+- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `column-count: 3` 排成由上而下的多欄卡片，欄數由 `app.js` `fitColumns()` 依 GRAPHICS 卡片文字是否被截斷調整（不使用像素門檻；儀表板卡片內距、標題、圖例、SUMMARY／NETWORK 字級已縮小，預設 1220 px 視窗可排三欄），卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
   側欄收合：`.app-shell.is-collapsed` 只剩圖示（58 px），由使用者按鈕或寬度 ≤760 px 觸發（≤760 px 時隱藏收合按鈕與頂部 GPU 資訊）。
   響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤420 px 摘要卡片改為上下排列。
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
   `formatBytes`（與後端 `format_bytes` 同規則）、`formatMbps`（B/s × 8 ÷ 10⁶，< 100 兩位小數）；SUMMARY 的 Free＝已用 ÷ 使用率 − 已用（`diskUsage` 為 used/total pair）。
+  儀表板欄數（`fitColumns()`，ResizeObserver 與每次 render 後執行）：從 3 欄開始，GRAPHICS 卡片的 `.device-name`、`.bar-label span`、`.kv dd` 任一出現截斷（`scrollWidth > clientWidth`）就減一欄並記下當時寬度；
+  儀表板比該欄數上次截斷時更寬才試著加回一欄（截斷就再退回），GPU 名稱改變時清除記錄；以 `style.columnCount` 設定。
   `fillSettingSelect` 對有 `data-all-label` 的選單把 `all` 選項改用該標籤。電池卡片狀態與時間為英文（後端 `format_duration` 輸出 `2 h 17 min`）。
   `displaySettings()` 依 `updateInterval >= 1000` 設 `<html data-motion="on|off">`（未收到設定前為無動畫）。
   程序清單：只在儀表板或應用程式頁顯示且視窗可見（`document.hidden` 為 false）時輪詢 `get_processes`，第一次後 0.5 秒補一次（第一次沒有 CPU 比例），之後每 2 秒；

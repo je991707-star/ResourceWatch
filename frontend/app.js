@@ -375,6 +375,36 @@
     });
   }
 
+  // Dashboard column count follows the GRAPHICS card: one column fewer as soon as any of its
+  // text is cut off (ellipsis), one more again once the dashboard is wider than where that
+  // count last cut text off. No pixel thresholds; recorded widths are reset when the GPU changes.
+  const dashboard = $("overviewPage");
+  const gpuCard = $("graphicsTitle").closest(".card");
+  const gpuNameEl = gpuCard.querySelector('[data-bind="gpuName"]');
+  const gpuTextCut = () => [...gpuCard.querySelectorAll(".device-name, .bar-label span, .kv dd")]
+    .some((el) => el.scrollWidth > el.clientWidth);
+  let columns = 3;
+  let cutAt = {}; // cutAt[n]: widest dashboard width at which n columns cut the GPU text
+  let fittedGpuName = null;
+  function setColumns(n) {
+    columns = n;
+    dashboard.style.columnCount = String(n);
+  }
+  function fitColumns() {
+    const width = dashboard.clientWidth;
+    if (!width) return; // dashboard hidden
+    if (gpuNameEl.textContent !== fittedGpuName) {
+      fittedGpuName = gpuNameEl.textContent;
+      cutAt = {};
+    }
+    while (columns < 3 && width > (cutAt[columns + 1] ?? 0)) setColumns(columns + 1);
+    while (columns > 1 && gpuTextCut()) {
+      cutAt[columns] = Math.max(cutAt[columns] ?? 0, width);
+      setColumns(columns - 1);
+    }
+  }
+  new ResizeObserver(fitColumns).observe(dashboard);
+
   // ---------------------------------------------------------------- render
   let state = null;
   let pendingRender = false;
@@ -419,7 +449,7 @@
       uptimeAnchorSeconds = null;
       setText("uptime", s.uptimeText);
     }
-    fillSettingSelect("gpuIndex", (s.gpus || []).map((g) => [String(g.index), `GPU${g.index} · ${labeledGpuName(g.name, g.vendor)}`]));
+    fillSettingSelect("gpuIndex", (s.gpus || []).map((g) => [String(g.index), `GPU${g.index}`]));
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
     setText("gpuTemp", tempText(s.gpuTempText));
@@ -524,6 +554,7 @@
     const last = (series) => (Array.isArray(series) && series.length ? series[series.length - 1] : null);
     setText("diskReadNow", formatRate(last(h.diskRead)));
     setText("diskWriteNow", formatRate(last(h.diskWrite)));
+    fitColumns();
   }
 
   function setLiveStatus(label, kind) {
