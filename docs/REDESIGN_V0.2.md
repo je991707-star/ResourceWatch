@@ -175,13 +175,16 @@
 
 注意：RSS 已接近 60 MB 門檻，Phase 4 儀表板完成後須重測。
 
-## Phase 3：元件庫 `[ ]`
-- [ ] GlassCard（標題列可帶膠囊選單或分段控制）
-- [ ] RingGauge（環內可放三行文字）
-- [ ] BarChart：單向與上下鏡像，固定像素長條
-- [ ] StackBar、Legend（置中直排）、KV 數值格
-- [ ] Pill 下拉選單（NIC、GPU）、SegmentedControl（°C／°F、主題）
-- [ ] 可排序表格（程序清單）
+## Phase 3：元件庫 `[x]`
+元件在 `crates/app/ui/{card,gauges,controls,table}.slint`，圖表幾何與排序在 `crates/app/src/{charts,processes}.rs`（有單元測試）；`resourcewatch-slint --gallery` 開啟元件展示頁，`--snapshot out.png --gallery [--theme light]` 輸出截圖。
+- [x] GlassCard（標題列可帶膠囊選單或分段控制）
+- [x] RingGauge（環內可放三行文字）：圓頭弧線，0% 隱藏弧線、缺值只畫軌道。
+- [x] BarChart：單向與上下鏡像，固定像素長條。儀表板 2 px＋1 px 靠右、詳細頁依 `historyPoints` 平均分布；缺值留空、0 值短樁；鏡像共用縱軸（`pair_max`）；尺寸改變時立即重算。
+- [x] StackBar、Legend（置中直排）、KV 數值格。StackBar 的圓角由首尾段自設（軟體渲染器 `clip` 不裁圓角）。
+- [x] Pill 下拉選單（NIC、GPU）、SegmentedControl（°C／°F、主題）
+- [x] 可排序表格（程序清單）：點欄位標題排序／切換升降冪，CPU 缺值排最後；`ListView` 只建立可見列。
+
+驗證：深色與淺色展示頁截圖確認各元件；程序表為實際程序清單。下拉選單彈出、分段點選、表格排序與捲動需實際操作確認（截圖模式不含互動）。展示頁閒置 CPU 0%、RSS 43 MB。
 
 ## Phase 4：儀表板 `[ ]`
 - [ ] 卡片：SUMMARY、Network、Sensors、Graphics、Processor、Disk I/O、Memory、Disks、Battery。

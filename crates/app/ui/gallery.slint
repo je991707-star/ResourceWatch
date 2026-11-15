@@ -1,0 +1,122 @@
+// Component gallery (`resourcewatch-slint --gallery`, or `--snapshot … --gallery`):
+// every Phase 3 component with sample data, for visual checks and trying the
+// controls by hand. Not part of the app's navigation.
+import { Theme } from "theme.slint";
+import { GlassPanel } from "glass.slint";
+import { GlassCard, SectionHeading } from "card.slint";
+import { RingGauge, StackBar, StackPart, Legend, LegendItem, KvGrid, KeyValue, BarChart } from "gauges.slint";
+import { ProcessTable, ProcessRow } from "table.slint";
+
+export component Gallery inherits Window {
+    in property <string> cpu-path;
+    in property <string> up-path;
+    in property <string> down-path;
+    in property <string> detail-path;
+    in property <[StackPart]> mem-parts;
+    in property <[LegendItem]> mem-legend;
+    in property <[KeyValue]> disk-kv;
+    in property <[KeyValue]> temps;
+    in property <[ProcessRow]> rows;
+    in property <string> up-max: "--";
+    in-out property <int> temp-unit;
+    out property <length> cpu-w: cpu.plot-width;
+    out property <length> cpu-h: cpu.plot-height;
+    out property <length> net-w: net.plot-width;
+    out property <length> net-h: net.plot-height;
+    out property <length> detail-w: detail.plot-width;
+    out property <length> detail-h: detail.plot-height;
+    callback charts-resized();
+    callback sort-changed(int, bool);
+    callback temp-unit-selected(int);
+
+    title: "ResourceWatch 元件庫";
+    preferred-width: 1220px;
+    preferred-height: 790px;
+    background: Theme.window-glass;
+    default-font-size: 13px;
+
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            spacing: 12px;
+            GlassCard {
+                title: "SUMMARY";
+                vertical-stretch: 0;
+                HorizontalLayout {
+                    alignment: space-around;
+                    RingGauge { percent: 37; arc-color: Theme.cpu; label: "CPU"; value: "48.6 °C"; detail: "3.70 GHz"; }
+                    RingGauge { percent: 82; arc-color: Theme.gpu; label: "GPU"; value: "61.0 °C"; detail: "1.53 GHz"; }
+                    RingGauge { percent: 0; arc-color: Theme.ram; label: "RAM"; value: "0 %"; detail: "15.5 GiB"; }
+                    RingGauge { percent: -1; label: "GPU 2"; value: "--"; }
+                }
+                SectionHeading { text: "Memory"; }
+                StackBar { parts: root.mem-parts; }
+                Legend { items: root.mem-legend; }
+                SectionHeading { text: "Storage"; }
+                KvGrid { items: root.disk-kv; }
+            }
+            GlassCard {
+                title: "PROCESSES";
+                vertical-stretch: 1;
+                ProcessTable {
+                    rows: root.rows;
+                    sort-changed(c, a) => { root.sort-changed(c, a); }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 12px;
+            GlassCard {
+                title: "NETWORK";
+                vertical-stretch: 0;
+                pill-label: "NIC";
+                pill-options: ["all", "enp3s0", "wlp2s0"];
+                HorizontalLayout {
+                    Text { text: "上傳 / 下載（鏡像，共用縱軸）"; font-size: 11px; color: Theme.text-secondary; }
+                    Text { text: "max \{root.up-max}"; font-size: 11px; color: Theme.text-tertiary; horizontal-alignment: right; }
+                }
+                net := BarChart {
+                    height: 96px;
+                    mirrored: true;
+                    up: root.up-path;
+                    down: root.down-path;
+                    up-color: Theme.net-up;
+                    down-color: Theme.net-down;
+                    geometry-changed => { root.charts-resized(); }
+                }
+            }
+            GlassCard {
+                title: "PROCESSOR";
+                vertical-stretch: 0;
+                pill-label: "GPU";
+                pill-options: ["NVIDIA GeForce GTX 1060 6GB", "Intel HD Graphics"];
+                Text { text: "儀表板：固定 2 px 長條＋1 px 間隔，靠右"; font-size: 11px; color: Theme.text-secondary; }
+                cpu := BarChart {
+                    height: 96px;
+                    up: root.cpu-path;
+                    geometry-changed => { root.charts-resized(); }
+                }
+            }
+            GlassCard {
+                title: "DETAIL";
+                vertical-stretch: 1;
+                Text { text: "詳細頁：最後 historyPoints（30）點平均分布"; font-size: 11px; color: Theme.text-secondary; }
+                detail := BarChart {
+                    vertical-stretch: 1;
+                    up: root.detail-path;
+                    up-color: Theme.gpu;
+                    geometry-changed => { root.charts-resized(); }
+                }
+            }
+            GlassCard {
+                title: "SENSORS";
+                vertical-stretch: 0;
+                segments: ["°C", "°F"];
+                segment-index <=> root.temp-unit;
+                segment-selected(i) => { root.temp-unit-selected(i); }
+                KvGrid { items: root.temps; columns: 2; }
+            }
+        }
+    }
+}

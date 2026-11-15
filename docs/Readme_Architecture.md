@@ -147,7 +147,26 @@ Linux：`wayland-client`／`wayland-backend`（`client_system`，接手 winit �
 - 毛玻璃：`sidebarGlass` 為 `true` 時 `start_blur`：`spawn_local` 等 `winit_window()`，以 raw-window-handle 的 `wl_display`／`wl_surface` 呼叫 `blur.rs`；
   成功後依視窗實際邏輯尺寸設定圓角模糊區域，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）重設，最大化時半徑 0；失敗（X11、無協定、合成器關閉模糊）設 `Theme.glass = false`，改用不透明底色。`WINDOW_RADIUS`（16）須與 `app.slint` 視窗圓角一致。
 - 最小化／最大化不經 Rust：Window 內建的 `minimized`／`maximized` 屬性與實際視窗狀態雙向同步（合成器端最大化也會寫回），`app.slint` 直接設定。
-- `--snapshot out.png [--theme dark|light] [--collapsed] [--page N]`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`），`take_snapshot()` 後用 `png` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
+- `--snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery]`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`；`--gallery` 改畫元件展示頁），`write_png` 以 `take_snapshot()` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
+- `--gallery [--theme dark|light]`：開啟元件展示頁視窗（`Gallery`，不透明、不請求模糊），可實際操作下拉選單、分段控制與表格排序。
+
+### src/charts.rs
+
+Slint `Path` 用的圖表幾何，單位為像素（`BarChart` 的 viewbox 等於自身尺寸，描邊 0，長條保持固定像素寬）。規則與 Tauri 前端 `barPath` 相同：
+- `bar_path(values, max, dir, layout, width, height)`：每個樣本一根；缺值（`None`、非有限值）留空；0 或負值保留最小高度（該半邊的 2%）的短樁；超過 `max` 夾到滿格；最新樣本在右緣。
+  `Layout::Fixed`（儀表板）：2 px 長條＋1 px 間隔，只畫放得下的最近樣本；`Layout::Slots(n)`（詳細頁，n＝`historyPoints`）：最後 n 點平均分布，長條寬 `min(3, 寬/n)` 置中於格內。
+  `Dir::Full` 從底部算滿高；`Dir::Up`／`Dir::Down` 為成對序列的上下半邊（上傳／讀取向上、下載／寫入向下）。
+- `pair_max(a, b)`：成對序列共用的縱軸上限＝兩者最大值 ×1.12（至少 1）。
+- `stack(parts, total)`：堆疊條各段的起點與寬度（0–1），缺值或負值為 0，總和超過時截到滿格。
+
+### src/processes.rs
+
+`sort(list, column, ascending)`：依欄位（`COL_NAME` 名稱不分大小寫、`COL_PID`、`COL_CPU`、3＝記憶體）排序 `ProcessInfo`；CPU 缺值（第一次掃描）不論升降冪都排最後；同值以 PID 排序（有單元測試）。欄位索引與 `ui/table.slint` 的 `ProcessTable` 一致。
+
+### src/gallery.rs
+
+元件展示頁的資料：合成的歷史序列（固定週期留空、一段 0 值，驗證圖表規則）、記憶體組成（`charts::stack`）、圖例、KV、溫度（°C／°F 切換時重建）；
+程序表取 `Source::from_env` 的實際程序清單（掃描兩次以取得 CPU 比例），`sort-changed` 時以 `processes::sort` 重排後 `VecModel::set_vec`。圖表在 `charts-resized`（任一 `BarChart` 尺寸改變）時依新尺寸重算。
 
 ### src/blur.rs（Linux）
 
@@ -182,9 +201,37 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 `Sidebar`（第 2 層，`GlassPanel` 圓角 14、陰影）：頂部 App 圖示＋名稱（`@image-url` 讀 `src-tauri/icons/64x64.png`）與收合鈕；中段主頁面（儀表板、儲存裝置、網路、感測器、應用程式，`pages` 由 `app.slint` 傳入）；
 底部「設定」（頁索引 `pages.length`）、主題切換鈕（跟隨系統 → 深色 → 淺色循環）、版本。收合時寬 56 px 只顯示圖示，展開 208 px；寬度變化 160 ms 過渡。
 
+### ui/card.slint
+
+- `GlassCard`：第 3 層內容卡片（`GlassPanel` 圓角 14＋陰影），SUMMARY 版型：標題列（13 px 粗體、字距 0.8 px）可選擇放 `PillSelect`（`pill-options` 非空時）或 `SegmentedControl`（`segments` 非空時），其下為子元件垂直排列。
+- `SectionHeading`：卡片內的小標題（如 Memory、Storage）。
+
+### ui/gauges.slint
+
+- `RingGauge`：環形圖，`percent` 0–100（< 0 為缺值，只畫軌道），圓頭弧線；環內最多三行文字（`label`／`value`／`detail`）。弧線以 `sin`／`cos` 算終點，0% 時隱藏（圓頭在長度 0 時仍會畫出一點），上限 99.99% 避免起訖點重合。
+  `Path` 會把 viewbox 對應到「尺寸減描邊寬」，因此 viewbox 取 `2r`（r＝(寬−粗細)/2），描邊中心線正好落在半徑 r。屬性名用 `arc-color`（`Rectangle` 內建的 `color` 不能覆寫）。
+- `StackBar`：圓角軌道上的堆疊條，各段 `{start, width, color}` 來自 `charts::stack`。軟體渲染器的 `clip` 只裁成直角矩形，所以由第一段／最後一段自己設左／右圓角（個別角半徑）。
+- `Legend`：圓點＋標籤＋數值，垂直排列、整塊置中。
+- `KvGrid`：鍵值格，`columns` 欄（預設 3），每格 40 px 高，數值過長以 `elide` 截斷。
+- `BarChart`：顯示 Rust 產生的 `up`／`down` 路徑（`mirrored` 時畫中線與下半部）；`plot-width`／`plot-height` 輸出給 Rust，尺寸改變（`changed width/height`）時呼叫 `geometry-changed`，擁有者立刻重算，不等下一次取樣。
+
+### ui/controls.slint
+
+- `PillSelect`：卡片標題列的膠囊下拉選單（「NIC: all ▾」），點擊開 `PopupWindow` 列出選項，選定後更新 `current` 並呼叫 `selected(i)`；名稱最長 180 px 後截斷。有 `combobox` 無障礙角色。
+- `SegmentedControl`：分段控制（°C／°F、主題），選中段為 `selected` 底色＋小陰影；`tab-list`／`tab` 無障礙角色。
+
+### ui/table.slint
+
+`ProcessTable`：可排序程序表（名稱、PID、CPU、記憶體）。點目前排序欄切換升降冪；換欄時名稱／PID 預設升冪、CPU／記憶體預設降冪，並呼叫 `sort-changed(column, ascending)` 由 Rust 排序；
+排序欄標題顯示 ▲／▼。列表用 std-widgets 的 `ListView`（只建立可見列），奇數列淡底色。資料列 `ProcessRow` 為已格式化的字串。
+
+### ui/gallery.slint
+
+`Gallery`（由 `app.slint` 匯出）：以兩欄 `GlassCard` 展示所有元件——SUMMARY（環形圖含 0% 與缺值、堆疊條、圖例、KV）、PROCESSES（可排序表）、NETWORK（NIC 膠囊＋鏡像長條）、PROCESSOR（GPU 膠囊＋固定 2 px 長條）、DETAIL（`historyPoints` 平均分布）、SENSORS（°C／°F 分段）。不在 App 導覽內，只供驗證與手動操作。
+
 ### ui/app.slint
 
-`App`（匯出 `Theme` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
+`App`（匯出 `Theme`、`Gallery` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
 第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
 各頁目前只顯示頁名與預計實作的 Phase（佔位）。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
 

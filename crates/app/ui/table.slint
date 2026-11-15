@@ -1,0 +1,149 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+
+export struct ProcessRow {
+    name: string,
+    pid: string,
+    cpu: string,
+    memory: string,
+}
+
+// Header cell; shows ▲/▼ on the sorted column. Columns match processes.rs.
+component HeaderCell inherits Rectangle {
+    in property <string> text;
+    in property <int> column;
+    in property <int> sort-column;
+    in property <bool> ascending;
+    in property <TextHorizontalAlignment> align: left;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: text;
+    property <bool> active: column == sort-column;
+    Text {
+        width: 100%;
+        height: 100%;
+        text: active ? (ascending ? "\{root.text} ▲" : "\{root.text} ▼") : root.text;
+        font-size: 11px;
+        font-weight: 600;
+        color: active ? Theme.text : Theme.text-secondary;
+        horizontal-alignment: align;
+        vertical-alignment: center;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Sortable process table (name, PID, CPU, memory). Clicking the sorted column
+// flips the direction; another column starts ascending for name/PID and
+// descending for CPU/memory. Rust sorts the raw values (`processes::sort`) on
+// `sort-changed` and replaces `rows`; ListView only instantiates visible rows.
+export component ProcessTable inherits VerticalLayout {
+    in property <[ProcessRow]> rows;
+    in-out property <int> sort-column: 2;
+    in-out property <bool> ascending: false;
+    callback sort-changed(int, bool);
+    property <length> pid-width: 64px;
+    property <length> num-width: 76px;
+
+    function sort-by(column: int) {
+        if column == root.sort-column {
+            root.ascending = !root.ascending;
+        } else {
+            root.sort-column = column;
+            root.ascending = column <= 1;
+        }
+        root.sort-changed(root.sort-column, root.ascending);
+    }
+
+    HorizontalLayout {
+        height: 28px;
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        HeaderCell {
+            text: "名稱";
+            column: 0;
+            sort-column: root.sort-column;
+            ascending: root.ascending;
+            horizontal-stretch: 1;
+            clicked => { sort-by(0); }
+        }
+        HeaderCell {
+            text: "PID";
+            column: 1;
+            sort-column: root.sort-column;
+            ascending: root.ascending;
+            width: pid-width;
+            align: right;
+            clicked => { sort-by(1); }
+        }
+        HeaderCell {
+            text: "CPU";
+            column: 2;
+            sort-column: root.sort-column;
+            ascending: root.ascending;
+            width: num-width;
+            align: right;
+            clicked => { sort-by(2); }
+        }
+        HeaderCell {
+            text: "記憶體";
+            column: 3;
+            sort-column: root.sort-column;
+            ascending: root.ascending;
+            width: num-width;
+            align: right;
+            clicked => { sort-by(3); }
+        }
+    }
+    Rectangle {
+        height: 1px;
+        background: Theme.edge-bottom;
+    }
+    ListView {
+        vertical-stretch: 1;
+        for row[i] in root.rows: Rectangle {
+            height: 26px;
+            border-radius: 6px;
+            background: mod(i, 2) == 1 ? Theme.hover : transparent;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 8px;
+                Text {
+                    text: row.name;
+                    font-size: 12px;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: row.pid;
+                    width: root.pid-width;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: row.cpu;
+                    width: root.num-width;
+                    font-size: 12px;
+                    color: Theme.text;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: row.memory;
+                    width: root.num-width;
+                    font-size: 12px;
+                    color: Theme.text;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

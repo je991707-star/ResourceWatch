@@ -1,12 +1,17 @@
 //! ResourceWatch Slint app (v0.2.0 redesign, docs/REDESIGN_V0.2.md).
 //!
 //! `resourcewatch-slint`                    open the window
-//! `resourcewatch-slint --snapshot out.png [--theme dark|light] [--collapsed] [--page N]`
+//! `resourcewatch-slint --snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery]`
 //!                                          render headless with the software renderer to PNG
+//! `resourcewatch-slint --gallery [--theme dark|light]`
+//!                                          open the component gallery (Phase 3 components)
 //! `RESOURCEWATCH_MOCK=1`                   mock data source (from core)
 
 #[cfg(target_os = "linux")]
 mod blur;
+mod charts;
+mod gallery;
+mod processes;
 
 use resourcewatch_core::scheduler::Scheduler;
 use resourcewatch_core::settings::{Settings, SettingsPatch};
@@ -43,6 +48,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Needs a selected platform; must precede window creation. Equals the
     // installed .desktop file name so KWin shows the app icon.
     slint::set_xdg_app_id("resourcewatch")?;
+
+    if args.iter().any(|a| a == "--gallery") {
+        let ui = Gallery::new()?;
+        ui.global::<Theme>()
+            .set_mode(flag_value(&args, "--theme").map_or("system".into(), |t| t.into()));
+        gallery::setup(&ui);
+        return Ok(ui.run()?);
+    }
 
     let prefs = Rc::new(RefCell::new(Prefs::load(config_dir())));
     let settings = prefs.borrow().current.clone();
@@ -260,30 +273,48 @@ impl slint::platform::Platform for Headless {
     }
 }
 
+fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+}
+
 /// Renders one frame with real (or `RESOURCEWATCH_MOCK=1`) host data, without
 /// a window: visual checks avoid KWin focus-stealing prevention.
 fn snapshot(out: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let value = |flag: &str| {
-        args.iter()
-            .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1))
-    };
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Headless(window.clone())))
         .map_err(|e| format!("{e:?}"))?;
+    let theme: slint::SharedString =
+        flag_value(args, "--theme").map_or("dark".into(), |t| t.into());
+    window.set_size(slint::PhysicalSize::new(1220, 790));
+    if args.iter().any(|a| a == "--gallery") {
+        let ui = Gallery::new()?;
+        ui.global::<Theme>().set_mode(theme);
+        ui.show()?;
+        gallery::setup(&ui);
+        return write_png(ui.window(), out);
+    }
     let ui = App::new()?;
     let settings = Settings {
-        theme: value("--theme").cloned().unwrap_or_else(|| "dark".into()),
+        theme: theme.into(),
         sidebar_collapsed: args.iter().any(|a| a == "--collapsed"),
         ..Settings::default()
     };
     apply_prefs(&ui, &settings);
     ui.set_version(env!("CARGO_PKG_VERSION").into());
-    ui.set_page(value("--page").and_then(|p| p.parse().ok()).unwrap_or(0));
+    ui.set_page(
+        flag_value(args, "--page")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0),
+    );
     Host::from(&Source::from_env(&settings).sample(Instant::now(), &settings)).apply(&ui);
-    window.set_size(slint::PhysicalSize::new(1220, 790));
     ui.show()?;
-    let buf = ui.window().take_snapshot()?;
+    write_png(ui.window(), out)
+}
+
+fn write_png(window: &slint::Window, out: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let buf = window.take_snapshot()?;
     let mut enc = png::Encoder::new(std::fs::File::create(out)?, buf.width(), buf.height());
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);

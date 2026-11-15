@@ -1,0 +1,209 @@
+import { Theme } from "theme.slint";
+
+export struct StackPart {
+    start: float, // 0..1 offset, from Rust `charts::stack`
+    width: float, // 0..1 share
+    color: color,
+}
+
+export struct LegendItem {
+    label: string,
+    value: string,
+    color: color,
+}
+
+export struct KeyValue {
+    key: string,
+    value: string,
+}
+
+// Ring with up to three centred text lines. `percent` < 0 = missing (track only).
+// Path maps the viewbox onto (size - stroke) shifted by half the stroke, so a
+// viewbox of size - thickness puts the stroke centre line on radius `r`.
+export component RingGauge inherits Rectangle {
+    in property <float> percent: -1;
+    in property <color> arc-color: Theme.cpu;
+    in property <length> thickness: 8px;
+    in property <string> label;
+    in property <string> value: "--";
+    in property <string> detail;
+    width: 108px;
+    height: self.width;
+    accessible-role: progress-indicator;
+    accessible-label: label;
+    accessible-value: value;
+    property <float> r: (self.width - thickness) / 2 / 1px;
+    // Stop just short of 100 % so the arc's start and end never coincide.
+    property <float> p: min(max(percent, 0), 99.99);
+    property <angle> a: p * 3.6deg;
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 2 * r;
+        viewbox-height: 2 * r;
+        fill: transparent;
+        stroke: Theme.hover;
+        stroke-width: thickness;
+        commands: "M \{r} 0 A \{r} \{r} 0 1 1 \{r} \{2 * r} A \{r} \{r} 0 1 1 \{r} 0";
+    }
+    // A round cap draws a dot even at 0 length, so the arc is hidden at 0 %.
+    if p > 0: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 2 * r;
+        viewbox-height: 2 * r;
+        fill: transparent;
+        stroke: root.arc-color;
+        stroke-width: thickness;
+        stroke-line-cap: round;
+        commands: "M \{r} 0 A \{r} \{r} 0 \{p > 50 ? 1 : 0} 1 \{r + r * sin(a)} \{r - r * cos(a)}";
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+        if label != "": Text {
+            text: label;
+            font-size: 11px;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: value;
+            font-size: 17px;
+            font-weight: 700;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        if detail != "": Text {
+            text: detail;
+            font-size: 10px;
+            color: Theme.text-tertiary;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// Horizontal stacked bar with rounded ends on a track. The software renderer
+// clips children to a plain rectangle, so the outer segments round their own
+// ends (per-corner radii) instead of relying on `clip`.
+export component StackBar inherits Rectangle {
+    in property <[StackPart]> parts;
+    height: 8px;
+    border-radius: self.height / 2;
+    background: Theme.hover;
+    for part in parts: Rectangle {
+        property <length> r: part.start <= 0 ? root.height / 2 : 0;
+        property <length> e: part.start + part.width >= 0.999 ? root.height / 2 : 0;
+        x: part.start * parent.width;
+        width: part.width * parent.width;
+        height: parent.height;
+        background: part.color;
+        border-top-left-radius: r;
+        border-bottom-left-radius: r;
+        border-top-right-radius: e;
+        border-bottom-right-radius: e;
+    }
+}
+
+// Legend rows (dot, label, value) stacked vertically and centred as a block.
+export component Legend inherits VerticalLayout {
+    in property <[LegendItem]> items;
+    alignment: center;
+    spacing: 6px;
+    for item in items: HorizontalLayout {
+        alignment: center;
+        spacing: 7px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 9px;
+                height: 9px;
+                border-radius: 4.5px;
+                background: item.color;
+            }
+        }
+        Text {
+            text: item.label;
+            font-size: 12px;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+        Text {
+            text: item.value;
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Key/value grid ("Total / Used / Free"), `columns` per row, values elide.
+export component KvGrid inherits Rectangle {
+    in property <[KeyValue]> items;
+    in property <int> columns: 3;
+    property <length> row-height: 40px;
+    height: ceil(items.length / max(columns, 1)) * row-height;
+    for kv[i] in items: VerticalLayout {
+        x: mod(i, max(root.columns, 1)) * root.width / max(root.columns, 1);
+        y: floor(i / max(root.columns, 1)) * root.row-height;
+        width: root.width / max(root.columns, 1) - 8px;
+        height: root.row-height;
+        spacing: 1px;
+        Text {
+            text: kv.key;
+            font-size: 11px;
+            color: Theme.text-secondary;
+            overflow: elide;
+        }
+        Text {
+            text: kv.value;
+            font-size: 13px;
+            color: Theme.text;
+            overflow: elide;
+        }
+    }
+}
+
+// Bar chart drawn from Rust-generated path commands (`charts::bar_path`) in
+// pixel units: the viewbox equals the plot size, so bars stay a fixed pixel
+// width. `up`/`down` are the two halves of a mirrored pair; leave `down`
+// empty for a single series. `geometry-changed` fires when the plot is
+// resized so the owner can regenerate the paths right away.
+export component BarChart inherits Rectangle {
+    in property <string> up;
+    in property <string> down;
+    in property <color> up-color: Theme.cpu;
+    in property <color> down-color: Theme.net-down;
+    in property <bool> mirrored;
+    out property <length> plot-width: self.width;
+    out property <length> plot-height: self.height;
+    callback geometry-changed();
+    changed width => { root.geometry-changed(); }
+    changed height => { root.geometry-changed(); }
+    border-radius: 8px;
+    background: Theme.dark ? #00000026 : #0000000a;
+    if mirrored: Rectangle {
+        y: parent.height / 2;
+        height: 1px;
+        background: Theme.hover;
+    }
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: root.up;
+        fill: root.up-color;
+        stroke-width: 0;
+    }
+    if mirrored: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: root.down;
+        fill: root.down-color;
+        stroke-width: 0;
+    }
+}
