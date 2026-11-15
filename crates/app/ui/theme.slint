@@ -1,0 +1,40 @@
+// Colour tokens for both schemes. `mode` comes from Settings.theme; "system"
+// follows the desktop colour scheme (Slint watches the XDG portal on Linux).
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    in-out property <string> mode: "system";
+    // false when the compositor gives no blur (X11, no protocol, user turned glass off).
+    in-out property <bool> glass: true;
+    out property <bool> dark: mode == "dark" || (mode == "system" && Palette.color-scheme != ColorScheme.light);
+
+    // Layer 1: window glass. Translucent only while the compositor blurs it.
+    out property <color> window-glass: glass ? (dark ? #0d1424b8 : #eef2f8c4) : (dark ? #121826 : #eceff5);
+    // Layer 2: floating sidebar; layer 3: content cards (one step brighter).
+    out property <color> sidebar-glass: dark ? #ffffff0d : #ffffff59;
+    out property <color> card-glass: dark ? #ffffff14 : #ffffffa6;
+    // 1px inner highlight: brighter top edge, darker bottom edge.
+    out property <color> edge-top: dark ? #ffffff2e : #ffffffe6;
+    out property <color> edge-bottom: dark ? #ffffff0d : #0000001a;
+    out property <color> shadow: dark ? #00000066 : #1a24401f;
+
+    // Vibrancy foregrounds.
+    out property <color> text: dark ? #f2f4f8 : #10151f;
+    out property <color> text-secondary: dark ? #ffffffa3 : #10151f99;
+    out property <color> text-tertiary: dark ? #ffffff66 : #10151f66;
+    out property <color> hover: dark ? #ffffff14 : #0000000d;
+    out property <color> selected: dark ? #ffffff24 : #ffffffcc;
+    out property <color> danger: #e5484d;
+    out property <color> warning-bg: dark ? #f5a52433 : #f5a52438;
+    out property <color> warning-text: dark ? #ffc56b : #8a5200;
+
+    // Metric hues (CPU cyan, GPU violet, RAM blue, up green, down blue, read red,
+    // write blue), lightness tuned per scheme for contrast on glass.
+    out property <color> cpu: dark ? #4fd8ff : #0089b0;
+    out property <color> gpu: dark ? #b48cff : #7346d9;
+    out property <color> ram: dark ? #5b9dff : #2a64d6;
+    out property <color> net-up: dark ? #4ee39a : #12925a;
+    out property <color> net-down: dark ? #5b9dff : #2a64d6;
+    out property <color> disk-read: dark ? #ff6b7a : #d1374a;
+    out property <color> disk-write: dark ? #5b9dff : #2a64d6;
+}

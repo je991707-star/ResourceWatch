@@ -1,0 +1,144 @@
+// ResourceWatch main window: macOS 26-style layered glass.
+//   layer 1  window glass (compositor blur behind it), incl. the title bar
+//   layer 2  floating sidebar
+//   layer 3  content cards
+import { Theme } from "theme.slint";
+import { GlassPanel } from "glass.slint";
+import { Icons } from "icons.slint";
+import { Sidebar, NavEntry } from "sidebar.slint";
+import { WindowButtons, HostBar } from "titlebar.slint";
+
+export { Theme }
+
+export component App inherits Window {
+    // Host summary, set by Rust from each snapshot.
+    in property <string> hostname: "--";
+    in property <string> uptime: "--";
+    in property <string> machine-model: "--";
+    in property <string> cpu-name: "--";
+    in property <bool> mock;
+    in property <string> version;
+    in-out property <bool> sidebar-collapsed;
+    in-out property <int> page;
+    // Persisted display preferences (Theme.mode, sidebar-collapsed) changed.
+    callback prefs-changed();
+    callback close-window();
+
+    property <[NavEntry]> pages: [
+        { title: "儀表板", icon: Icons.dashboard },
+        { title: "儲存裝置", icon: Icons.storage },
+        { title: "網路", icon: Icons.network },
+        { title: "感測器", icon: Icons.sensors },
+        { title: "應用程式", icon: Icons.apps },
+    ];
+    property <string> page-title: page < pages.length ? pages[page].title : "設定";
+    // Phase in docs/REDESIGN_V0.2.md that fills each page.
+    property <[string]> page-phase: ["Phase 4", "Phase 5", "Phase 5", "Phase 5", "Phase 5", "Phase 6"];
+
+    title: "ResourceWatch";
+    no-frame: true;
+    resize-border-width: 6px;
+    preferred-width: 1220px;
+    preferred-height: 790px;
+    min-width: 640px;
+    min-height: 480px;
+    background: transparent;
+    default-font-size: 13px;
+
+    GlassPanel {
+        radius: root.maximized ? 0 : 16px;
+        fill: Theme.window-glass;
+        edge-top: Theme.edge-top;
+        edge-bottom: Theme.edge-bottom;
+
+        HorizontalLayout {
+            padding: 10px;
+            spacing: 12px;
+
+            Sidebar {
+                pages: root.pages;
+                page <=> root.page;
+                collapsed: root.sidebar-collapsed;
+                version: root.version;
+                theme-label: Theme.mode == "dark" ? "深色" : (Theme.mode == "light" ? "淺色" : "跟隨系統");
+                toggle-collapsed => {
+                    root.sidebar-collapsed = !root.sidebar-collapsed;
+                    root.prefs-changed();
+                }
+                cycle-theme => {
+                    Theme.mode = Theme.mode == "system" ? "dark" : (Theme.mode == "dark" ? "light" : "system");
+                    root.prefs-changed();
+                }
+            }
+
+            VerticalLayout {
+                spacing: 10px;
+                // Title bar = toolbar on the window glass: drag to move,
+                // double-click to maximize; edges resize via resize-border-width.
+                Rectangle {
+                    height: 40px;
+                    WindowMoveArea {
+                        TouchArea {
+                            // Built-in `maximized` is synced with the real window state both ways.
+                            double-clicked => { root.maximized = !root.maximized; }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        spacing: 16px;
+                        Text {
+                            text: root.page-title;
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                        }
+                        HostBar {
+                            horizontal-stretch: 1;
+                            hostname: root.hostname;
+                            uptime: root.uptime;
+                            machine-model: root.machine-model;
+                            cpu-name: root.cpu-name;
+                            mock: root.mock;
+                        }
+                        WindowButtons {
+                            horizontal-stretch: 0;
+                            maximized: root.maximized;
+                            minimize => { root.minimized = true; }
+                            toggle-maximize => { root.maximized = !root.maximized; }
+                            close => { root.close-window(); }
+                        }
+                    }
+                }
+
+                // Layer 3: content. Pages are placeholders until their phase.
+                GlassPanel {
+                    vertical-stretch: 1;
+                    radius: 14px;
+                    fill: Theme.card-glass;
+                    edge-top: Theme.edge-top;
+                    edge-bottom: Theme.edge-bottom;
+                    drop-shadow-blur: 24px;
+                    drop-shadow-offset-y: 6px;
+                    drop-shadow-color: Theme.shadow;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text {
+                            text: root.page-title;
+                            font-size: 20px;
+                            font-weight: 700;
+                            color: Theme.text;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "此頁內容將於 \{root.page-phase[root.page]} 實作";
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

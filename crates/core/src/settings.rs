@@ -1,7 +1,8 @@
 //! User settings: defaults, ranges and validation.
 //!
-//! Keys, defaults and ranges follow the legacy `main.xml` contract.
-//! Phase 1: settings live in memory only; persistence is a Phase 3 task.
+//! Keys, defaults and ranges follow the legacy `main.xml` contract; `theme`,
+//! `tempUnit` and `sidebarCollapsed` are display preferences of the Slint app.
+//! Persistence: `settings_store.rs`.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -15,6 +16,8 @@ pub const HISTORY_POINTS_STEP: u32 = 10;
 pub const GPU_INDEX_MAX: u32 = 15;
 /// Linux IFNAMSIZ (16) minus the terminating NUL.
 pub const NET_INTERFACE_MAX_LEN: usize = 15;
+pub const THEMES: [&str; 3] = ["system", "dark", "light"];
+pub const TEMP_UNITS: [&str; 2] = ["c", "f"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +32,11 @@ pub struct Settings {
     /// Transparent main window + compositor blur (sidebar glass). Read once
     /// when the window is created, so a change applies on the next start.
     pub sidebar_glass: bool,
+    /// `"system"` follows the desktop colour scheme; `"dark"` / `"light"` force it.
+    pub theme: String,
+    /// Temperature display unit: `"c"` or `"f"`.
+    pub temp_unit: String,
+    pub sidebar_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -39,6 +47,9 @@ impl Default for Settings {
             gpu_index: 0,
             net_interface: "all".to_string(),
             sidebar_glass: true,
+            theme: "system".to_string(),
+            temp_unit: "c".to_string(),
+            sidebar_collapsed: false,
         }
     }
 }
@@ -52,6 +63,9 @@ pub struct SettingsPatch {
     pub gpu_index: Option<u32>,
     pub net_interface: Option<String>,
     pub sidebar_glass: Option<bool>,
+    pub theme: Option<String>,
+    pub temp_unit: Option<String>,
+    pub sidebar_collapsed: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -83,6 +97,16 @@ fn stepped(
         });
     }
     Ok(value)
+}
+
+fn one_of(field: &'static str, value: &str, allowed: &[&str]) -> Result<String, SettingsError> {
+    if allowed.contains(&value) {
+        return Ok(value.to_string());
+    }
+    Err(SettingsError {
+        field,
+        message: format!("必須是 {} 之一（收到 {value}）", allowed.join("／")),
+    })
 }
 
 /// Accepts `"all"` (also for empty input) or a plausible Linux interface name.
@@ -137,6 +161,15 @@ impl Settings {
         if let Some(v) = patch.sidebar_glass {
             next.sidebar_glass = v;
         }
+        if let Some(v) = &patch.theme {
+            next.theme = one_of("theme", v, &THEMES)?;
+        }
+        if let Some(v) = &patch.temp_unit {
+            next.temp_unit = one_of("tempUnit", v, &TEMP_UNITS)?;
+        }
+        if let Some(v) = patch.sidebar_collapsed {
+            next.sidebar_collapsed = v;
+        }
         Ok(next)
     }
 }
@@ -165,6 +198,30 @@ mod tests {
             ..Default::default()
         };
         assert!(!s.apply(&off).unwrap().sidebar_glass);
+    }
+
+    #[test]
+    fn display_preferences() {
+        let s = Settings::default();
+        assert_eq!((s.theme.as_str(), s.temp_unit.as_str()), ("system", "c"));
+        assert!(!s.sidebar_collapsed);
+        let p = SettingsPatch {
+            theme: Some("light".into()),
+            temp_unit: Some("f".into()),
+            sidebar_collapsed: Some(true),
+            ..Default::default()
+        };
+        let n = s.apply(&p).unwrap();
+        assert_eq!((n.theme.as_str(), n.temp_unit.as_str()), ("light", "f"));
+        assert!(n.sidebar_collapsed);
+        for (theme, unit, field) in [("Dark", "c", "theme"), ("dark", "k", "tempUnit")] {
+            let p = SettingsPatch {
+                theme: Some(theme.into()),
+                temp_unit: Some(unit.into()),
+                ..Default::default()
+            };
+            assert_eq!(s.apply(&p).unwrap_err().field, field);
+        }
     }
 
     #[test]

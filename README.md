@@ -36,6 +36,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 - 安裝到使用者目錄（建置＋執行檔、啟動器、圖示）：`./install.sh`；解除安裝：`./install.sh uninstall`
 - release 執行檔：`target/release/resourcewatch`（workspace 共用根目錄的 `target/`）
+- v0.2.0 改版中的 Slint 版（`crates/app`）：`cargo build --release -p resourcewatch-app` → `target/release/resourcewatch-slint`（與 Tauri 版共用設定檔；尚未納入 `install.sh`）
 - **NVIDIA**：NVML（`libnvidia-ml.so.1`）由主機的驅動提供。在沒有整合 NVIDIA 的 distrobox 容器內執行時，GPU 使用率、溫度與 VRAM 會顯示 `--`；
   請在主機上執行 release 執行檔。
 - **RAM 速度**：一般使用者通常無法讀取 SMBIOS。若顯示 `--`，可自行建立快取

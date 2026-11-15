@@ -4,7 +4,7 @@
 修改任何程式時，請把變更寫入對應章節。重構目標與階段進度見 `REFACTOR_RUST_TAURI.md`。介面改版計畫見 `UI_REDESIGN_PLAN.md`；v0.2.0 改版計畫（改用 Slint）見 `REDESIGN_V0.2.md`。所有文件（除根目錄 `README.md`、`CLAUDE.md`）集中在 `docs/`；安裝見根目錄 `install.sh`。
 
 > 目前狀態：桌面應用為 Rust + Tauri 2（`src-tauri/` + `frontend/`），根目錄是 Cargo workspace：不依賴介面工具組的資料收集、排程、設定在 `crates/core`，
-> Tauri 版（之後的 Slint 版亦同）依賴它。由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
+> Tauri 版與改版中的 Slint 版（`crates/app`，v0.2.0）都依賴它。由 Rust collectors 讀取實際硬體資料、單一統一排程器驅動，
 > 設定儲存於使用者設定目錄。舊版「Plasma QML + Python + HTML」（v0.0.5）已從此分支移除，可由 `main`、`v0.0.5` Tag 或
 > `legacy/plasma-qml` 分支取回。Plasma 桌面小工具屬 Phase 5，尚未實作。
 
@@ -105,8 +105,7 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
 - `src/icons.rs`：標題列三顆按鈕的圖示取自系統圖示主題（`kdeglobals` 的 `[Icons] Theme=`，預設 `breeze`），沿 `index.theme` 的 `Inherits=` 往上找，最後找 hicolor；
   在 `~/.icons`、`$XDG_DATA_HOME/icons`、`$XDG_DATA_DIRS/*/icons` 的固定子目錄（`16x16/actions`、`actions/16`…`scalable/actions`）找 `window-minimize`／`window-maximize`／`window-restore`／`window-close`（含 `-symbolic`）。
   找不到時回傳空圖片，`TitleButton` 改顯示文字符號；圖示以 `colorize` 染成標題列前景色（主題圖示是單色）。只在啟動時讀一次，換主題要重開（有單元測試）。
-- `patches/softbuffer/`：softbuffer 0.4.8 原樣複製，只把 Wayland 的 `wl_shm::Format::Xrgb8888` 改成 `Argb8888`（兩處，註記 `ResourceWatch patch`），由 `Cargo.toml` 的 `[patch.crates-io]` 套用。
-  原版丟棄 alpha，Slint 軟體渲染器畫出的視窗在 Wayland 上是不透明的，模糊雖然請求成功卻看不到；Slint 寫入的就是預乘 ARGB，與 `Argb8888` 相符。局部重繪時髒區先以視窗背景色覆寫（非疊加），透明不會累積。
+- softbuffer 修補：`Cargo.toml` 的 `[patch.crates-io]` 指向 workspace 根目錄的 `patches/softbuffer`（與 `crates/app` 共用同一份，見該章節）。
 - `src/blur.rs`：沿用 `src-tauri/src/blur.rs` 的 `wayland` 模組（`ext_background_effect_manager_v1` → `org_kde_kwin_blur_manager`），GTK 取得指標的部分換成 raw-window-handle。
   `blur()` 回傳 `Blur`（保留 compositor、queue handle 與 ext／kde 模糊物件），`set_shape(w, h, radius)` 把模糊區域設成圓角矩形；區域由 `rounded_rect_strips` 產生（四角每列 1 px 的長條＋中段一塊，每列起點取弧線在列中心最近的像素，有單元測試）。
   若模糊整個矩形，圓角外的透明區也會被模糊（KWin 還加雜訊），在花俏背景上看起來像方角鋸齒。
@@ -115,9 +114,80 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
 
 ## Cargo.toml（workspace 根目錄）
 
-Cargo workspace：成員 `crates/core`、`src-tauri`；`exclude = ["spikes"]`（`spikes/*` 各自帶空的 `[workspace]`，獨立建置）。
+Cargo workspace：成員 `crates/core`、`crates/app`、`src-tauri`；`exclude = ["spikes"]`（`spikes/*` 各自帶空的 `[workspace]`，獨立建置）。
 `[profile.release]`（`lto`、`codegen-units = 1`、`strip`）只能寫在 workspace 根目錄；`Cargo.lock` 與建置輸出 `target/` 也在根目錄（`.gitignore` 忽略 `/target/`）。
+`[patch.crates-io]` 把 `softbuffer` 換成 `patches/softbuffer`（只影響 `crates/app` 的 Slint 依賴樹）。
 檢查一律在根目錄執行：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`。
+
+## patches/softbuffer/
+
+softbuffer 0.4.8 原樣複製（移除 benches），只把 Wayland 的 `wl_shm::Format::Xrgb8888` 改成 `Argb8888`（`src/backends/wayland/buffer.rs` 兩處，註記 `ResourceWatch patch`）。
+原版丟棄 alpha，Slint 軟體渲染器畫出的視窗在 Wayland 上是不透明的，模糊雖然請求成功卻看不到；Slint 寫入的就是預乘 ARGB，與 `Argb8888` 相符。局部重繪時髒區先以視窗背景色覆寫（非疊加），透明不會累積。
+Slint 或 softbuffer 升級時須重新比對這份修補。
+
+## crates/app/
+
+v0.2.0 的 Slint 介面（套件 `resourcewatch-app`），單一程序、軟體渲染器、winit 後端（Wayland／X11）。資料、設定、排程全部來自 `crates/core`。
+建置：`cargo build --release -p resourcewatch-app`；執行檔暫名 `target/release/resourcewatch-slint`（Tauri 版也叫 `resourcewatch`，兩者共用 workspace 的 `target/`，Phase 7 移除 Tauri 後改回 `resourcewatch`）。尚未納入 `install.sh`。
+Wayland app_id 為 `resourcewatch`，與安裝的 `resourcewatch.desktop` 相符，KWin 顯示應用圖示。
+
+### Cargo.toml、build.rs
+
+依賴：`resourcewatch-core`、`slint`（鎖 `=1.18.1`，`unstable-winit-030` 的 API 可能在小版本變動；features 只開 `std`、`compat-1-2`、winit Wayland／X11、`renderer-software`）、`raw-window-handle`、`png`（截圖模式）；
+Linux：`wayland-client`／`wayland-backend`（`client_system`，接手 winit 的 Wayland 連線）、`wayland-protocols`（`staging`）、`wayland-protocols-plasma`，只供 `blur.rs`。`build.rs` 以 `slint-build` 編譯 `ui/app.slint`。
+
+### src/main.rs
+
+- 視窗模式：`BackendSelector` 選 winit＋`software` → `slint::set_xdg_app_id("resourcewatch")`（必須在選平台之後、建立視窗之前）。
+- 設定：`config_dir()` 為 `$XDG_CONFIG_HOME`（或 `~/.config`）`/io.github.local.resourcewatch`，與 Tauri 版共用同一個 `config.json`；`Prefs` 以 core `SettingsStore` 載入（容錯規則相同，警告印到 stderr）。
+  `apply_prefs` 把 `theme` 設到 `Theme.mode`、`sidebarGlass` 設到 `Theme.glass`、`sidebarCollapsed` 設到側欄。UI 改變主題或側欄時呼叫 `prefs-changed`，`Prefs::update` 以 `Settings::apply` 驗證，值有變才寫檔；驗證或寫檔失敗保留原值（有單元測試）。
+- 資料：`Source::from_env`（`RESOURCEWATCH_MOCK=1` 為模擬）放在 `Arc<Mutex<_>>`，core `Scheduler::start(updateInterval, tick)` 在 `rw-scheduler` 執行緒取樣，
+  取出主機摘要 `Host`（純字串，可跨執行緒）後以 `slint::invoke_from_event_loop` 回到 UI 執行緒設定屬性。Slint 設定相同值時不會標記重繪，所以每個週期實際只重畫運作時間文字。
+  排程器目前用啟動時的設定取樣；設定頁（Phase 6）改間隔／裝置時須比照 Tauri `commit_settings` 通知 source 與排程器。
+- 毛玻璃：`sidebarGlass` 為 `true` 時 `start_blur`：`spawn_local` 等 `winit_window()`，以 raw-window-handle 的 `wl_display`／`wl_surface` 呼叫 `blur.rs`；
+  成功後依視窗實際邏輯尺寸設定圓角模糊區域，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）重設，最大化時半徑 0；失敗（X11、無協定、合成器關閉模糊）設 `Theme.glass = false`，改用不透明底色。`WINDOW_RADIUS`（16）須與 `app.slint` 視窗圓角一致。
+- 最小化／最大化不經 Rust：Window 內建的 `minimized`／`maximized` 屬性與實際視窗狀態雙向同步（合成器端最大化也會寫回），`app.slint` 直接設定。
+- `--snapshot out.png [--theme dark|light] [--collapsed] [--page N]`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`），`take_snapshot()` 後用 `png` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
+
+### src/blur.rs（Linux）
+
+Wayland 合成器模糊：`ext_background_effect_manager_v1`（KWin 6.8+，`capabilities` 回報模糊是否開啟），否則 `org_kde_kwin_blur_manager`。`blur()` 接手 winit 的 `wl_display`／`wl_surface`，回傳 `Blur`；
+`set_shape(w, h, radius)` 以 `rounded_rect_strips`（四角每列 1 px 長條＋中段一塊，每列起點取弧線在列中心最近的像素，有單元測試）設定圓角模糊區域——模糊整個矩形時圓角外的透明區也會被模糊（KWin 還加雜訊），看起來像方角鋸齒。
+event queue 刻意洩漏（每視窗一次），避免之後的事件打到已釋放的 queue。
+
+### ui/theme.slint
+
+`global Theme`：`mode`（`system`／`dark`／`light`，來自設定）、`glass`；`dark` 在 `system` 時取 std-widgets 的 `Palette.color-scheme`（Slint 在 Linux 透過 XDG portal 監聽系統深淺色，切換系統主題即時生效）。
+深淺兩套完整 token：三層材質（`window-glass`，`glass` 為 false 時改不透明色；`sidebar-glass`；`card-glass` 比底層亮一階）、1 px 高光 `edge-top`（較亮）／`edge-bottom`（較暗）、`shadow`、
+前景 `text`／`text-secondary`／`text-tertiary`（vibrancy）、`hover`、`selected`、`danger`、`warning-*`（模擬模式標籤），以及指標色（CPU 青、GPU 紫、RAM 藍、上傳綠、下載藍、讀取紅、寫入藍，依深淺調整亮度）。
+
+### ui/glass.slint
+
+`GlassPanel`：無邊框的圓角 `Rectangle` 底色＋另外畫的 1 px 高光（上緣 `edge-top`、下緣 `edge-bottom`、左右兩側為上到下的漸層；四角為 r×r 的 `EdgeArc` 四分之一圓弧 `Path`，上兩角用 `edge-top`、下兩角用 `edge-bottom`）。
+原因：軟體渲染器畫「圓角＋邊框」的 `Rectangle` 時，1 px 邊框外緣與內緣的反鋸齒落在同一像素被疊兩次，圓弧出現亮點（看起來像鋸齒）；`Path` 每次重繪都依完整尺寸重新點陣化（無快取），整面大小的 `Path` 會讓閒置 CPU 明顯上升，所以只用在四個角。
+`Path` 把 viewbox 對應到「尺寸減描邊寬」並位移半個描邊，因此 `EdgeArc` 的 viewbox 是 `radius - 1`（1:1 像素），弧線中心線半徑 `radius - 0.5`。
+
+### ui/icons.slint
+
+`global Icons`：側欄線條圖示（24×24 viewbox，與 Tauri 前端側欄相同的圖形；圓、圓角矩形改寫成 path 指令，齒輪的 `transform` 已換算成絕對座標）。`LineIcon`：18 px、1.5 px 描邊的 `Path`。
+
+### ui/titlebar.slint
+
+- `WindowButtons`：依 KDE 順序（最小化、最大化／還原、關閉），`WindowGlyph` 以 1 px `Path` 畫 Breeze 樣式（細橫線、方框、兩個重疊方框、叉）；KWin 視窗裝飾主題不是圖示主題，讀不到，因此自繪預設 Breeze 外觀，顏色跟隨 `Theme`。
+  viewbox 為尺寸減 1，整數座標落在像素中心。滑過時顯示 `hover` 底；關閉鈕滑過為紅底白字。每顆按鈕有 `accessible-role`／`accessible-label`。
+- `HostBar`：一行「主機名稱 · 運作 時間 · 機型 · CPU 型號」，視窗窄時以 `elide` 截斷；`mock` 為 true 時右側顯示「模擬資料 · 非實機」膠囊。
+
+### ui/sidebar.slint
+
+`Sidebar`（第 2 層，`GlassPanel` 圓角 14、陰影）：頂部 App 圖示＋名稱（`@image-url` 讀 `src-tauri/icons/64x64.png`）與收合鈕；中段主頁面（儀表板、儲存裝置、網路、感測器、應用程式，`pages` 由 `app.slint` 傳入）；
+底部「設定」（頁索引 `pages.length`）、主題切換鈕（跟隨系統 → 深色 → 淺色循環）、版本。收合時寬 56 px 只顯示圖示，展開 208 px；寬度變化 160 ms 過渡。
+
+### ui/app.slint
+
+`App`（匯出 `Theme` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
+第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
+各頁目前只顯示頁名與預計實作的 Phase（佔位）。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
+
 
 ## crates/core/
 
@@ -131,9 +201,11 @@ Cargo workspace：成員 `crates/core`、`src-tauri`；`exclude = ["spikes"]`（
 
 ### src/settings.rs
 
-`Settings {updateInterval, historyPoints, gpuIndex, netInterface, sidebarGlass}`，預設與範圍沿用舊版 v0.0.5 的 KConfig `main.xml`：
+`Settings {updateInterval, historyPoints, gpuIndex, netInterface, sidebarGlass, theme, tempUnit, sidebarCollapsed}`，前五項預設與範圍沿用舊版 v0.0.5 的 KConfig `main.xml`：
 `updateInterval` 100–10000／步進 50、`historyPoints` 10–120／步進 10、`gpuIndex` 0–15、`netInterface` 為 `all`（空值亦視為 `all`）
-或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell；`sidebarGlass` 布林、預設 `true`，只在建立視窗時讀取（`src-tauri/src/lib.rs` `create_main_window`），改變後下次啟動生效。`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
+或 1–15 個 `[A-Za-z0-9-_.:@]` 字元（Linux IFNAMSIZ），值不會傳給 shell；`sidebarGlass` 布林、預設 `true`，只在建立視窗時讀取（`src-tauri/src/lib.rs` `create_main_window`），改變後下次啟動生效。
+Slint 版的顯示偏好：`theme` 為 `system`（預設）／`dark`／`light`、`tempUnit` 為 `c`（預設）／`f`（大小寫須完全相符，其他值回 `SettingsError`）、`sidebarCollapsed` 布林（預設 `false`）；Tauri 版讀寫設定時原樣保留。
+`Settings::apply(&SettingsPatch)` 全部驗證通過才回傳新值，失敗時原值不變。
 持久化見 `src/settings_store.rs`。
 
 ### src/scheduler.rs
@@ -151,7 +223,7 @@ Cargo workspace：成員 `crates/core`、`src-tauri`；`exclude = ["spikes"]`（
 
 ### src/settings_store.rs
 
-設定檔 `<設定目錄>/config.json`，格式即 `Settings` 的 JSON（`{"updateInterval":500,"historyPoints":30,"gpuIndex":0,"netInterface":"all","sidebarGlass":true}`；舊檔沒有 `sidebarGlass` 時用預設值）。
+設定檔 `<設定目錄>/config.json`，格式即 `Settings` 的 JSON（`{"updateInterval":500,"historyPoints":30,"gpuIndex":0,"netInterface":"all","sidebarGlass":true,"theme":"system","tempUnit":"c","sidebarCollapsed":false}`；舊檔沒有 `sidebarGlass`、`theme`、`tempUnit`、`sidebarCollapsed` 時用預設值）。
 - 載入：檔案不存在 → 預設值、無警告（首次啟動）；無法讀取 → 預設值＋警告，不動原檔；不是合法 JSON 或不是物件 →
   原檔改名為 `config.json.corrupt-<unix 秒>`（同秒重複時加序號）保留，使用預設值並警告；個別欄位無效或型別錯誤 → 該欄位用預設值、
   其餘有效欄位保留，並警告；未知欄位忽略；接受 `networkInterface` 作為 `netInterface` 的別名。

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "src-tauri"]
+members = ["crates/core", "crates/app", "src-tauri"]
 # spikes/* are standalone crates with their own empty [workspace].
 exclude = ["spikes"]
 resolver = "2"
@@ -8,3 +8,9 @@ resolver = "2"
 lto = true
 codegen-units = 1
 strip = true
+
+# softbuffer 0.4 hardcodes wl_shm Xrgb8888 on Wayland, which drops alpha and makes
+# the software-rendered Slint window opaque (no visible blur). Patched copy uses
+# Argb8888; spikes/slint-poc points at the same copy.
+[patch.crates-io]
+softbuffer = { path = "patches/softbuffer" }

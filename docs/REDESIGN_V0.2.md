@@ -74,7 +74,7 @@
 
   目前只有 `lib.rs`、`blur.rs`、`tests/ipc.rs` 依賴 Tauri。
 - **`crates/app`**（執行檔）：Slint 介面＋視窗管理。
-  - 執行檔名稱維持 `resourcewatch`，Wayland app_id 也是 `resourcewatch`，`install.sh` 的桌面檔不用改名。
+  - 執行檔名稱維持 `resourcewatch`（Phase 2–6 與 Tauri 版並存期間暫名 `resourcewatch-slint`），Wayland app_id 也是 `resourcewatch`，`install.sh` 的桌面檔不用改名。
 
 ### 資料流
 - 沿用 `scheduler.rs` 的 `Scheduler::start(interval, tick)`。
@@ -157,13 +157,23 @@
 - [x] Tauri 版改成依賴 core，行為不變，現有測試全部通過：搬移前後皆 96 個測試（core 83、Tauri lib 2、`tests/ipc.rs` 11），fmt／clippy `-D warnings` 通過；安裝後實際啟動正常，`sample` 範例輸出快照正常。
 - [x] `install.sh` 暫時照舊建置 Tauri 版，確保改版期間仍可安裝使用：只改執行檔來源為根目錄 `target/release/resourcewatch`，實際執行 `./install.sh` 成功。
 
-## Phase 2：Slint 外殼 `[ ]`
-- [ ] 視窗、三層玻璃、自訂標題列。
-- [ ] 右上角按鈕圖示跟隨系統風格（Phase 0 延後項目）：PoC 讀圖示主題（Papirus）的 `window-*` 圖示，外觀與 KDE 視窗按鈕不一致；KDE 按鈕來自視窗裝飾主題，不是圖示主題，需另找做法。
-- [ ] 側欄導覽：儀表板、儲存裝置、網路、感測器、應用程式、設定；可收合。
-- [ ] 深淺色 token（Slint `global Theme`），跟隨系統或手動切換。
-- [ ] 頂部主機資訊列（主機名稱、運作時間、機型、CPU 型號）、模擬模式提示。
-- [ ] 設定讀寫接上 core 的 `settings_store`。
+## Phase 2：Slint 外殼 `[x]`
+實作：`crates/app`（說明見 `Readme_Architecture.md`）。執行檔暫名 `resourcewatch-slint`（Tauri 版仍叫 `resourcewatch`、共用 `target/`），Phase 7 改回 `resourcewatch`。
+- [x] 視窗、三層玻璃、自訂標題列。第 1 層視窗 `GlassPanel`＋合成器模糊（圓角模糊區域、隨縮放重設）、第 2 層浮起側欄、第 3 層內容卡片；1 px 高光上亮下暗；標題列可拖動、雙擊最大化，邊緣縮放沿用 `resize-border-width`。
+  最小化／最大化直接用 Window 內建的 `minimized`／`maximized`（與實際視窗雙向同步）。實機截圖確認模糊與三層效果；KWin 讀到 `desktopFileName=resourcewatch`。
+- [x] 右上角按鈕圖示跟隨系統風格（Phase 0 延後項目）：KWin 視窗裝飾主題不是圖示主題，無法讀取；改以 1 px `Path` 自繪 KDE 預設 Breeze 樣式（細橫線、方框、重疊方框、叉），顏色跟隨深淺色 token，取代 PoC 讀 Papirus 圖示的做法。
+- [x] 側欄導覽：儀表板、儲存裝置、網路、感測器、應用程式、設定；可收合（56／208 px，160 ms 過渡，狀態存入 `sidebarCollapsed`）。各頁目前為佔位內容，標示實作的 Phase。
+- [x] 深淺色 token（Slint `global Theme`），跟隨系統或手動切換：`system` 取 `Palette.color-scheme`（XDG portal，系統切換即時生效）；側欄主題鈕循環 跟隨系統 → 深色 → 淺色，存入 `theme`。截圖確認深色與淺色。
+- [x] 頂部主機資訊列（主機名稱、運作時間、機型、CPU 型號）、模擬模式提示：與 `hostname`、`uptime`、DMI、`/proc/cpuinfo` 比對一致；`RESOURCEWATCH_MOCK=1` 時顯示「模擬資料 · 非實機」。
+- [x] 設定讀寫接上 core 的 `settings_store`：與 Tauri 版共用 `~/.config/io.github.local.resourcewatch/config.json`；core `Settings` 新增 `theme`／`tempUnit`／`sidebarCollapsed`（含驗證、容錯、單元測試，IPC 測試同步更新）；沒有變更時不寫檔。
+
+### Phase 2 量測（2026-11-15，KWin Wayland、縮放 1.3、release 建置、預設 500 ms、儀表板佔位頁）
+| 項目 | 結果 |
+|---|---|
+| RSS | 56 MB（RssAnon 18／RssFile 27／RssShmem 13；Shmem 為 1586×1027 的 Wayland 畫面緩衝區，隨視窗尺寸增加） |
+| 閒置 CPU | 0.55% |
+
+注意：RSS 已接近 60 MB 門檻，Phase 4 儀表板完成後須重測。
 
 ## Phase 3：元件庫 `[ ]`
 - [ ] GlassCard（標題列可帶膠囊選單或分段控制）

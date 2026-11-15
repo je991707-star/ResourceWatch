@@ -108,6 +108,33 @@ pub fn parse_stored(value: &Value) -> Result<(Settings, Vec<String>), String> {
             }),
         );
     }
+    if let Some(v) = obj.get("theme") {
+        apply(
+            "theme",
+            v.as_str().map(|s| SettingsPatch {
+                theme: Some(s.to_string()),
+                ..Default::default()
+            }),
+        );
+    }
+    if let Some(v) = obj.get("tempUnit") {
+        apply(
+            "tempUnit",
+            v.as_str().map(|s| SettingsPatch {
+                temp_unit: Some(s.to_string()),
+                ..Default::default()
+            }),
+        );
+    }
+    if let Some(v) = obj.get("sidebarCollapsed") {
+        apply(
+            "sidebarCollapsed",
+            v.as_bool().map(|b| SettingsPatch {
+                sidebar_collapsed: Some(b),
+                ..Default::default()
+            }),
+        );
+    }
     Ok((settings, problems))
 }
 
@@ -248,6 +275,9 @@ mod tests {
             gpu_index: 1,
             net_interface: "enp3s0".into(),
             sidebar_glass: false,
+            theme: "light".into(),
+            temp_unit: "f".into(),
+            sidebar_collapsed: true,
         };
         store.save(&s).unwrap();
         assert_eq!(
@@ -260,7 +290,7 @@ mod tests {
         let v: Value = serde_json::from_str(&fs::read_to_string(store.path()).unwrap()).unwrap();
         assert_eq!(
             v,
-            serde_json::json!({"updateInterval": 1250, "historyPoints": 60, "gpuIndex": 1, "netInterface": "enp3s0", "sidebarGlass": false})
+            serde_json::json!({"updateInterval": 1250, "historyPoints": 60, "gpuIndex": 1, "netInterface": "enp3s0", "sidebarGlass": false, "theme": "light", "tempUnit": "f", "sidebarCollapsed": true})
         );
         let leftovers: Vec<_> = fs::read_dir(&dir)
             .unwrap()
@@ -275,7 +305,7 @@ mod tests {
         let dir = temp_root("cfg-invalid");
         fs::write(
             dir.join(FILE_NAME),
-            r#"{"updateInterval": 125, "historyPoints": 60, "gpuIndex": 99, "networkInterface": "wlp2s0", "sidebarGlass": "yes", "future": true}"#,
+            r#"{"updateInterval": 125, "historyPoints": 60, "gpuIndex": 99, "networkInterface": "wlp2s0", "sidebarGlass": "yes", "theme": "blue", "tempUnit": "f", "sidebarCollapsed": 1, "future": true}"#,
         )
         .unwrap();
         let l = SettingsStore::new(&dir).load();
@@ -284,11 +314,19 @@ mod tests {
         assert_eq!(l.settings.gpu_index, 0);
         assert_eq!(l.settings.net_interface, "wlp2s0", "alias accepted");
         assert!(l.settings.sidebar_glass, "wrong type → default");
+        assert_eq!(l.settings.theme, "system", "unknown theme → default");
+        assert_eq!(l.settings.temp_unit, "f", "valid kept");
+        assert!(!l.settings.sidebar_collapsed, "wrong type → default");
         let w = l.warning.unwrap();
-        assert!(
-            w.contains("updateInterval") && w.contains("gpuIndex") && w.contains("sidebarGlass"),
-            "{w}"
-        );
+        for key in [
+            "updateInterval",
+            "gpuIndex",
+            "sidebarGlass",
+            "theme",
+            "sidebarCollapsed",
+        ] {
+            assert!(w.contains(key), "{key}: {w}");
+        }
 
         fs::write(
             dir.join(FILE_NAME),
