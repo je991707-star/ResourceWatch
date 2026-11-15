@@ -86,6 +86,20 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
   設定頁底部顯示設定檔路徑；啟動時讀取設定檔有問題（`loadWarning`）時顯示紅色提示。
   在 Tauri 以外（例如瀏覽器）開啟時不顯示任何數值，只標示「未連線到應用程式後端」。
 
+## spikes/slint-poc/
+
+v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspace]`，不屬於任何 workspace；不被 `install.sh` 建置，Phase 7 移除或併入 `crates/app`）。量測數據與結論寫在 `REDESIGN_V0.2.md` 的 Phase 0。
+- `ui/poc.slint`：`Poc` 視窗 `no-frame`＋`background: transparent`＋`resize-border-width: 6px`（Slint 內建的無邊框邊緣縮放，winit 負責游標與 `drag_resize_window`）；
+  自訂標題列用內建 `WindowMoveArea`（拖過門檻才 `drag_window()`，單擊不影響子元件），其中的 `TouchArea` 雙擊切換最大化；右上角依 KDE 順序放最小化／最大化／關閉（回呼名 `close-window`，避開內建 `close`）。
+  一層視窗玻璃（`glass` 決定半透明或不透明）＋一張卡片；長條圖是 `Path`，`viewbox` 等於自身像素尺寸，`commands` 由 Rust 產生；`chart-width`／`chart-height` 輸出給 Rust 算座標。
+- `src/main.rs`：
+  - 視窗模式：`BackendSelector` 選 winit＋渲染器（`SLINT_RENDERER`，預設 `software`）→ 之後才能呼叫 `slint::set_xdg_app_id("resourcewatch")`（未選平台時呼叫會回錯「No default Slint platform」）。
+    `spawn_local` 等 `winit_window()` 取得 raw-window-handle 的 `wl_display`／`wl_surface` 交給 `blur.rs`；失敗（X11、無協定、合成器關閉模糊）改成不透明。`POC_NO_GLASS=1` 直接不透明。
+  - 500 ms `slint::Timer`：讀 `/proc/stat` 算 CPU 忙碌比例，存最多 240 點；`bars_path` 產生 2 px 長條＋1 px 間隔、最新在右緣、超出左緣即停（有單元測試）。每次 tick 也同步 `maximized-state`（合成器端最大化時圓角改 0）。
+  - `--snapshot <png>`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，無視窗地以軟體渲染器繪製並 `take_snapshot()`，用 `png` crate 寫出 RGBA PNG（之後視覺驗證用，避開 KWin 防搶焦點）。
+- `src/blur.rs`：複製 `src-tauri/src/blur.rs` 的 `wayland` 模組（`ext_background_effect_manager_v1` → `org_kde_kwin_blur_manager`），只換掉 GTK 取得指標的部分。
+- 建置：`distrobox enter resourcewatch-dev -- bash -lc 'cd spikes/slint-poc && cargo build --release'`；Slint 鎖在 `=1.18.1`（`unstable-winit-030` 的 API 可能在小版本變動）。
+
 ## src-tauri/
 
 Rust + Tauri 2 桌面應用。建置：`cargo tauri build`（release + deb／rpm）、`cargo build`；檢查：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`。

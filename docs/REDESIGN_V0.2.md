@@ -95,7 +95,8 @@
 - **自訂標題列**：
   - 和側欄、內容同一片玻璃，與工具列合一。
   - 右上角保留最小化／最大化／關閉，順序和圖示語意與 KDE 一致。
-  - 拖動用 winit `drag_window()`；邊緣與角落縮放用 `drag_resize_window()`；雙擊切換最大化。
+  - 拖動用 Slint 內建 `WindowMoveArea`（內部呼叫 winit `drag_window()`）；邊緣與角落縮放用 Window 的 `resize-border-width`（內部呼叫 `drag_resize_window()`）；雙擊切換最大化。
+  - `slint::set_xdg_app_id("resourcewatch")` 必須在 `BackendSelector::select()` 之後、建立視窗之前呼叫。
 
 ### 繪圖
 - 環形圖、堆疊條、長條圖都用 Slint `Path`。
@@ -106,8 +107,8 @@
 - 後端保留的歷史長度沿用 `history::KEPT_POINTS`（240）。
 
 ### 渲染器
-- 預設 femtovg（OpenGL）。
-- Phase 0 在 NVIDIA 上實測記憶體、CPU 和透明度；不達標就評估 Skia 或軟體渲染器。
+- 預設 Slint 軟體渲染器（`renderer-software`）：Phase 0 實測 femtovg 在 NVIDIA 上會載入 NVIDIA GL 驅動與 Mesa／LLVM，RSS 167 MB，超過 60 MB 門檻；軟體渲染器 24 MB。
+- 保留 `SLINT_RENDERER` 環境變數可切換 femtovg 比較；Skia 未評估（軟體渲染器已達標）。
 
 ### 設定
 - 原本存在 `localStorage` 的顯示偏好，改進 Rust `Settings`，存在同一個 `config.json`：
@@ -122,16 +123,28 @@
 
 ---
 
-## Phase 0：技術驗證 `[ ]`
+## Phase 0：技術驗證 `[ ]`（自動項目完成，待使用者實際操作確認）
 目標：先證明 Slint 在這台機器（KWin Wayland＋NVIDIA 580）上做得到。任何一項不達標就停下來回報，再決定替代方案。
+驗證程式：`spikes/slint-poc/`（Slint 1.18.1，說明見 `Readme_Architecture.md`）。
 
 - [ ] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
-  - [ ] 透明＋背景模糊有效。
-  - [ ] 縮放、拖動時沒有空白，內容不會消失。
-  - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。
-  - [ ] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示。
-- [ ] 量測 RSS 與閒置 CPU（`/proc/<pid>/status`、`/proc/<pid>/stat`），和目前的 Tauri 版比較，數據記錄在本文件。
-- [ ] 確認可以用 Slint 軟體渲染器把畫面輸出成 PNG。之後的視覺驗證都用這個方式，避開 KWin 防搶焦點造成截圖拍到其他視窗的問題。
+  - [ ] 透明＋背景模糊有效。程式端：`ext_background_effect_manager_v1` 請求成功（log `blur requested`）；畫面效果待使用者目視確認。
+  - [ ] 縮放、拖動時沒有空白，內容不會消失。待使用者操作確認。
+  - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。待使用者操作確認。
+  - [x] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示（KWin 腳本讀到 `desktopFileName=resourcewatch`，對應 `~/.local/share/applications/resourcewatch.desktop`）。
+- [x] 量測 RSS 與閒置 CPU（`/proc/<pid>/status`、`/proc/<pid>/stat`），和目前的 Tauri 版比較，數據記錄在本文件。
+- [x] 確認可以用 Slint 軟體渲染器把畫面輸出成 PNG：`slint-poc --snapshot out.png`（無視窗 `MinimalSoftwareWindow`＋`take_snapshot()`）。
+
+### Phase 0 量測（2026-11-15，KWin Wayland、NVIDIA 580.196、release 建置）
+視窗 520×340、500 ms 更新、開毛玻璃；啟動 3 秒後取 RSS，CPU 為 20 秒內 utime+stime 換算的單核 %。
+
+| 版本 | 程序數 | RSS（合計） | 閒置 CPU |
+|---|---|---|---|
+| Tauri 0.1.0（`~/.local/bin/resourcewatch`，儀表板） | 3（主程式＋WebKitNetwork＋WebKitWeb） | 506 MB | 8.7% |
+| Slint PoC，femtovg | 1 | 167 MB（RssAnon 70／RssFile 102；NVIDIA EGL＋Mesa LLVM） | 0.4% |
+| Slint PoC，software（採用） | 1 | 24 MB | 0.6% |
+
+注意：PoC 只有一張卡片，完整儀表板的 RSS／CPU 會更高，Phase 7 依「輕量目標」重測。
 
 ## Phase 1：抽出 `crates/core` `[ ]`
 - [ ] 建立 workspace，把不依賴 Tauri 的模組與測試搬到 `crates/core`。

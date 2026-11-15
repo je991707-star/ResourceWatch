@@ -1,0 +1,114 @@
+// Phase 0 spike: transparent frameless window, custom title bar, one glass card
+// with a 2px/1px bar chart updated by Rust every 500 ms.
+
+component TitleButton inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> danger;
+    callback clicked;
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: ta.has-hover ? (danger ? #e5484d : #ffffff26) : transparent;
+    Text {
+        text: glyph;
+        color: #f2f4f8;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component Poc inherits Window {
+    in property <bool> glass: true;
+    in property <string> bars-path: "";
+    in property <string> cpu-text: "--";
+    in property <bool> maximized-state;
+    out property <length> chart-width: chart.width;
+    out property <length> chart-height: chart.height;
+    callback minimize();
+    callback toggle-maximize();
+    callback close-window();
+
+    title: "ResourceWatch";
+    no-frame: true;
+    resize-border-width: 6px;
+    preferred-width: 520px;
+    preferred-height: 340px;
+    min-width: 320px;
+    min-height: 220px;
+    background: transparent;
+
+    // Layer 1: window glass (the compositor blurs what is behind it).
+    Rectangle {
+        border-radius: maximized-state ? 0 : 16px;
+        background: glass ? #0d1424b3 : #0d1424;
+        border-width: 1px;
+        border-color: #ffffff1f;
+        clip: true;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 10px;
+
+            // Custom title bar: drag to move, double-click to maximize.
+            Rectangle {
+                height: 32px;
+                WindowMoveArea {
+                    TouchArea {
+                        double-clicked => { root.toggle-maximize(); }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 6px;
+                    spacing: 4px;
+                    Text {
+                        text: "ResourceWatch · Slint PoC";
+                        color: #f2f4f8;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    // KDE order: minimize, maximize, close.
+                    TitleButton { glyph: "–"; clicked => { root.minimize(); } }
+                    TitleButton { glyph: maximized-state ? "❐" : "□"; clicked => { root.toggle-maximize(); } }
+                    TitleButton { glyph: "✕"; danger: true; clicked => { root.close-window(); } }
+                }
+            }
+
+            // Layer 3: content card.
+            Rectangle {
+                border-radius: 14px;
+                background: #ffffff14;
+                border-width: 1px;
+                border-color: #ffffff26;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000059;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        Text { text: "CPU"; color: #ffffffa6; font-size: 12px; font-weight: 600; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: cpu-text; color: #4fd8ff; font-size: 20px; font-weight: 700; }
+                    }
+                    chart := Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: 8px;
+                        background: #00000026;
+                        // Bars are generated in Rust in pixel units (2px bar + 1px gap, right-aligned).
+                        Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-width: self.width / 1px;
+                            viewbox-height: self.height / 1px;
+                            commands: bars-path;
+                            fill: #4fd8ff;
+                            stroke-width: 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
