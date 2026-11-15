@@ -46,9 +46,12 @@ struct Mem {
     total: u64,
     used: u64,
     available: u64,
+    free: u64,
     cached: u64,
     swap_total: u64,
     swap_used: u64,
+    /// /proc/pressure/memory `some avg10` (%).
+    pressure: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -74,6 +77,12 @@ struct Mount {
 #[serde(rename_all = "camelCase")]
 struct Net {
     name: String,
+    up: bool,
+    mac: String,
+    ip: Option<String>,
+    gateway: Option<String>,
+    rx_total: u64,
+    tx_total: u64,
     rx_bps: Option<f64>,
     tx_bps: Option<f64>,
 }
@@ -100,7 +109,11 @@ pub struct SystemInfo {
     hostname: String,
     os: String,
     kernel: String,
+    model: String,
     cpu_model: String,
+    cpu_cores: Option<usize>,
+    cpu_threads: usize,
+    home: String,
 }
 
 pub fn system_info() -> SystemInfo {
@@ -109,18 +122,110 @@ pub fn system_info() -> SystemInfo {
         .find_map(|l| l.strip_prefix("PRETTY_NAME="))
         .map(|v| v.trim_matches('"').to_string())
         .unwrap_or_default();
-    let cpu_model = read("/proc/cpuinfo")
-        .lines()
-        .find_map(|l| l.strip_prefix("model name"))
-        .and_then(|v| v.split_once(':'))
-        .map(|(_, v)| v.trim().to_string())
-        .unwrap_or_default();
+    let cpuinfo = read("/proc/cpuinfo");
+    let (cpu_model, cpu_cores, cpu_threads) = parse_cpuinfo(&cpuinfo);
+    // Many desktop boards leave product_name as a placeholder; the board name is more useful then.
+    let dmi = |k: &str| read(format!("/sys/class/dmi/id/{k}")).trim().to_string();
+    let product = dmi("product_name");
+    let placeholder = [
+        "O.E.M.",
+        "System Product Name",
+        "Default string",
+        "Not Applicable",
+    ];
+    let model = if product.is_empty() || placeholder.iter().any(|p| product.contains(p)) {
+        format!("{} {}", dmi("board_vendor"), dmi("board_name"))
+            .trim()
+            .to_string()
+    } else {
+        product
+    };
     SystemInfo {
         hostname: read("/proc/sys/kernel/hostname").trim().to_string(),
         os,
         kernel: read("/proc/sys/kernel/osrelease").trim().to_string(),
+        model,
         cpu_model,
+        cpu_cores,
+        cpu_threads,
+        home: std::env::var("HOME").unwrap_or_else(|_| "/".into()),
     }
+}
+
+/// /proc/cpuinfo → (model name, physical cores = unique (physical id, core id), logical CPUs).
+fn parse_cpuinfo(text: &str) -> (String, Option<usize>, usize) {
+    let mut model = String::new();
+    let (mut cores, mut threads, mut phys) = (std::collections::HashSet::new(), 0, "");
+    for l in text.lines() {
+        let Some((k, v)) = l.split_once(':') else {
+            continue;
+        };
+        match k.trim() {
+            "processor" => threads += 1,
+            "model name" if model.is_empty() => model = v.trim().to_string(),
+            "physical id" => phys = v.trim(),
+            "core id" => {
+                cores.insert((phys, v.trim()));
+            }
+            _ => {}
+        }
+    }
+    (model, (!cores.is_empty()).then_some(cores.len()), threads)
+}
+
+/// /proc/net/route → iface → default gateway (addresses are hex in network byte order).
+fn parse_routes(text: &str) -> HashMap<String, String> {
+    text.lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let flags = u32::from_str_radix(f.get(3)?, 16).ok()?;
+            if *f.get(1)? != "00000000" || flags & 2 == 0 {
+                return None;
+            }
+            let gw = u32::from_str_radix(f.get(2)?, 16).ok()?;
+            Some((
+                f[0].to_string(),
+                std::net::Ipv4Addr::from(gw.to_ne_bytes()).to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// First IPv4 address of each interface.
+fn ipv4_addrs() -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: getifaddrs fills a linked list we only read and then free once.
+    unsafe {
+        if libc::getifaddrs(&mut ifap) != 0 {
+            return out;
+        }
+        let mut p = ifap;
+        while let Some(ifa) = p.as_ref() {
+            if !ifa.ifa_addr.is_null() && (*ifa.ifa_addr).sa_family as i32 == libc::AF_INET {
+                let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                let name = std::ffi::CStr::from_ptr(ifa.ifa_name)
+                    .to_string_lossy()
+                    .into_owned();
+                let ip = std::net::Ipv4Addr::from(sin.sin_addr.s_addr.to_ne_bytes());
+                out.entry(name).or_insert(ip.to_string());
+            }
+            p = ifa.ifa_next;
+        }
+        libc::freeifaddrs(ifap);
+    }
+    out
+}
+
+/// `some avg10=1.23 ...` → 1.23
+fn parse_pressure(text: &str) -> Option<f64> {
+    text.lines()
+        .find(|l| l.starts_with("some"))?
+        .split_whitespace()
+        .find_map(|f| f.strip_prefix("avg10="))?
+        .parse()
+        .ok()
 }
 
 /// `cpu`/`cpuN` lines of /proc/stat → (total, idle) jiffies; first entry is the aggregate.
@@ -162,9 +267,11 @@ fn parse_meminfo(text: &str) -> Mem {
         total: g("MemTotal"),
         used: g("MemTotal").saturating_sub(available),
         available,
+        free: g("MemFree"),
         cached: g("Buffers") + g("Cached") + g("SReclaimable"),
         swap_total: g("SwapTotal"),
         swap_used: g("SwapTotal").saturating_sub(g("SwapFree")),
+        pressure: None,
     }
 }
 
@@ -378,6 +485,7 @@ impl Monitor {
         self.disk = ds;
 
         let nd = parse_net_dev(&read("/proc/net/dev"));
+        let (mut ips, mut gws) = (ipv4_addrs(), parse_routes(&read("/proc/net/route")));
         let mut net: Vec<Net> = nd
             .iter()
             .filter(|(n, _)| Path::new(&format!("/sys/class/net/{n}/device")).exists())
@@ -385,6 +493,14 @@ impl Monitor {
                 let prev = self.net.get(n);
                 Net {
                     name: n.clone(),
+                    up: read(format!("/sys/class/net/{n}/operstate")).trim() == "up",
+                    mac: read(format!("/sys/class/net/{n}/address"))
+                        .trim()
+                        .to_string(),
+                    ip: ips.remove(n),
+                    gateway: gws.remove(n),
+                    rx_total: rx,
+                    tx_total: tx,
                     rx_bps: rate(prev.map(|p| &p.0), rx),
                     tx_bps: rate(prev.map(|p| &p.1), tx),
                 }
@@ -414,7 +530,10 @@ impl Monitor {
                     .then(|| freqs.iter().sum::<f64>() / freqs.len() as f64),
                 temp,
             },
-            mem: parse_meminfo(&read("/proc/meminfo")),
+            mem: Mem {
+                pressure: parse_pressure(&read("/proc/pressure/memory")),
+                ..parse_meminfo(&read("/proc/meminfo"))
+            },
             gpus: self.gpus.sample(),
             disks,
             mounts,
@@ -491,11 +610,24 @@ mod tests {
                 total: 1024000,
                 used: 409600,
                 available: 614400,
+                free: 102400,
                 cached: 256000,
                 swap_total: 512000,
-                swap_used: 102400
+                swap_used: 102400,
+                pressure: None,
             }
         );
+        let p = "some avg10=1.50 avg60=0.20 avg300=0.00 total=1\nfull avg10=0.10 avg60=0.00 avg300=0.00 total=1\n";
+        assert_eq!(parse_pressure(p), Some(1.5));
+    }
+
+    #[test]
+    fn cpuinfo_and_routes() {
+        let c = "processor\t: 0\nmodel name\t: Xeon\nphysical id\t: 0\ncore id\t: 0\n\nprocessor\t: 1\nmodel name\t: Xeon\nphysical id\t: 0\ncore id\t: 0\n\nprocessor\t: 2\nphysical id\t: 0\ncore id\t: 1\n";
+        assert_eq!(parse_cpuinfo(c), ("Xeon".into(), Some(2), 3));
+        // the kernel prints the network-order address read as a native u32
+        let r = format!("Iface\tDestination\tGateway\tFlags\nenp3s0\t00000000\t{:08X}\t0003\nenp3s0\t0001A8C0\t00000000\t0001\n", u32::from_ne_bytes([192, 168, 1, 1]));
+        assert_eq!(parse_routes(&r)["enp3s0"], "192.168.1.1");
     }
 
     #[test]

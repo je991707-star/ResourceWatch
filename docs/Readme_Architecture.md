@@ -2,13 +2,15 @@
 
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。修改任何程式時，請把變更寫入對應章節。
 
-Rust + Tauri 2 單一程式：後端只負責讀 `/proc`、`/sys` 並回傳 JSON；前端（無打包工具、無 npm 依賴的 HTML／CSS／JS）每秒輪詢、保存歷史、繪圖。
-沒有背景執行緒、沒有設定檔、不啟動外部程序、不連網路。缺值一律為 JSON `null`，前端顯示 `--`。
+Rust + Tauri 2 單一程式：後端只負責讀 `/proc`、`/sys`（以及資料夾掃描）並回傳 JSON；前端（無打包工具、無 npm 依賴的 HTML／CSS／JS）輪詢、保存歷史、繪圖。
+沒有常駐背景執行緒、沒有設定檔、不啟動外部程序、不連網路。缺值一律為 JSON `null`，前端顯示 `--`。
 
 ```text
-frontend/app.js ── 每 1 秒 invoke("snapshot")   ─┐
-               ── 程序頁每 2 秒 invoke("processes") ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
-               ── 啟動時 invoke("system_info")    ─┘                         └─ Gpus（gpu.rs：NVML／DRM sysfs）
+frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
+               ── 儀表板／應用程式頁每 2 秒 invoke("processes") │
+               ── 啟動時 invoke("system_info")                 ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
+               ── 儲存頁 invoke("scan_dir") / ("dir_children") │                         ├─ Gpus（gpu.rs：NVML／DRM sysfs）
+               ── 「選擇資料夾…」invoke("plugin:dialog|open")   ─┘                         └─ Mutex<du::Cache>（du.rs：資料夾大小）
 ```
 
 ---
@@ -29,48 +31,65 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")   ─┐
 
 ### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json
 
-- 依賴：`tauri` 2、`serde`、`libc`（`statvfs`、`sysconf`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）。
+- 依賴：`tauri` 2、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
+  `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
-- CSP：`script-src 'self'; style-src 'self'`——不能用行內 `style` 屬性，長條與圖表都用 SVG 屬性畫。
-- capabilities 只有 `core:default`，沒有 fs／shell／http 外掛。
+- CSP：`script-src 'self'; style-src 'self'`——HTML 裡不能有 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度在 `render` 之後以 CSSOM（`el.style.flexGrow`）設定。
+- capabilities：`core:default`＋`dialog:allow-open`，沒有 fs／shell／http 外掛。
 
 ### src/main.rs
-
-三個 Tauri 指令，`Monitor` 放在 `Mutex` 裡由 Tauri 管理（鎖中毒時沿用內部值）：
 
 | 指令 | 回傳 | 說明 |
 | --- | --- | --- |
 | `snapshot` | `Snapshot` | 一次取樣；速率類欄位第一次呼叫為 `null` |
 | `processes` | `Proc[]` | 掃描所有程序；第一次呼叫 `cpu` 為 `null` |
-| `system_info` | `SystemInfo` | 主機名稱、作業系統、核心版本、CPU 型號（不變的資料） |
+| `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄） |
+| `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
+| `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
 
+`Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。
 啟動時偵測到 NVIDIA 專有驅動（`/proc/driver/nvidia`）且使用者沒有自行設定時，設 `WEBKIT_DISABLE_DMABUF_RENDERER=1`：WebKitGTK 的 DMA-BUF 渲染在 X11 會空白、在 Wayland 縮放會落後。
 
 ### src/sys.rs
 
-解析器都吃字串、有單元測試（`stat`、`meminfo`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`）。`Monitor` 保存上次的 CPU jiffies、磁碟扇區、網路位元組、各程序 ticks 與取樣時間，速率＝差值／實際經過秒數。
+解析器都吃字串、有單元測試（`stat`、`meminfo`、`pressure`、`cpuinfo`、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`）。
+`Monitor` 保存上次的 CPU jiffies、磁碟扇區、網路位元組、各程序 ticks 與取樣時間，速率＝差值／實際經過秒數。
 
 JSON（camelCase）：
 
 ```text
 Snapshot {
-  cpu:     { usage, cores: (number|null)[], freqMhz, temp }      // %；temp 取第一個 coretemp/k10temp/zenpower/cpu_thermal 溫度
-  mem:     { total, used, available, cached, swapTotal, swapUsed } // bytes；used = MemTotal − MemAvailable；cached = Buffers+Cached+SReclaimable
+  cpu:     { usage, cores: (number|null)[], freqMhz, temp }   // %；temp 取第一個 coretemp/k10temp/zenpower/cpu_thermal 溫度
+  mem:     { total, used, available, free, cached, swapTotal, swapUsed, pressure }
+           // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable；pressure = /proc/pressure/memory some avg10（%）
   gpus:    [{ name, usage, memUsed, memTotal, temp }]
-  disks:   [{ name, model, size, readBps, writeBps }]              // 只列有 /sys/block/<n>/device 的實體磁碟
-  mounts:  [{ mount, device, total, used }]                        // bytes
-  net:     [{ name, rxBps, txBps }]                                // 只列有 /sys/class/net/<n>/device 的實體介面
-  sensors: [{ chip, label, kind: "temp"|"fan", value }]            // °C 或 RPM；沒有 label 時用 temp1 等
-  uptime                                                            // 秒
+  disks:   [{ name, model, size, readBps, writeBps }]           // 只列有 /sys/block/<n>/device 的實體磁碟
+  mounts:  [{ mount, device, total, used }]                     // bytes
+  net:     [{ name, up, mac, ip, gateway, rxTotal, txTotal, rxBps, txBps }]
+           // 只列有 /sys/class/net/<n>/device 的實體介面；up = operstate "up"；ip 為第一個 IPv4；gateway 為該介面的預設路由
+  sensors: [{ chip, label, kind: "temp"|"fan", value }]         // °C 或 RPM；沒有 label 時用 temp1 等
+  uptime                                                         // 秒
 }
-Proc { pid, name, cpu, mem }          // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
-SystemInfo { hostname, os, kernel, cpuModel }
+Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
+SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home }
 ```
 
 - CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。
+  `cpuCores`＝`(physical id, core id)` 不重複組數（讀不到為 `null`），`cpuThreads`＝`processor` 數。
+- 機型：DMI `product_name`；空的或是佔位字串（`To be filled by O.E.M.`、`System Product Name`、`Default string`）時改用 `board_vendor board_name`。
+- 網路：IPv4 由 `getifaddrs` 取得；閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。
 - 檔案系統：`/proc/self/mountinfo` 只取 `/dev/` 裝置（排除 loop）。同一裝置會掛很多次（btrfs 子卷、ostree 的 `/etc` bind mount），
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
+
+### src/du.rs
+
+資料夾空間分析。`scan(path)`：路徑必須是絕對路徑且為資料夾（否則回傳中文錯誤訊息），遞迴走訪一次，記錄每個資料夾的總大小到 `Cache`（`HashMap<PathBuf, u64>`）。
+- 大小為實際佔用（`st_blocks × 512`，同 `du`，稀疏檔不會被高估）；不跟隨符號連結；不進入其他檔案系統（`st_dev` 不同的資料夾算 0）；讀不到的資料夾視為空的，不中斷掃描。
+  硬連結會重複計算。
+- `Scan { path, size, items }`：`items` 為走訪到的項目數（檔案＋資料夾＋連結）。
+- `children(dir)` → `Entry { name, path, size, dir }[]`，大到小、同大小依名稱；資料夾大小取自快取（不在快取內為 0），檔案即時讀 metadata。
+- 單元測試在暫存目錄建立樹（含符號連結）驗證大小、排序、項目數與路徑驗證。
 
 ### src/gpu.rs
 
@@ -82,18 +101,31 @@ SystemInfo { hostname, os, kernel, cpuModel }
 
 ### index.html
 
-左側 `nav`（App 圖示、各頁按鈕附該資源的色點、底部系統資訊），右側 `header`（頁名、運作時間）與 `#content`。
+骨架：左側 `nav`（收合鈕、`#pages` 由 app.js 產生、底部主題鈕）、右側 `#host` 主機列與 `#content`。`<html data-theme>` 由 app.js 設定。
 
 ### style.css
 
-色彩 token 在 `:root`，`prefers-color-scheme: dark` 覆寫成深色版（跟隨系統，無切換鈕）。版面：側欄 190 px；卡片白底＋1 px 邊框＋圓角 10，無陰影、無透明、無模糊。
-每個資源一個色：處理器藍、記憶體紫、顯示卡綠、儲存橘、網路青、感測器紅，第二條曲線（寫入、上傳）灰（`.c-*` 同時設定 stroke／fill／background）。數字用 `tabular-nums`。
+- 色彩 token 在 `:root`（淺色）與 `:root[data-theme="dark"]`（深色）；主題的「跟隨系統」由 app.js 換算成 `data-theme`，CSS 只有兩套值。
+  深色為中性灰：主區 `#262627`、側欄 `#2f2f31`、卡片 `#353537`（圓角 16、無邊框、無透明、無模糊）。
+- 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／上傳／寫入／CPU 曲線藍、可用／下載綠、讀取紅、CPU 環洋紅、磁碟環青、記憶體壓力橘、交換灰。
+- 版面：側欄 220 px（收合 68 px，只留圖示）；儀表板用 CSS 多欄（`columns: 3 330px`）做瀑布流，卡片 `break-inside: avoid`；其他頁用 `.stack`（直向）或 `.grid`。
+- 儲存頁：`.levels` 左欄資料夾名稱、右欄色塊條 `.strip`；色塊顏色 `.s0`–`.s9` 依大小（100 MB 綠 → 50 GB 以上紅），選取的色塊有黃色內框。右側 `.files` 清單。
 
 ### app.js
 
-- 每秒 `snapshot` → `record` 把 CPU、記憶體%、各 GPU、磁碟讀寫總和、網路上下總和存入 60 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
-  程序頁可見（且視窗未隱藏）時每 2 秒 `processes`，最多顯示 200 列，點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
-- `chart(series, max, tall)`：SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`vector-effect: non-scaling-stroke`；最新點在右緣，`null` 斷線；`max` 未給時取資料最大值 ×1.1。`bar(p)`：SVG 長條。
-- 所有來自系統的字串（程序名稱、感測器標籤、型號）經 `esc` 跳脫後才放進 HTML。
-- 總覽的卡片（`data-goto`）點擊後切到對應頁。
+- 每秒 `snapshot` → `record` 把 CPU、記憶體壓力、各 GPU、磁碟讀寫總和、各網卡上下行存入 60 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
+  儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
+- 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5，應用程式頁最多 300 列、點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
+- 頁面（`PAGES`）：
+  - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈磁碟用量；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
+    處理器（各執行緒直條＋使用率曲線＋前 5 程序）、記憶體（堆疊條、組成與交換、壓力曲線（上限取近期峰值、至少 10%）、前 5 程序）、網路（有預設閘道的網卡：IP／MAC／閘道、上下行曲線、累計與速率）、
+    磁碟（檔案系統用量條）、顯示卡（使用率環、VRAM 條、溫度、曲線）、磁碟 I/O、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
+  - 網路：每張網卡一張卡，標題右側綠／紅點為連線狀態；連線中的顯示位址、大字速率與累計、上下行大圖。
+  - 感測器：依晶片分組。
+  - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
+    每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
+- 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積）、
+  `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；多段時線端改平頭）。
+- 主題：`localStorage` `rw-theme`（`system` → `dark` → `light` 循環），`system` 時監聽 `prefers-color-scheme`；側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
+- 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
 - `window.__TAURI__` 不存在時改用 `window.mockInvoke`：只供在一般瀏覽器載入頁面、注入假資料檢查排版，App 內不會用到。

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,19 +8,12 @@
 </head>
 <body>
   <nav id="nav">
-    <div class="brand"><img src="app-icon.png" alt=""><span>ResourceWatch</span></div>
-    <button data-page="overview" class="active"><i class="dot"></i>總覽</button>
-    <button data-page="cpu"><i class="dot c-cpu"></i>處理器</button>
-    <button data-page="mem"><i class="dot c-mem"></i>記憶體</button>
-    <button data-page="gpu"><i class="dot c-gpu"></i>顯示卡</button>
-    <button data-page="disk"><i class="dot c-disk"></i>儲存</button>
-    <button data-page="net"><i class="dot c-net"></i>網路</button>
-    <button data-page="sensors"><i class="dot c-temp"></i>感測器</button>
-    <button data-page="procs"><i class="dot"></i>程序</button>
-    <div id="sysinfo"></div>
+    <button id="collapse" class="icon-btn" title="收合側欄"></button>
+    <div id="pages"></div>
+    <button id="theme" class="nav-item"></button>
   </nav>
   <main>
-    <header><h1 id="title">總覽</h1><span id="uptime"></span></header>
+    <header id="host"></header>
     <div id="content"></div>
   </main>
   <script src="app.js"></script>

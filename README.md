@@ -10,17 +10,15 @@ ResourceWatch 是 Linux 桌面的系統資源監控程式：左側導覽、右�
 
 | 頁面 | 顯示內容 | 資料來源 |
 | --- | --- | --- |
-| 總覽 | 各資源目前數值＋60 秒曲線、檔案系統容量 | 以下全部 |
-| 處理器 | 使用率曲線、平均頻率、溫度、各執行緒使用率 | `/proc/stat`、`/proc/cpuinfo`、hwmon |
-| 記憶體 | 使用率曲線、已使用／可用／快取／總量、交換空間 | `/proc/meminfo` |
-| 顯示卡 | 使用率曲線、顯示記憶體、溫度 | NVIDIA：NVML（執行期載入）；AMD：DRM sysfs |
-| 儲存 | 讀寫曲線、實體磁碟速率、檔案系統容量 | `/proc/diskstats`、`/sys/block`、`/proc/self/mountinfo`＋`statvfs` |
-| 網路 | 上下行曲線、實體介面速率 | `/proc/net/dev` |
+| 儀表板 | 摘要（記憶體／CPU／磁碟環形圖）、處理器、記憶體（組成、壓力）、網路、磁碟、顯示卡、磁碟 I/O、感測器，含 60 秒曲線與前 5 名程序 | 以下全部 |
+| 應用程式 | 所有程序的名稱、PID、CPU、記憶體，可點欄位排序 | `/proc/[pid]/stat` |
+| 儲存 | 資料夾空間分析：逐層色塊圖＋檔案清單，可選擇資料夾 | 遞迴掃描（不跨檔案系統、不跟隨連結） |
+| 網路 | 每張實體網卡的連線狀態、IP、MAC、閘道、速率、累計流量 | `/proc/net/dev`、`getifaddrs`、`/proc/net/route` |
 | 感測器 | 所有溫度與風扇，依晶片分組 | `/sys/class/hwmon` |
-| 程序 | 名稱、PID、CPU、記憶體，可點欄位排序 | `/proc/[pid]/stat` |
 
+- CPU：`/proc/stat`、`/proc/cpuinfo`；記憶體：`/proc/meminfo`、`/proc/pressure/memory`；顯示卡：NVIDIA NVML（執行期載入）、AMD DRM sysfs；磁碟：`/proc/diskstats`、`/proc/self/mountinfo`＋`statvfs`。
 - 每秒更新一次；不啟動外部程序、不連網路。讀不到的數值顯示 `--`，不當成 0。
-- 沒有設定檔：主題跟隨系統。
+- 主題可切換「跟隨系統／深色／淺色」（側欄左下），側欄可收合。
 
 ## 建置與執行
 
