@@ -87,6 +87,7 @@
 - **模糊**：沿用現有的 `blur.rs`。
   - 優先用 `ext_background_effect_manager_v1`，退回 `org_kde_kwin_blur_manager`。
   - 輸入從 GTK 改成 raw-window-handle 取得的 `wl_display`／`wl_surface`。
+- **模糊區域**：只模糊視窗的圓角矩形（wl_region 以每列 1 px 的長條逼近圓角），每次縮放、最大化／還原時重設；最大化時無圓角。
 - **軟體渲染器的透明**：softbuffer 0.4 在 Wayland 固定用 `Xrgb8888`（丟 alpha），需用 `[patch.crates-io]` 套修補版改成 `Argb8888`，否則視窗不透明、看不到模糊。
 - **退回**：以下情況自動改成不透明底色，介面不壞：
   - X11 或 XWayland。
@@ -129,7 +130,7 @@
 驗證程式：`spikes/slint-poc/`（Slint 1.18.1，說明見 `Readme_Architecture.md`）。
 
 - [ ] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
-  - [x] 透明＋背景模糊有效。軟體渲染器需搭配修補過的 softbuffer（Wayland 改用 `Argb8888`，原版 `Xrgb8888` 會讓視窗不透明）；修補後全螢幕截圖確認視窗後方內容被模糊。
+  - [x] 透明＋背景模糊有效。軟體渲染器需搭配修補過的 softbuffer（Wayland 改用 `Argb8888`，原版 `Xrgb8888` 會讓視窗不透明）；修補後全螢幕截圖確認視窗後方內容被模糊。模糊區域需設成與視窗相同的圓角矩形（`blur.rs` 的 `set_shape`，每次縮放重設），否則圓角外也被模糊，看起來像鋸齒；修正後截圖確認圓角外不再有模糊雜訊。
   - [ ] 縮放、拖動時沒有空白，內容不會消失。待使用者操作確認。
   - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。使用者初步確認正常；按鈕圖示改取系統圖示主題（如 Papirus），待確認。
   - [x] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示（KWin 腳本讀到 `desktopFileName=resourcewatch`，對應 `~/.local/share/applications/resourcewatch.desktop`）。

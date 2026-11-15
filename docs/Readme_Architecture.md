@@ -102,7 +102,10 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
   找不到時回傳空圖片，`TitleButton` 改顯示文字符號；圖示以 `colorize` 染成標題列前景色（主題圖示是單色）。只在啟動時讀一次，換主題要重開（有單元測試）。
 - `patches/softbuffer/`：softbuffer 0.4.8 原樣複製，只把 Wayland 的 `wl_shm::Format::Xrgb8888` 改成 `Argb8888`（兩處，註記 `ResourceWatch patch`），由 `Cargo.toml` 的 `[patch.crates-io]` 套用。
   原版丟棄 alpha，Slint 軟體渲染器畫出的視窗在 Wayland 上是不透明的，模糊雖然請求成功卻看不到；Slint 寫入的就是預乘 ARGB，與 `Argb8888` 相符。局部重繪時髒區先以視窗背景色覆寫（非疊加），透明不會累積。
-- `src/blur.rs`：複製 `src-tauri/src/blur.rs` 的 `wayland` 模組（`ext_background_effect_manager_v1` → `org_kde_kwin_blur_manager`），只換掉 GTK 取得指標的部分。
+- `src/blur.rs`：沿用 `src-tauri/src/blur.rs` 的 `wayland` 模組（`ext_background_effect_manager_v1` → `org_kde_kwin_blur_manager`），GTK 取得指標的部分換成 raw-window-handle。
+  `blur()` 回傳 `Blur`（保留 compositor、queue handle 與 ext／kde 模糊物件），`set_shape(w, h, radius)` 把模糊區域設成圓角矩形；區域由 `rounded_rect_strips` 產生（四角每列 1 px 的長條＋中段一塊，每列起點取弧線在列中心最近的像素，有單元測試）。
+  若模糊整個矩形，圓角外的透明區也會被模糊（KWin 還加雜訊），在花俏背景上看起來像方角鋸齒。
+  `main.rs` 在取得 `Blur` 後立即套用，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）依實際邏輯尺寸重設；最大化時半徑 0。`WINDOW_RADIUS`（16）必須與 `poc.slint` 外層 `border-radius` 一致。
 - 建置：`distrobox enter resourcewatch-dev -- bash -lc 'cd spikes/slint-poc && cargo build --release'`；Slint 鎖在 `=1.18.1`（`unstable-winit-030` 的 API 可能在小版本變動）。
 
 ## src-tauri/

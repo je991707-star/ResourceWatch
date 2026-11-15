@@ -9,6 +9,7 @@ mod blur;
 mod icons;
 
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::winit_030::winit::event::WindowEvent;
 use slint::winit_030::WinitWindowAccessor;
 use slint::ComponentHandle;
 use std::collections::VecDeque;
@@ -71,11 +72,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(w) => request_blur(&w),
                 Err(e) => Err(e.to_string()),
             };
-            if let Err(e) = result {
-                eprintln!("blur unavailable: {e}; using opaque window");
-                ui.set_glass(false);
-            } else {
-                eprintln!("blur requested");
+            match result {
+                Err(e) => {
+                    eprintln!("blur unavailable: {e}; using opaque window");
+                    ui.set_glass(false);
+                }
+                Ok(blur) => {
+                    eprintln!("blur requested");
+                    let w = ui.window();
+                    shape_blur(&blur, w, w.size());
+                    // Re-shape on every resize (also covers maximize/restore).
+                    w.on_winit_window_event(move |w, event| {
+                        if let WindowEvent::Resized(size) = event {
+                            shape_blur(&blur, w, slint::PhysicalSize::new(size.width, size.height));
+                        }
+                        slint::winit_030::EventResult::Propagate
+                    });
+                }
             }
         })?;
     }
@@ -107,7 +120,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn request_blur(w: &slint::winit_030::winit::window::Window) -> Result<(), String> {
+/// Must match the window `border-radius` in `ui/poc.slint`.
+const WINDOW_RADIUS: f32 = 16.0;
+
+fn shape_blur(blur: &blur::wayland::Blur, w: &slint::Window, size: slint::PhysicalSize) {
+    let logical = size.to_logical(w.scale_factor());
+    let radius = if w.is_maximized() { 0.0 } else { WINDOW_RADIUS };
+    blur.set_shape(
+        logical.width.round() as i32,
+        logical.height.round() as i32,
+        radius as i32,
+    );
+}
+
+fn request_blur(
+    w: &slint::winit_030::winit::window::Window,
+) -> Result<blur::wayland::Blur, String> {
     use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
     let display = w.display_handle().map_err(|e| e.to_string())?.as_raw();
     let window = w.window_handle().map_err(|e| e.to_string())?.as_raw();
