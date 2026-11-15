@@ -6,6 +6,7 @@
 //! `POC_NO_GLASS=1`               opaque window, no blur request
 
 mod blur;
+mod icons;
 
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::winit_030::WinitWindowAccessor;
@@ -36,6 +37,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = Poc::new()?;
     let want_glass = std::env::var_os("POC_NO_GLASS").is_none();
     ui.set_glass(want_glass);
+    if let [min, max, restore, close] = &icons::load(&[
+        "window-minimize",
+        "window-maximize",
+        "window-restore",
+        "window-close",
+    ])[..]
+    {
+        ui.set_icon_minimize(min.clone());
+        ui.set_icon_maximize(max.clone());
+        ui.set_icon_restore(restore.clone());
+        ui.set_icon_close(close.clone());
+    }
 
     let weak = ui.as_weak();
     ui.on_minimize(move || weak.unwrap().window().set_minimized(true));

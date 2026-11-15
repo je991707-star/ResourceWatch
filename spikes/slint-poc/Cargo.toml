@@ -24,3 +24,8 @@ slint-build = "=1.18.1"
 lto = true
 codegen-units = 1
 strip = true
+
+# softbuffer 0.4 hardcodes wl_shm Xrgb8888 on Wayland, which drops alpha and makes
+# the software-rendered window opaque (no visible blur). Patched copy uses Argb8888.
+[patch.crates-io]
+softbuffer = { path = "patches/softbuffer" }

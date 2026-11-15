@@ -3,13 +3,22 @@
 
 component TitleButton inherits Rectangle {
     in property <string> glyph;
+    // System icon-theme icon; falls back to `glyph` when the theme has none.
+    in property <image> icon;
     in property <bool> danger;
     callback clicked;
     width: 28px;
     height: 28px;
     border-radius: 14px;
     background: ta.has-hover ? (danger ? #e5484d : #ffffff26) : transparent;
-    Text {
+    if icon.width > 0: Image {
+        source: icon;
+        width: 16px;
+        height: 16px;
+        // Theme icons are monochrome; tint them with the title-bar foreground.
+        colorize: #f2f4f8;
+    }
+    if icon.width == 0: Text {
         text: glyph;
         color: #f2f4f8;
         font-size: 13px;
@@ -24,6 +33,10 @@ export component Poc inherits Window {
     in property <string> bars-path: "";
     in property <string> cpu-text: "--";
     in property <bool> maximized-state;
+    in property <image> icon-minimize;
+    in property <image> icon-maximize;
+    in property <image> icon-restore;
+    in property <image> icon-close;
     out property <length> chart-width: chart.width;
     out property <length> chart-height: chart.height;
     callback minimize();
@@ -70,9 +83,13 @@ export component Poc inherits Window {
                     }
                     Rectangle { horizontal-stretch: 1; }
                     // KDE order: minimize, maximize, close.
-                    TitleButton { glyph: "–"; clicked => { root.minimize(); } }
-                    TitleButton { glyph: maximized-state ? "❐" : "□"; clicked => { root.toggle-maximize(); } }
-                    TitleButton { glyph: "✕"; danger: true; clicked => { root.close-window(); } }
+                    TitleButton { glyph: "–"; icon: icon-minimize; clicked => { root.minimize(); } }
+                    TitleButton {
+                        glyph: maximized-state ? "❐" : "□";
+                        icon: maximized-state ? icon-restore : icon-maximize;
+                        clicked => { root.toggle-maximize(); }
+                    }
+                    TitleButton { glyph: "✕"; icon: icon-close; danger: true; clicked => { root.close-window(); } }
                 }
             }
 

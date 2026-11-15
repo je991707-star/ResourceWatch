@@ -87,6 +87,7 @@
 - **模糊**：沿用現有的 `blur.rs`。
   - 優先用 `ext_background_effect_manager_v1`，退回 `org_kde_kwin_blur_manager`。
   - 輸入從 GTK 改成 raw-window-handle 取得的 `wl_display`／`wl_surface`。
+- **軟體渲染器的透明**：softbuffer 0.4 在 Wayland 固定用 `Xrgb8888`（丟 alpha），需用 `[patch.crates-io]` 套修補版改成 `Argb8888`，否則視窗不透明、看不到模糊。
 - **退回**：以下情況自動改成不透明底色，介面不壞：
   - X11 或 XWayland。
   - 合成器沒有模糊協定。
@@ -94,7 +95,7 @@
 - **即時切換**：不再需要 `WEBKIT_DISABLE_DMABUF_RENDERER`，所以「毛玻璃」開關立即生效，不必重新啟動。
 - **自訂標題列**：
   - 和側欄、內容同一片玻璃，與工具列合一。
-  - 右上角保留最小化／最大化／關閉，順序和圖示語意與 KDE 一致。
+  - 右上角保留最小化／最大化／關閉，順序和圖示語意與 KDE 一致；圖示取自系統圖示主題（`window-minimize` 等，依 `kdeglobals` 與 `Inherits=`），染成前景色，找不到時用內建符號。
   - 拖動用 Slint 內建 `WindowMoveArea`（內部呼叫 winit `drag_window()`）；邊緣與角落縮放用 Window 的 `resize-border-width`（內部呼叫 `drag_resize_window()`）；雙擊切換最大化。
   - `slint::set_xdg_app_id("resourcewatch")` 必須在 `BackendSelector::select()` 之後、建立視窗之前呼叫。
 
@@ -128,9 +129,9 @@
 驗證程式：`spikes/slint-poc/`（Slint 1.18.1，說明見 `Readme_Architecture.md`）。
 
 - [ ] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
-  - [ ] 透明＋背景模糊有效。程式端：`ext_background_effect_manager_v1` 請求成功（log `blur requested`）；畫面效果待使用者目視確認。
+  - [x] 透明＋背景模糊有效。軟體渲染器需搭配修補過的 softbuffer（Wayland 改用 `Argb8888`，原版 `Xrgb8888` 會讓視窗不透明）；修補後全螢幕截圖確認視窗後方內容被模糊。
   - [ ] 縮放、拖動時沒有空白，內容不會消失。待使用者操作確認。
-  - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。待使用者操作確認。
+  - [ ] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常。使用者初步確認正常；按鈕圖示改取系統圖示主題（如 Papirus），待確認。
   - [x] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示（KWin 腳本讀到 `desktopFileName=resourcewatch`，對應 `~/.local/share/applications/resourcewatch.desktop`）。
 - [x] 量測 RSS 與閒置 CPU（`/proc/<pid>/status`、`/proc/<pid>/stat`），和目前的 Tauri 版比較，數據記錄在本文件。
 - [x] 確認可以用 Slint 軟體渲染器把畫面輸出成 PNG：`slint-poc --snapshot out.png`（無視窗 `MinimalSoftwareWindow`＋`take_snapshot()`）。
@@ -142,7 +143,7 @@
 |---|---|---|---|
 | Tauri 0.1.0（`~/.local/bin/resourcewatch`，儀表板） | 3（主程式＋WebKitNetwork＋WebKitWeb） | 506 MB | 8.7% |
 | Slint PoC，femtovg | 1 | 167 MB（RssAnon 70／RssFile 102；NVIDIA EGL＋Mesa LLVM） | 0.4% |
-| Slint PoC，software（採用） | 1 | 24 MB | 0.6% |
+| Slint PoC，software（採用） | 1 | 24 MB（修補 softbuffer、開透明後 23 MB） | 0.6%（修補後 0.53%） |
 
 注意：PoC 只有一張卡片，完整儀表板的 RSS／CPU 會更高，Phase 7 依「輕量目標」重測。
 

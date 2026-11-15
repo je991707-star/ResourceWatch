@@ -97,6 +97,11 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
     `spawn_local` 等 `winit_window()` 取得 raw-window-handle 的 `wl_display`／`wl_surface` 交給 `blur.rs`；失敗（X11、無協定、合成器關閉模糊）改成不透明。`POC_NO_GLASS=1` 直接不透明。
   - 500 ms `slint::Timer`：讀 `/proc/stat` 算 CPU 忙碌比例，存最多 240 點；`bars_path` 產生 2 px 長條＋1 px 間隔、最新在右緣、超出左緣即停（有單元測試）。每次 tick 也同步 `maximized-state`（合成器端最大化時圓角改 0）。
   - `--snapshot <png>`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，無視窗地以軟體渲染器繪製並 `take_snapshot()`，用 `png` crate 寫出 RGBA PNG（之後視覺驗證用，避開 KWin 防搶焦點）。
+- `src/icons.rs`：標題列三顆按鈕的圖示取自系統圖示主題（`kdeglobals` 的 `[Icons] Theme=`，預設 `breeze`），沿 `index.theme` 的 `Inherits=` 往上找，最後找 hicolor；
+  在 `~/.icons`、`$XDG_DATA_HOME/icons`、`$XDG_DATA_DIRS/*/icons` 的固定子目錄（`16x16/actions`、`actions/16`…`scalable/actions`）找 `window-minimize`／`window-maximize`／`window-restore`／`window-close`（含 `-symbolic`）。
+  找不到時回傳空圖片，`TitleButton` 改顯示文字符號；圖示以 `colorize` 染成標題列前景色（主題圖示是單色）。只在啟動時讀一次，換主題要重開（有單元測試）。
+- `patches/softbuffer/`：softbuffer 0.4.8 原樣複製，只把 Wayland 的 `wl_shm::Format::Xrgb8888` 改成 `Argb8888`（兩處，註記 `ResourceWatch patch`），由 `Cargo.toml` 的 `[patch.crates-io]` 套用。
+  原版丟棄 alpha，Slint 軟體渲染器畫出的視窗在 Wayland 上是不透明的，模糊雖然請求成功卻看不到；Slint 寫入的就是預乘 ARGB，與 `Argb8888` 相符。局部重繪時髒區先以視窗背景色覆寫（非疊加），透明不會累積。
 - `src/blur.rs`：複製 `src-tauri/src/blur.rs` 的 `wayland` 模組（`ext_background_effect_manager_v1` → `org_kde_kwin_blur_manager`），只換掉 GTK 取得指標的部分。
 - 建置：`distrobox enter resourcewatch-dev -- bash -lc 'cd spikes/slint-poc && cargo build --release'`；Slint 鎖在 `=1.18.1`（`unstable-winit-030` 的 API 可能在小版本變動）。
 
