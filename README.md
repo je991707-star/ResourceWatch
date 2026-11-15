@@ -55,6 +55,7 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 - [Readme_Architecture.md](docs/Readme_Architecture.md)：各檔案職責、IPC 介面、快照 JSON 格式、資料來源
 - [REFACTOR_RUST_TAURI.md](docs/REFACTOR_RUST_TAURI.md)：重構階段進度、測試證據、效能數據與已知限制
 - [UI_REDESIGN_PLAN.md](docs/UI_REDESIGN_PLAN.md)：介面改版計畫
+- [REDESIGN_V0.2.md](docs/REDESIGN_V0.2.md)：v0.2.0 改版計畫（macOS 26 霧面玻璃風格，改用 Slint）
 
 ## 版本紀錄
 
