@@ -1,9 +1,0 @@
-{
-    "KPlugin": {
-        "Category": "Appearance",
-        "Description": "Blurs the background behind ResourceWatch windows, controlled from the app's settings",
-        "EnabledByDefault": true,
-        "License": "GPL",
-        "Name": "ResourceWatch Blur"
-    }
-}

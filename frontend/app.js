@@ -1,831 +1,205 @@
-/* ResourceWatch Tauri frontend — display only.
- *
- * All values come from the Rust backend through Tauri IPC:
- *   commands: get_snapshot, get_settings, get_settings_info, get_window_info, update_settings, reset_settings, refresh_devices
- *   events:   snapshot, settings-changed
- * This file never reads hardware, files, or the network.
- *
- * Markup binds to data by attribute, so one value can appear on several pages:
- *   data-bind="key"  text   data-ring="key"  ring gauge (percent)
- *   data-bar="key"   bar    data-chart="key" history line/area   data-disk-list  disk rows
- */
-(() => {
-  "use strict";
-  const $ = (id) => document.getElementById(id);
-  const tauri = window.__TAURI__;
-  const invoke = tauri?.core?.invoke;
-  const listen = tauri?.event?.listen;
-  const all = (selector) => Array.from(document.querySelectorAll(selector));
-  const groupBy = (attr) => {
-    const map = {};
-    for (const el of all(`[data-${attr}]`)) (map[el.dataset[attr]] ||= []).push(el);
-    return map;
-  };
+'use strict';
+// Polls the Rust commands and re-renders the current page. Missing values are null → "--".
+const invoke = window.__TAURI__?.core.invoke ?? window.mockInvoke;
+const N = 60; // history points (1 per second)
+const hist = {};
+let snap = null;
+let procs = [];
+let page = 'overview';
+let sort = { key: 'cpu', desc: true };
 
-  // ---------------------------------------------------------------- theme
-  // Display preference only, kept in this browser profile (not in Rust Settings).
-  const THEME_KEY = "resourcewatch-theme";
-  function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-  }
-  let savedTheme = null;
-  try { savedTheme = localStorage.getItem(THEME_KEY); } catch { /* storage blocked */ }
-  applyTheme(savedTheme === "light" || savedTheme === "dark" ? savedTheme
-    : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
-  $("themeToggle").addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
-    applyTheme(next);
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* storage blocked */ }
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const sum = (a) => (a.length && a.every((v) => v != null) ? a.reduce((x, y) => x + y, 0) : null);
+const push = (k, v) => {
+  const a = (hist[k] ??= []);
+  a.push(v);
+  if (a.length > N) a.shift();
+  return a;
+};
+
+function bytes(b) {
+  if (b == null) return '--';
+  const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return `${b.toFixed(i && b < 100 ? 1 : 0)} ${u[i]}`;
+}
+const rate = (b) => (b == null ? '--' : `${bytes(b)}/s`);
+const pct = (v) => (v == null ? '--' : `${v.toFixed(0)}%`);
+const temp = (v) => (v == null ? '--' : `${v.toFixed(0)} °C`);
+const ratio = (a, b) => (a == null || !b ? null : (a / b) * 100);
+function duration(s) {
+  if (s == null) return '';
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return `運作 ${d ? `${d} 天 ` : ''}${h} 小時 ${m} 分`;
+}
+
+function bar(p, cls) {
+  const w = p == null ? 0 : Math.min(Math.max(p, 0), 100);
+  return `<svg class="bar" viewBox="0 0 100 6" preserveAspectRatio="none"><rect class="track" width="100" height="6"/><rect class="${cls}" width="${w}" height="6"/></svg>`;
+}
+
+// series: [{ data, cls }]; max fixed (percent) or auto from data.
+function chart(series, max, tall) {
+  max = max ?? Math.max(1, ...series.flatMap((s) => s.data.filter((v) => v != null))) * 1.1;
+  const y = (v) => (100 - (Math.min(v, max) / max) * 98).toFixed(1);
+  const paths = series.map(({ data, cls }) => {
+    const off = N - data.length;
+    const runs = [[]];
+    data.forEach((v, i) => (v == null ? runs.push([]) : runs.at(-1).push([off + i, y(v)])));
+    return runs.filter((r) => r.length).map((r) => {
+      const line = r.map(([x, yy], i) => `${i ? 'L' : 'M'}${x} ${yy}`).join('');
+      return `<path class="area ${cls}" d="${line}L${r.at(-1)[0]} 100L${r[0][0]} 100Z"/><path class="line ${cls}" d="${line}"/>`;
+    }).join('');
   });
+  const grid = [25, 50, 75].map((g) => `<line class="grid-line" x1="0" x2="${N - 1}" y1="${g}" y2="${g}"/>`).join('');
+  return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N - 1} 100" preserveAspectRatio="none">${grid}${paths.join('')}</svg>`;
+}
 
-  // Sidebar glass = Settings.sidebarGlass. The backend reads it once when it
-  // creates the window (transparent + compositor blur), so a change applies on
-  // the next start; get_window_info.glass says whether this window has it.
-  let glassActive = false;
-  let glassSetting = true;
-  let glassAtStart = null;
-  function applyGlass() {
-    document.documentElement.dataset.glass = glassActive && glassSetting ? "on" : "off";
-    $("sidebarGlass").checked = glassSetting;
-    let hint;
-    if (glassSetting !== glassAtStart && glassAtStart !== null) {
-      hint = glassSetting ? "重新啟動後生效" : "重新啟動後改用不透明視窗（較省 CPU，NVIDIA 上縮放視窗較順）";
-    } else if (!glassSetting) hint = "側欄與視窗不透明（較省 CPU，NVIDIA 上縮放視窗較順）";
-    else if (glassActive) hint = "側欄半透明並模糊桌面背景（較耗 CPU；NVIDIA 上縮放視窗時內容會落後，關閉可改善）";
-    else hint = "目前桌面環境不支援視窗模糊（需要 Wayland 上的 KDE Plasma 模糊特效），側欄維持不透明";
-    $("sidebarGlassHint").textContent = hint;
+const stats = (pairs) => `<div class="stats">${pairs.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+const legend = (items) => `<div class="legend">${items.map(([cls, t]) => `<span><i class="${cls}"></i>${esc(t)}</span>`).join('')}</div>`;
+const card = (title, body, link) => `<section class="card${link ? ' link' : ''}"${link ? ` data-goto="${link}"` : ''}><h2>${title}</h2>${body}</section>`;
+const tile = (title, big, sub, chartHtml, link) => card(title, `<div class="big">${esc(big)}</div><div class="sub">${esc(sub)}</div>${chartHtml}`, link);
+
+function record(s) {
+  push('cpu', s.cpu.usage);
+  push('mem', ratio(s.mem.used, s.mem.total));
+  s.gpus.forEach((g, i) => push(`gpu${i}`, g.usage));
+  push('diskR', sum(s.disks.map((d) => d.readBps)));
+  push('diskW', sum(s.disks.map((d) => d.writeBps)));
+  push('netRx', sum(s.net.map((n) => n.rxBps)));
+  push('netTx', sum(s.net.map((n) => n.txBps)));
+}
+const last = (k) => hist[k]?.at(-1) ?? null;
+
+const pages = {
+  overview: ['總覽', (s) => {
+    const m = s.mem;
+    const tiles = [
+      tile('處理器', pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`, chart([{ data: hist.cpu, cls: 'c-cpu' }], 100), 'cpu'),
+      tile('記憶體', pct(ratio(m.used, m.total)), `${bytes(m.used)} / ${bytes(m.total)}`, chart([{ data: hist.mem, cls: 'c-mem' }], 100), 'mem'),
+      ...s.gpus.map((g, i) => tile('顯示卡', pct(g.usage), `${g.name} · ${temp(g.temp)}`, chart([{ data: hist[`gpu${i}`], cls: 'c-gpu' }], 100), 'gpu')),
+      tile('磁碟 I/O', rate(sum([last('diskR'), last('diskW')])), `讀 ${rate(last('diskR'))} · 寫 ${rate(last('diskW'))}`, chart([{ data: hist.diskR, cls: 'c-disk' }, { data: hist.diskW, cls: 'c-alt' }]), 'disk'),
+      tile('網路', rate(sum([last('netRx'), last('netTx')])), `↓ ${rate(last('netRx'))} · ↑ ${rate(last('netTx'))}`, chart([{ data: hist.netRx, cls: 'c-net' }, { data: hist.netTx, cls: 'c-alt' }]), 'net'),
+    ];
+    const storage = card('儲存空間', mountTable(s.mounts), 'disk');
+    return `<div class="grid">${tiles.join('')}</div>${storage}`;
+  }],
+
+  cpu: ['處理器', (s) => {
+    const c = s.cpu;
+    const cores = c.cores.map((v, i) => `<div><span>CPU ${i}</span><b>${pct(v)}</b>${bar(v, 'c-cpu')}</div>`).join('');
+    return card(esc(info?.cpuModel || '使用率'), `${chart([{ data: hist.cpu, cls: 'c-cpu' }], 100, true)}${stats([
+      ['使用率', pct(c.usage)], ['平均頻率', c.freqMhz ? `${(c.freqMhz / 1000).toFixed(2)} GHz` : '--'],
+      ['溫度', temp(c.temp)], ['執行緒', String(c.cores.length)],
+    ])}`) + card('各執行緒', `<div class="cores">${cores}</div>`);
+  }],
+
+  mem: ['記憶體', (s) => {
+    const m = s.mem;
+    return card('使用率', `${chart([{ data: hist.mem, cls: 'c-mem' }], 100, true)}${stats([
+      ['已使用', bytes(m.used)], ['可用', bytes(m.available)], ['快取', bytes(m.cached)], ['總量', bytes(m.total)],
+    ])}`) + card('交換空間', m.swapTotal
+      ? `<div class="big">${pct(ratio(m.swapUsed, m.swapTotal))}</div><div class="sub">${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}</div>${bar(ratio(m.swapUsed, m.swapTotal), 'c-mem')}`
+      : '<div class="empty">未啟用</div>');
+  }],
+
+  gpu: ['顯示卡', (s) => s.gpus.length
+    ? s.gpus.map((g, i) => card(esc(g.name), `${chart([{ data: hist[`gpu${i}`], cls: 'c-gpu' }], 100, true)}${stats([
+      ['使用率', pct(g.usage)], ['顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`], ['溫度', temp(g.temp)],
+    ])}${bar(ratio(g.memUsed, g.memTotal), 'c-gpu')}`)).join('')
+    : card('顯示卡', '<div class="empty">未偵測到可讀取的顯示卡</div>')],
+
+  disk: ['儲存', (s) => {
+    const rows = s.disks.map((d) => `<tr><td>${esc(d.name)}</td><td class="grow">${esc(d.model || '--')}</td><td class="num">${bytes(d.size)}</td><td class="num">${rate(d.readBps)}</td><td class="num">${rate(d.writeBps)}</td></tr>`).join('');
+    return card('磁碟 I/O', `${chart([{ data: hist.diskR, cls: 'c-disk' }, { data: hist.diskW, cls: 'c-alt' }], null, true)}${legend([['c-disk', `讀取 ${rate(last('diskR'))}`], ['c-alt', `寫入 ${rate(last('diskW'))}`]])}`)
+      + card('磁碟', rows ? `<table><tr><th>名稱</th><th>型號</th><th class="num">容量</th><th class="num">讀取</th><th class="num">寫入</th></tr>${rows}</table>` : '<div class="empty">沒有實體磁碟</div>')
+      + card('檔案系統', mountTable(s.mounts));
+  }],
+
+  net: ['網路', (s) => {
+    const rows = s.net.map((n) => `<tr><td class="grow">${esc(n.name)}</td><td class="num">${rate(n.rxBps)}</td><td class="num">${rate(n.txBps)}</td></tr>`).join('');
+    return card('流量', `${chart([{ data: hist.netRx, cls: 'c-net' }, { data: hist.netTx, cls: 'c-alt' }], null, true)}${legend([['c-net', `下載 ${rate(last('netRx'))}`], ['c-alt', `上傳 ${rate(last('netTx'))}`]])}`)
+      + card('介面', rows ? `<table><tr><th>名稱</th><th class="num">下載</th><th class="num">上傳</th></tr>${rows}</table>` : '<div class="empty">沒有實體網路介面</div>');
+  }],
+
+  sensors: ['感測器', (s) => {
+    const chips = Map.groupBy ? Map.groupBy(s.sensors, (x) => x.chip) : s.sensors.reduce((m, x) => m.set(x.chip, [...(m.get(x.chip) ?? []), x]), new Map());
+    if (!chips.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
+    return `<div class="grid">${[...chips].map(([chip, list]) => card(esc(chip), `<table>${list.map((x) =>
+      `<tr><td class="grow">${esc(x.label)}</td><td class="num">${x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} RPM`}</td></tr>`).join('')}</table>`)).join('')}</div>`;
+  }],
+
+  procs: ['程序', () => {
+    const k = sort.key, dir = sort.desc ? -1 : 1;
+    const list = [...procs].sort((a, b) => {
+      const x = a[k], y = b[k];
+      if (x == null || y == null) return (x == null) - (y == null); // missing CPU% always last
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir || a.pid - b.pid;
+    }).slice(0, 200);
+    const th = (key, t, cls = '') => `<th class="${cls}" data-sort="${key}">${t}${sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : ''}</th>`;
+    const rows = list.map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.pid}</td><td class="num">${p.cpu == null ? '--' : p.cpu.toFixed(1) + '%'}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
+    return card(`共 ${procs.length} 個程序（顯示前 200）`, `<table><tr>${th('name', '名稱')}${th('pid', 'PID', 'num')}${th('cpu', 'CPU', 'num')}${th('mem', '記憶體', 'num')}</tr>${rows}</table>`);
+  }],
+};
+
+function mountTable(mounts) {
+  if (!mounts.length) return '<div class="empty">沒有掛載的檔案系統</div>';
+  return `<table>${mounts.map((m) => `<tr><td class="grow">${esc(m.mount)}<div class="sub">${esc(m.device)}</div></td><td class="barcell">${bar(ratio(m.used, m.total), 'c-disk')}</td><td class="num">${pct(ratio(m.used, m.total))}</td><td class="num">${bytes(m.used)} / ${bytes(m.total)}</td></tr>`).join('')}</table>`;
+}
+
+function render() {
+  if (!snap) return;
+  $('#content').innerHTML = pages[page][1](snap);
+  $('#uptime').textContent = duration(snap.uptime);
+}
+
+function go(p) {
+  page = p;
+  $('#title').textContent = pages[p][0];
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.page === p));
+  $('#content').scrollTop = 0;
+  if (p === 'procs') pollProcs();
+  render();
+}
+
+async function tick() {
+  try {
+    snap = await invoke('snapshot');
+    record(snap);
+    render();
+  } catch (e) {
+    console.error(e);
   }
-  $("sidebarGlass").addEventListener("change", async (event) => {
-    try {
-      displaySettings(await invoke("update_settings", { patch: { sidebarGlass: event.target.checked } }));
-    } catch (e) {
-      console.warn("ResourceWatch: saving sidebarGlass failed", e);
-      applyGlass(); // back to the stored value
-    }
-  });
+}
 
-  // Sidebar collapse: user preference, forced icon-only below 760 px.
-  const COLLAPSE_KEY = "resourcewatch-sidebar-collapsed";
-  const narrow = matchMedia("(max-width: 760px)");
-  let collapsedWanted = false;
-  try { collapsedWanted = localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { /* storage blocked */ }
-  function applyCollapse() {
-    const collapsed = narrow.matches || collapsedWanted;
-    $("appShell").classList.toggle("is-collapsed", collapsed);
-    const toggle = $("sidebarToggle");
-    toggle.setAttribute("aria-expanded", String(!collapsed));
-    toggle.title = toggle.ariaLabel = collapsed ? "展開側欄" : "收合側欄";
+async function pollProcs() {
+  if (page !== 'procs' || document.hidden) return;
+  try {
+    procs = await invoke('processes');
+    render();
+  } catch (e) {
+    console.error(e);
   }
-  $("sidebarToggle").addEventListener("click", () => {
-    collapsedWanted = !collapsedWanted;
-    try { localStorage.setItem(COLLAPSE_KEY, collapsedWanted ? "1" : "0"); } catch { /* storage blocked */ }
-    applyCollapse();
-  });
-  narrow.addEventListener("change", applyCollapse);
-  applyCollapse();
+}
 
-  // ---------------------------------------------------------------- pages
-  // live: page shows monitoring data, so snapshots are rendered while it is visible.
-  const PAGES = {
-    overview: { host: "overviewPage", nav: "navOverview", title: "儀表板", live: true },
-    storage: { host: "storagePage", nav: "navStorage", title: "儲存裝置", live: true },
-    network: { host: "networkPage", nav: "navNetwork", title: "網路", live: true },
-    sensors: { host: "sensorsPage", nav: "navSensors", title: "感測器", live: true },
-    apps: { host: "appsPage", nav: "navApps", title: "應用程式" },
-    widgets: { host: "widgetsPage", nav: "navWidgets", title: "桌面小工具" },
-    settings: { host: "settingsPage", nav: "navSettings", title: "設定" },
-  };
-  let activePage = "overview";
-  const isLive = () => Boolean(PAGES[activePage].live);
+let info = null;
+$('#nav').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) go(b.dataset.page); });
+$('#content').addEventListener('click', (e) => {
+  const link = e.target.closest('[data-goto]');
+  if (link) return go(link.dataset.goto);
+  const th = e.target.closest('th[data-sort]');
+  if (!th) return;
+  const key = th.dataset.sort;
+  sort = sort.key === key ? { key, desc: !sort.desc } : { key, desc: key === 'cpu' || key === 'mem' };
+  render();
+});
 
-  function switchPage(page) {
-    if (!PAGES[page]) return;
-    activePage = page;
-    for (const [key, def] of Object.entries(PAGES)) {
-      const selected = key === page;
-      $(def.host).hidden = !selected;
-      const button = $(def.nav);
-      button.classList.toggle("is-active", selected);
-      if (selected) button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
-    }
-    setText("pageTitle", PAGES[page].title);
-    // Hidden pages are not rendered (charts need their on-screen width); draw the shown page now.
-    if (isLive() && state) render();
-    watchProcesses();
-  }
-  for (const [key, def] of Object.entries(PAGES)) {
-    $(def.nav).addEventListener("click", () => switchPage(key));
-  }
-  for (const link of all("[data-goto]")) {
-    link.addEventListener("click", () => switchPage(link.dataset.goto));
-  }
-
-  // ---------------------------------------------------------------- helpers
-  const text = (value, fallback = "--") =>
-    value === null || value === undefined || value === "" ? fallback : String(value);
-  const metricText = (m) => text(m && m.displayValue);
-  const pairText = (m) => (m ? `${text(m.usedText)} / ${text(m.totalText)}` : "--");
-
-  // Avoid layout/paint when a value has not changed.
-  function writeText(element, value) {
-    const next = text(value);
-    if (element.textContent !== next) element.textContent = next;
-  }
-  const bound = groupBy("bind");
-  function setText(key, value) {
-    for (const element of bound[key] || []) writeText(element, value);
-  }
-
-  const percentOf = (m) => (m && Number.isFinite(m.percent) ? Math.min(100, Math.max(0, m.percent)) : 0);
-  const rings = groupBy("ring");
-  function setRing(key, metric) {
-    const percent = percentOf(metric);
-    const dash = `${percent.toFixed(1)} 100`;
-    // A round line cap draws a dot even at 0 length; hide the arc instead.
-    const opacity = percent > 0 ? "" : "0";
-    for (const el of rings[key] || []) {
-      if (el.style.strokeDasharray !== dash) el.style.strokeDasharray = dash;
-      if (el.style.opacity !== opacity) el.style.opacity = opacity;
-    }
-  }
-  const bars = groupBy("bar");
-  function setBar(key, metric) {
-    // CSSOM is allowed by the CSP (style-src 'self'); inline style attributes are not.
-    const width = percentOf(metric).toFixed(1) + "%";
-    for (const el of bars[key] || []) if (el.style.width !== width) el.style.width = width;
-  }
-
-  // Same rules as the backend's format.rs `scaled` (binary units, one decimal above the base unit).
-  function scaled(value, units) {
-    if (!Number.isFinite(value) || value < 0) return "--";
-    let v = value, unit = 0;
-    while (v >= 1024 && unit < units.length - 1) { v /= 1024; unit++; }
-    return (unit === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + units[unit];
-  }
-  const formatRate = (value) => scaled(value, ["B/s", "KiB/s", "MiB/s", "GiB/s"]);
-  const formatBytes = (value) => scaled(value, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]);
-
-  // Network panel: bits per second, e.g. "10.25 Mbps".
-  function formatMbps(bytesPerSecond) {
-    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 0) return "--";
-    const mbps = (bytesPerSecond * 8) / 1e6;
-    return `${mbps.toFixed(mbps >= 100 ? 1 : 2)} Mbps`;
-  }
-
-  function uptimeFromSeconds(seconds) {
-    const total = Math.max(0, Math.floor(seconds));
-    const days = Math.floor(total / 86400);
-    const hms = [Math.floor((total % 86400) / 3600), Math.floor((total % 3600) / 60), total % 60]
-      .map((v) => String(v).padStart(2, "0")).join(":");
-    return days > 0 ? `${days}天 ${hms}` : hms;
-  }
-
-  function labeledGpuName(name, vendor) {
-    const raw = text(name);
-    if (raw === "--") return raw;
-    const brand = ({ nvidia: "NVIDIA", amd: "AMD", intel: "Intel" })[String(vendor || "").toLowerCase()];
-    if (!brand || new RegExp(`\\b${brand}\\b`, "i").test(raw)) return raw;
-    return `${brand} ${raw}`;
-  }
-
-  // ---------------------------------------------------------------- charts
-  const chartNodes = Object.fromEntries(Object.entries(groupBy("chart")).map(([key, roots]) => [
-    key, roots.map((root) => ({ root, bars: root.querySelector(".area") })),
-  ]));
-
-  // One bar per sample (missing samples leave a gap; 0 keeps a short stub so the baseline reads
-  // as a row of dots). The x axis is in real pixels (viewBox width = chart width, only y is
-  // stretched). Dashboard: fixed 2 px bars with 1 px gaps, newest at the right, as many recent
-  // samples as fit. Other pages: 3 px bars spread over historyPoints slots across the width.
-  // dir "full": from the bottom over the whole height; "up"/"down": mirrored halves around the
-  // middle for paired series (upload/read up, download/write down).
-  const MIN_BAR = 2; // viewBox units (of 100)
-  function barPath(values, max, dir, widthPx, fixed) {
-    if (!Array.isArray(values) || !values.some(Number.isFinite)) return null;
-    let slot, width, shown;
-    if (fixed) {
-      slot = 3;
-      width = 2;
-      shown = values.slice(-Math.floor(widthPx / slot));
-    } else {
-      // Fixed slot count (historyPoints) so spacing does not change while history fills up.
-      const slots = Math.max(Number(currentSettings.historyPoints) || 0, 1);
-      shown = values.slice(-slots); // history keeps more points than historyPoints for the dashboard
-      slot = widthPx / slots;
-      width = Math.min(3, slot);
-    }
-    const left = widthPx - shown.length * slot; // right-aligned
-    const base = dir === "full" ? 100 : 50, span = dir === "full" ? 100 : 50, sign = dir === "down" ? 1 : -1;
-    const upper = max > 0 ? max : 1;
-    let d = "";
-    shown.forEach((value, i) => {
-      if (!Number.isFinite(value)) return;
-      const height = Math.max(MIN_BAR, Math.min(1, Math.max(0, value) / upper) * span);
-      d += `M${(left + i * slot + (slot - width) / 2).toFixed(2)} ${base}h${width}v${(sign * height).toFixed(2)}h${-width}Z`;
-    });
-    return d;
-  }
-
-  function chartSeries(name, values, max = 100, dir = "full") {
-    for (const chart of chartNodes[name] || []) {
-      const svg = chart.root.ownerSVGElement;
-      const widthPx = Math.round(svg.clientWidth);
-      if (!widthPx) continue; // hidden page: drawn when it is shown
-      const viewBox = `0 0 ${widthPx} 100`;
-      if (svg.getAttribute("viewBox") !== viewBox) svg.setAttribute("viewBox", viewBox);
-      const d = barPath(values, max, dir, widthPx, dashboard.contains(svg));
-      chart.root.classList.toggle("is-missing", !d);
-      if ((chart.bars.getAttribute("d") || "") !== (d || "")) chart.bars.setAttribute("d", d || "");
-    }
-  }
-
-  // ---------------------------------------------------------------- per-core bars
-  const coreBarHosts = all("[data-core-bars]");
-  function renderCoreBars(values) {
-    const list = Array.isArray(values) ? values : [];
-    for (const host of coreBarHosts) {
-      if (host.children.length !== list.length) {
-        // Rebuilt only when the CPU count changes (CPU hotplug).
-        host.replaceChildren(...list.map(() => document.createElement("span")));
-      }
-      list.forEach((v, i) => {
-        const bar = host.children[i];
-        const ok = Number.isFinite(v);
-        const height = ok ? Math.min(100, Math.max(0, v)).toFixed(1) + "%" : "";
-        bar.classList.toggle("is-missing", !ok);
-        if (bar.style.height !== height) bar.style.height = height;
-        bar.title = `CPU ${i}：${ok ? v.toFixed(1) + "%" : "--"}`;
-      });
-    }
-  }
-
-  // ---------------------------------------------------------------- temperatures and sensors
-  // °C / °F is a display preference (localStorage); the backend always sends °C.
-  const UNIT_KEY = "resourcewatch-temp-unit";
-  let tempUnit = "c";
-  try { tempUnit = localStorage.getItem(UNIT_KEY) === "f" ? "f" : "c"; } catch { /* storage blocked */ }
-  const formatTemp = (c) => !Number.isFinite(c) ? "--"
-    : tempUnit === "f" ? `${(c * 9 / 5 + 32).toFixed(0)} °F` : `${c.toFixed(1)} °C`;
-  // Backend texts look like "48.6 °C"; convert them only when °F is chosen.
-  function tempText(value) {
-    const m = /^(-?\d+(?:\.\d+)?) °C$/.exec(String(value ?? ""));
-    return m && tempUnit === "f" ? formatTemp(Number(m[1])) : value;
-  }
-  const unitButtons = all("[data-temp-unit]");
-  function applyUnit() {
-    for (const b of unitButtons) b.setAttribute("aria-pressed", String(b.dataset.tempUnit === tempUnit));
-  }
-  for (const b of unitButtons) {
-    b.addEventListener("click", () => {
-      tempUnit = b.dataset.tempUnit;
-      try { localStorage.setItem(UNIT_KEY, tempUnit); } catch { /* storage blocked */ }
-      applyUnit();
-      render();
-    });
-  }
-  applyUnit();
-
-  const sensorLists = all("[data-sensor-list]");
-  const sensorEmptyNotes = all("[data-sensor-empty]");
-  let sensorInventory = null;
-  let sensorNodes = []; // per list: value <dd> per shown sensor
-  function renderSensors(sensors) {
-    const list = Array.isArray(sensors) ? sensors : [];
-    const inventory = JSON.stringify(list.map((x) => [x.chip, x.label, x.kind]));
-    if (inventory !== sensorInventory) {
-      // Rebuilt only on startup / hardware refresh.
-      sensorNodes = sensorLists.map((host) => {
-        // "all" groups consecutive sensors of one hwmon chip under a heading; short lists inline the chip.
-        const grouped = host.dataset.sensorList === "all";
-        const limit = grouped ? Infinity : Number(host.dataset.sensorList);
-        const children = [];
-        const values = [];
-        let chip = null;
-        for (const x of list.slice(0, limit)) {
-          if (grouped && x.chip !== chip) {
-            chip = x.chip;
-            const head = document.createElement("div");
-            head.className = "sensor-group";
-            const dt = document.createElement("dt");
-            dt.textContent = text(chip);
-            head.append(dt);
-            children.push(head);
-          }
-          const row = document.createElement("div");
-          const dt = document.createElement("dt");
-          dt.textContent = dt.title = grouped ? text(x.label) : `${text(x.chip)} · ${text(x.label)}`;
-          const dd = document.createElement("dd");
-          row.append(dt, dd);
-          children.push(row);
-          values.push(dd);
-        }
-        host.replaceChildren(...children);
-        return values;
-      });
-      for (const note of sensorEmptyNotes) note.hidden = list.length > 0;
-      sensorInventory = inventory;
-    }
-    for (const nodes of sensorNodes) {
-      nodes.forEach((dd, i) => {
-        const x = list[i];
-        writeText(dd, x.kind === "fan" ? (Number.isFinite(x.value) ? `${Math.round(x.value)} RPM` : "--") : formatTemp(x.value));
-      });
-    }
-  }
-
-  // ---------------------------------------------------------------- disks
-  const diskLists = all("[data-disk-list]");
-  const diskEmptyNotes = all("[data-disk-empty]");
-
-  function makeDiskRow(disk) {
-    const row = document.createElement("div");
-    row.className = "disk-row";
-    const name = document.createElement("span");
-    name.className = "disk-name";
-    name.textContent = name.title = text(disk.name);
-    const model = document.createElement("span");
-    model.className = "disk-model";
-    model.textContent = model.title = [disk.model, disk.sizeText, disk.transport?.toUpperCase()].map((v) => text(v)).join(" · ");
-    const rates = document.createElement("span");
-    rates.className = "disk-rates";
-    const values = [["disk-read", "讀取"], ["disk-write", "寫入"]].map(([color, label]) => {
-      const v = document.createElement("span");
-      v.dataset.color = color;
-      v.title = label;
-      v.textContent = "--";
-      rates.append(v);
-      return v;
-    });
-    // Capacity of the filesystems mounted from this disk.
-    const usage = document.createElement("span");
-    usage.className = "disk-usage";
-    const bar = document.createElement("span");
-    bar.className = "bar";
-    const fill = document.createElement("span");
-    fill.dataset.color = "ram";
-    bar.append(fill);
-    const usageText = document.createElement("span");
-    usageText.textContent = "--";
-    usage.append(bar, usageText);
-    row.append(name, rates, model, usage);
-    return { row, values: [...values, fill, usageText] };
-  }
-
-  const diskStepButtons = all("[data-disk-step]");
-  for (const b of diskStepButtons) {
-    b.addEventListener("click", () => {
-      const n = Array.isArray(state?.disks) ? state.disks.length : 0;
-      if (!n) return;
-      summaryDisk = (summaryDisk + Number(b.dataset.diskStep) + n) % n;
-      render();
-    });
-  }
-
-  // Dashboard column count follows the GRAPHICS card: one column fewer as soon as any of its
-  // text is cut off (ellipsis), one more again once the dashboard is wider than where that
-  // count last cut text off. No pixel thresholds; recorded widths are reset when the GPU changes.
-  const dashboard = $("overviewPage");
-  const gpuCard = $("graphicsTitle").closest(".card");
-  const gpuNameEl = gpuCard.querySelector('[data-bind="gpuName"]');
-  const gpuTextCut = () => [...gpuCard.querySelectorAll(".device-name, .bar-label span, .kv dd")]
-    .some((el) => el.scrollWidth > el.clientWidth);
-  let columns = 3;
-  let cutAt = {}; // cutAt[n]: widest dashboard width at which n columns cut the GPU text
-  let fittedGpuName = null;
-  function setColumns(n) {
-    columns = n;
-    dashboard.style.columnCount = String(n);
-  }
-  function fitColumns() {
-    const width = dashboard.clientWidth;
-    if (!width) return; // dashboard hidden
-    if (gpuNameEl.textContent !== fittedGpuName) {
-      fittedGpuName = gpuNameEl.textContent;
-      cutAt = {};
-    }
-    while (columns < 3 && width > (cutAt[columns + 1] ?? 0)) setColumns(columns + 1);
-    while (columns > 1 && gpuTextCut()) {
-      cutAt[columns] = Math.max(cutAt[columns] ?? 0, width);
-      setColumns(columns - 1);
-    }
-  }
-  new ResizeObserver(fitColumns).observe(dashboard);
-
-  // ---------------------------------------------------------------- render
-  let state = null;
-  let pendingRender = false;
-  let lastDiskInventory = null;
-  let diskStatNodes = []; // per list: per disk: [read, write, usageFill, usageText]
-  let summaryDisk = 0; // disk shown in the summary card (‹ › buttons)
-  let uptimeAnchorSeconds = null;
-  let uptimeAnchorAt = 0;
-  let lastObservedUptimeSeconds = null;
-
-  function refreshUptimeText() {
-    if (uptimeAnchorSeconds === null) return;
-    const elapsed = Math.max(0, (performance.now() - uptimeAnchorAt) / 1000);
-    setText("uptime", uptimeFromSeconds(uptimeAnchorSeconds + elapsed));
-  }
-  // One text update per second from a local monotonic clock; no IPC, no process.
-  setInterval(() => { if (isLive()) refreshUptimeText(); }, 1000);
-
-  function render() {
-    pendingRender = false;
-    const s = state;
-    if (!s) return;
-    setText("hostname", s.hostname);
-    setText("machineModel", s.machineModel);
-    setText("cpuName", s.cpuName);
-    setText("cpuUsage", metricText(s.cpu));
-    setText("cpuSpeed", s.cpuFreqText);
-    setText("cpuCores", s.cpuCores);
-    setText("cpuThreads", s.cpuThreads);
-    setText("cpuTemp", tempText(s.cpuTempText));
-    renderSensors(s.sensors);
-    setRing("cpu", s.cpu);
-    renderCoreBars(s.cpuPerCore);
-    if (Number.isFinite(s.uptimeSeconds)) {
-      if (s.uptimeSeconds !== lastObservedUptimeSeconds) {
-        lastObservedUptimeSeconds = s.uptimeSeconds;
-        uptimeAnchorSeconds = s.uptimeSeconds;
-        uptimeAnchorAt = performance.now();
-      }
-      refreshUptimeText();
-    } else {
-      uptimeAnchorSeconds = null;
-      setText("uptime", s.uptimeText);
-    }
-    fillSettingSelect("gpuIndex", (s.gpus || []).map((g) => [String(g.index), `GPU${g.index}`]));
-    setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
-    setText("gpuUsage", metricText(s.gpu));
-    setText("gpuTemp", tempText(s.gpuTempText));
-    setText("gpuClock", s.gpuClockText);
-    setText("gpuVram", pairText(s.vram));
-    setText("encoder", metricText(s.encoder));
-    setText("decoder", metricText(s.decoder));
-    setRing("gpu", s.gpu);
-    setBar("vram", s.vram);
-    setText("ramTotal", s.ramSubtitle ?? s.ram?.totalText);
-    setText("ramUsage", metricText(s.ram));
-    setText("ramUsed", s.ram?.usedText);
-    setText("ramSpeed", s.ramSpeedText);
-    setText("swapUsed", pairText(s.swap));
-    setRing("ram", s.ram);
-    const parts = s.ramBreakdown || {};
-    for (const [key, metric] of [["ramApp", parts.app], ["ramCache", parts.cache], ["ramFree", parts.free], ["ramOther", parts.other]]) {
-      setText(key, metric?.usedText);
-      setBar(key, metric);
-    }
-    setText("memPressure", Number.isFinite(s.memPressure) ? s.memPressure.toFixed(2) + "%" : "--");
-    setText("netInterfaceName", s.netInterfaceName);
-    setText("netIp", s.netIp);
-    setText("netMac", s.netMac);
-    setText("netGateway", s.netGateway);
-    setText("netGatewayMac", s.netGatewayMac);
-    fillSettingSelect("netInterface", [["all", "所有實體介面"], ...(s.netInterfaces || []).map((i) => [i, i])]);
-    setText("netUp", metricText(s.netUp));
-    setText("netDown", metricText(s.netDown));
-    setText("netUpMbps", formatMbps(s.netUp?.rawValue));
-    setText("netDownMbps", formatMbps(s.netDown?.rawValue));
-
-    const battery = s.battery;
-    $("batteryCard").hidden = !battery;
-    if (battery) {
-      const percent = Number.isFinite(battery.percent) ? battery.percent : null;
-      setText("batteryPercent", percent === null ? null : `${Math.round(percent)}%`);
-      setBar("battery", { percent });
-      const status = { charging: "Charging", discharging: "On battery", full: "Full", notCharging: "Not charging" }[battery.status] || "Unknown";
-      setText("batteryStatus", status);
-      const prefix = { charging: "Full in ", discharging: "Remaining " }[battery.status];
-      setText("batteryTime", prefix && battery.timeText !== "--" ? prefix + battery.timeText : "--");
-      setText("batteryHealth", Number.isFinite(battery.health) ? `${battery.health.toFixed(0)}%` : null);
-      setText("batteryCycles", battery.cycles);
-      setText("batteryNow", battery.nowText);
-      setText("batteryFull", battery.fullText);
-      setText("batteryDesign", battery.designText);
-    }
-
-    const disks = Array.isArray(s.disks) ? s.disks : [];
-    const inventory = JSON.stringify(disks.map((d) => [d.name, d.model, d.sizeText, d.transport]));
-    if (inventory !== lastDiskInventory) {
-      // Inventory changes only on startup / manual refresh.
-      diskStatNodes = diskLists.map((list) => {
-        const built = disks.map(makeDiskRow);
-        list.replaceChildren(...built.map((b) => b.row));
-        return built.map((b) => b.values);
-      });
-      for (const note of diskEmptyNotes) note.hidden = disks.length > 0;
-      lastDiskInventory = inventory;
-    }
-    disks.forEach((disk, i) => {
-      const rate = s.diskRates?.[disk.name] || {};
-      const read = formatRate(rate.read), write = formatRate(rate.write);
-      const usage = s.diskUsage?.[disk.name];
-      const usageText = usage ? `${text(usage.usedText)} / ${text(usage.totalText)}` : "未掛載";
-      const width = percentOf(usage).toFixed(1) + "%";
-      for (const list of diskStatNodes) {
-        writeText(list[i][0], read);
-        writeText(list[i][1], write);
-        if (list[i][2].style.width !== width) list[i][2].style.width = width;
-        writeText(list[i][3], usageText);
-      }
-    });
-    summaryDisk = disks.length ? Math.min(summaryDisk, disks.length - 1) : 0;
-    const shown = disks[summaryDisk];
-    const shownUsage = shown && s.diskUsage?.[shown.name];
-    setText("sumDiskName", shown ? [shown.name.toUpperCase(), shown.model].filter((v) => v && v !== "--").join(" · ") : "No disk detected");
-    setText("sumDiskUsed", shownUsage?.usedText);
-    setText("sumDiskTotal", shownUsage?.totalText);
-    // diskUsage is a used/total pair: total = used / percent.
-    const usedBytes = shownUsage?.rawValue, usedPercent = shownUsage?.percent;
-    setText("sumDiskFree", usedPercent > 0 ? formatBytes(usedBytes * (100 / usedPercent - 1)) : null);
-    for (const b of diskStepButtons) b.hidden = disks.length < 2;
-
-    const h = s.history || {};
-    chartSeries("cpu", h.cpu);
-    // Pressure is usually near 0: scale to the recent peak (at least 10%) so changes are visible.
-    let pressureMax = 10;
-    for (const v of h.memPressure || []) if (Number.isFinite(v) && v > pressureMax) pressureMax = v;
-    chartSeries("memPressure", h.memPressure, pressureMax);
-    // Paired series share one scale so the two lines are comparable.
-    // shortcut: scale comes from the whole kept history (240 points), so a detail page showing fewer points can be scaled by an older peak; slice per chart if that matters.
-    const pair = (a, b, maxKey) => {
-      let max = 1;
-      for (const v of [...(h[a] || []), ...(h[b] || [])]) if (Number.isFinite(v) && v > max) max = v;
-      chartSeries(a, h[a], max * 1.12, "up");
-      chartSeries(b, h[b], max * 1.12, "down");
-      setText(maxKey, formatRate(max));
-    };
-    pair("netUp", "netDown", "netMax");
-    pair("diskRead", "diskWrite", "diskIoMax");
-    const last = (series) => (Array.isArray(series) && series.length ? series[series.length - 1] : null);
-    setText("diskReadNow", formatRate(last(h.diskRead)));
-    setText("diskWriteNow", formatRate(last(h.diskWrite)));
-    fitColumns();
-  }
-
-  function setLiveStatus(label, kind) {
-    const el = $("appLiveStatus");
-    writeText(el, label);
-    el.classList.toggle("is-live", kind === "live");
-  }
-
-  function receiveSnapshot(snapshot) {
-    if (!snapshot || typeof snapshot !== "object") return;
-    state = snapshot;
-    const mock = snapshot.dataSource === "mock";
-    $("mockBanner").hidden = !mock;
-    setLiveStatus(mock ? "模擬資料 · 非實機" : "即時監控", mock ? "mock" : "live");
-    setText("version", "v" + text(snapshot.version));
-    if (isLive()) render();
-    else pendingRender = true;
-  }
-
-  // ---------------------------------------------------------------- setting pickers on cards
-  // <select data-setting-select="key">: options come from the snapshot, the
-  // value from the current settings; choosing writes through update_settings.
-  let currentSettings = {};
-  const settingSelects = all("[data-setting-select]");
-  function syncSettingSelects() {
-    for (const sel of settingSelects) {
-      const want = String(currentSettings[sel.dataset.settingSelect] ?? "");
-      // A saved value missing from the list (e.g. an unplugged interface) stays selectable.
-      if (want && ![...sel.options].some((o) => o.value === want)) sel.append(new Option(want, want));
-      if (document.activeElement !== sel && sel.value !== want) sel.value = want;
-    }
-  }
-  function fillSettingSelect(key, options) {
-    const signature = JSON.stringify(options);
-    for (const sel of settingSelects) {
-      if (sel.dataset.settingSelect !== key || sel.dataset.options === signature) continue;
-      // data-all-label: a shorter label for "all" (the English dashboard's NIC pill).
-      const allLabel = sel.dataset.allLabel;
-      sel.replaceChildren(...options.map(([value, label]) => new Option(value === "all" && allLabel ? allLabel : label, value)));
-      sel.dataset.options = signature;
-    }
-    syncSettingSelects();
-  }
-  for (const sel of settingSelects) {
-    sel.addEventListener("change", async () => {
-      const key = sel.dataset.settingSelect;
-      const value = SPECS[key]?.text ? sel.value : Number(sel.value);
-      if (!invoke) return;
-      try {
-        displaySettings(await invoke("update_settings", { patch: { [key]: value } }));
-      } catch (e) {
-        console.warn("ResourceWatch: setting rejected", e);
-        syncSettingSelects(); // back to the stored value
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------- settings
-  const SPECS = {
-    updateInterval: { min: 100, max: 10000, step: 50 },
-    historyPoints: { min: 10, max: 120, step: 10 },
-    gpuIndex: { min: 0, max: 15, step: 1 },
-    netInterface: { text: true },
-  };
-  const fields = Object.fromEntries(Object.keys(SPECS).map((k) => [k, $(k)]));
-
-  function setFieldError(key, message) {
-    // Not setText(): that renders an empty value as "--", which would show a
-    // bogus error under every valid field.
-    const el = $(key + "Error");
-    const next = message || "";
-    if (el && el.textContent !== next) el.textContent = next;
-    if (message) fields[key].setAttribute("aria-invalid", "true");
-    else fields[key].removeAttribute("aria-invalid");
-  }
-
-  function displaySettings(settings) {
-    if (!settings || typeof settings !== "object") return;
-    currentSettings = { ...currentSettings, ...settings };
-    document.documentElement.dataset.motion = currentSettings.updateInterval >= 1000 ? "on" : "off";
-    if (typeof settings.sidebarGlass === "boolean") {
-      glassSetting = settings.sidebarGlass;
-      if (glassAtStart === null) glassAtStart = glassSetting;
-      applyGlass();
-    }
-    syncSettingSelects();
-    for (const [key, field] of Object.entries(fields)) {
-      if (!(key in settings) || document.activeElement === field) continue;
-      field.value = String(settings[key]);
-      setFieldError(key, "");
-    }
-  }
-
-  // Client-side check is only for quick feedback; Rust validates again.
-  function readField(key) {
-    const spec = SPECS[key], field = fields[key];
-    if (spec.text) return { value: field.value.trim() || "all" };
-    const v = field.valueAsNumber;
-    if (!Number.isInteger(v) || v < spec.min || v > spec.max || (v - spec.min) % spec.step !== 0) {
-      return { error: `必須介於 ${spec.min}–${spec.max}，步進 ${spec.step}` };
-    }
-    return { value: v };
-  }
-
-  function errorMessage(error) {
-    if (error && typeof error === "object" && error.message) return error.message;
-    return text(error, "未知錯誤");
-  }
-
-  for (const key of Object.keys(fields)) {
-    fields[key].addEventListener("change", async () => {
-      const { value, error } = readField(key);
-      if (error) { setFieldError(key, error); return; }
-      if (!invoke) { setFieldError(key, "未連線到應用程式後端"); return; }
-      try {
-        const settings = await invoke("update_settings", { patch: { [key]: value } });
-        setFieldError(key, "");
-        fields[key].value = String(settings[key]);
-      } catch (e) {
-        // invalidSetting → that field; settingsWriteFailed (field null) → the
-        // edited field, so the error stays next to what the user changed.
-        setFieldError(e?.field || key, errorMessage(e));
-      }
-    });
-  }
-
-  const feedback = $("refreshFeedback");
-  function showFeedback(message, isError) {
-    feedback.textContent = message;
-    feedback.classList.toggle("is-error", Boolean(isError));
-  }
-
-  document.querySelectorAll("[data-refresh]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      if (!invoke) { showFeedback("未連線到應用程式後端。", true); return; }
-      button.disabled = true;
-      try {
-        receiveSnapshot(await invoke("refresh_devices", { kind: button.dataset.refresh }));
-        showFeedback(`已重新查詢（${button.textContent.trim()}）。`, false);
-      } catch (e) {
-        showFeedback("刷新失敗：" + errorMessage(e), true);
-      } finally {
-        button.disabled = false;
-      }
-    });
-  });
-
-  $("resetSettings").addEventListener("click", async () => {
-    if (!invoke) return;
-    try {
-      const settings = await invoke("reset_settings");
-      if (document.activeElement) document.activeElement.blur();
-      displaySettings(settings);
-      showFeedback("已恢復預設值並儲存。", false);
-    } catch (e) {
-      showFeedback("恢復預設值失敗：" + errorMessage(e), true);
-    }
-  });
-
-  // Where settings are stored and any problem found while loading them.
-  async function showSettingsInfo() {
-    try {
-      const info = await invoke("get_settings_info");
-      writeText($("settingsPath"), info.path ? `設定檔：${info.path}` : "設定目錄無法使用，設定只保存在記憶體中。");
-      const warning = $("settingsWarning");
-      warning.hidden = !info.loadWarning;
-      warning.textContent = info.loadWarning || "";
-    } catch (e) {
-      console.warn("ResourceWatch: settings info unavailable", e);
-    }
-  }
-
-  // ---------------------------------------------------------------- startup
-  async function start() {
-    if (!invoke || !listen) {
-      // Opened outside Tauri (e.g. a browser for styling): no data at all.
-      setLiveStatus("未連線到應用程式後端", null);
-      return;
-    }
-    try {
-      await listen("snapshot", (event) => receiveSnapshot(event.payload));
-      await listen("settings-changed", (event) => displaySettings(event.payload));
-      displaySettings(await invoke("get_settings"));
-      showSettingsInfo();
-      invoke("get_window_info").then((info) => { glassActive = Boolean(info?.glass); applyGlass(); })
-        .catch((e) => console.warn("ResourceWatch: window info unavailable", e));
-      receiveSnapshot(await invoke("get_snapshot"));
-    } catch (e) {
-      console.error("ResourceWatch: backend connection failed", e);
-      setLiveStatus("後端連線失敗", null);
-    }
-  }
-  // ---------------------------------------------------------------- processes
-  // Polled (get_processes) only while the dashboard or the applications page is visible.
-  const PROC_INTERVAL = 2000;
-  const procLists = all("[data-proc-list]");
-  const procTable = document.querySelector("[data-proc-table]");
-  const procSortButtons = all("[data-proc-sort]");
-  let procSort = "cpu";
-  let procs = [];
-  let procPolling = false;
-  const procVisible = () => !document.hidden && (activePage === "overview" || activePage === "apps");
-  const cpuText = (c) => (Number.isFinite(c) ? `${c.toFixed(1)}%` : "--");
-  const memText = (b) => (b >= 2 ** 30 ? `${(b / 2 ** 30).toFixed(1)} GiB` : `${Math.round(b / 2 ** 20)} MiB`);
-  const procValue = { cpu: (p) => cpuText(p.cpu), memory: (p) => memText(p.memory) };
-  const sortedBy = (key) => [...procs].sort((a, b) => (b[key] ?? -1) - (a[key] ?? -1));
-
-  function renderProcesses() {
-    for (const host of procLists) {
-      const key = host.dataset.procList;
-      host.replaceChildren(...sortedBy(key).slice(0, 5).map((p) => {
-        const row = document.createElement("div");
-        const dt = document.createElement("dt");
-        dt.textContent = dt.title = p.name;
-        const dd = document.createElement("dd");
-        dd.textContent = procValue[key](p);
-        row.append(dt, dd);
-        return row;
-      }));
-    }
-    setText("procCount", `${procs.length} 個程序`);
-    if (activePage !== "apps") return;
-    procTable.replaceChildren(...sortedBy(procSort).map((p) => {
-      const tr = document.createElement("tr");
-      for (const value of [p.name, p.pid, cpuText(p.cpu), memText(p.memory)]) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.append(td);
-      }
-      tr.firstChild.title = p.name;
-      return tr;
-    }));
-  }
-  function applyProcSort() {
-    for (const b of procSortButtons) {
-      if (b.dataset.procSort === procSort) b.parentElement.setAttribute("aria-sort", "descending");
-      else b.parentElement.removeAttribute("aria-sort");
-    }
-  }
-  for (const b of procSortButtons) {
-    b.addEventListener("click", () => { procSort = b.dataset.procSort; applyProcSort(); renderProcesses(); });
-  }
-  applyProcSort();
-
-  async function watchProcesses() {
-    if (procPolling || !invoke) return;
-    procPolling = true;
-    // The first scan has no CPU share yet, so the second one follows quickly.
-    let delay = 500;
-    while (procVisible()) {
-      try {
-        procs = await invoke("get_processes");
-        renderProcesses();
-      } catch (e) {
-        console.warn("ResourceWatch: process list unavailable", e);
-      }
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = PROC_INTERVAL;
-    }
-    procPolling = false;
-  }
-  document.addEventListener("visibilitychange", watchProcesses);
-
-  switchPage("overview");
-  start();
-})();
+invoke('system_info').then((i) => {
+  info = i;
+  $('#sysinfo').innerHTML = [i.hostname, i.os, `Linux ${i.kernel}`].filter(Boolean).map(esc).join('<br>');
+});
+tick();
+setInterval(tick, 1000);
+setInterval(pollProcs, 2000);

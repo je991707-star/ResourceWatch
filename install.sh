@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 使用者空間安裝／更新／解除安裝 ResourceWatch（Tauri 版）；不需要 sudo、不分層、不重開機。
+# 使用者空間安裝／更新／解除安裝 ResourceWatch；不需要 sudo、不分層、不重開機。
 # 用法：./install.sh [install|uninstall]
 #   install：建置 release 執行檔（有 distrobox 容器 resourcewatch-dev 時在容器內建置），安裝到 ~/.local
 set -euo pipefail
@@ -57,7 +57,7 @@ EOF
         ;;
     uninstall)
         rm -f "$BIN" "$DESKTOP" "$OLD_DESKTOP" "$ICON"
-        echo "已解除安裝（設定檔 ~/.config/$ID 保留）。"
+        echo "已解除安裝。"
         ;;
     *)
         echo "用法：$0 [install|uninstall]" >&2

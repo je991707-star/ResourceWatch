@@ -1,20 +1,8 @@
 [workspace]
-members = ["crates/core", "crates/app", "src-tauri"]
-# spikes/* are standalone crates with their own empty [workspace].
-exclude = ["spikes"]
+members = ["src-tauri"]
 resolver = "2"
 
 [profile.release]
 lto = true
 codegen-units = 1
 strip = true
-
-# softbuffer 0.4 hardcodes wl_shm Xrgb8888 on Wayland, which drops alpha and makes
-# the software-rendered Slint window opaque (no visible blur). Patched copy uses
-# Argb8888; spikes/slint-poc points at the same copy.
-# i-slint-core / i-slint-renderer-software: DirtyRegion::MAX_COUNT 3 → 16 so a
-# dashboard update repaints the changed spots instead of most of the window.
-[patch.crates-io]
-softbuffer = { path = "patches/softbuffer" }
-i-slint-core = { path = "patches/i-slint-core" }
-i-slint-renderer-software = { path = "patches/i-slint-renderer-software" }
