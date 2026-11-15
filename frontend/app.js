@@ -157,16 +157,16 @@
     for (const el of bars[key] || []) if (el.style.width !== width) el.style.width = width;
   }
 
-  function formatRate(value) {
+  // Same rules as the backend's format.rs `scaled` (binary units, one decimal above the base unit).
+  function scaled(value, units) {
     if (!Number.isFinite(value) || value < 0) return "--";
-    const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
     let v = value, unit = 0;
     while (v >= 1024 && unit < units.length - 1) { v /= 1024; unit++; }
     return (unit === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + units[unit];
   }
+  const formatRate = (value) => scaled(value, ["B/s", "KiB/s", "MiB/s", "GiB/s"]);
+  const formatBytes = (value) => scaled(value, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]);
 
-  // Same scaling as formatRate / the backend's format_bytes, without "/s".
-  const formatBytes = (value) => formatRate(value).replace("/s", "");
   // Network panel: bits per second, e.g. "10.25 Mbps".
   function formatMbps(bytesPerSecond) {
     if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 0) return "--";
