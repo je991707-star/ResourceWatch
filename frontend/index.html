@@ -77,64 +77,75 @@
       <p class="mock-banner" id="mockBanner" hidden>目前顯示的是<strong>模擬資料</strong>，不是本機硬體的實際量測值。</p>
 
       <!-- Dashboard -->
-      <main class="app-page dashboard" id="overviewPage" aria-label="儀表板">
+      <main class="app-page dashboard" id="overviewPage" aria-label="Dashboard">
         <section class="card" aria-labelledby="summaryTitle">
-          <h2 id="summaryTitle">摘要</h2>
-          <div class="summary">
-            <div class="summary-gauge">
-              <svg class="rings" viewBox="0 0 120 120" aria-hidden="true">
-                <circle class="ring-track" cx="60" cy="60" r="54"/><circle class="ring-value" data-ring="ram" data-color="ram" cx="60" cy="60" r="54" pathLength="100"/>
-                <circle class="ring-track" cx="60" cy="60" r="43"/><circle class="ring-value" data-ring="cpu" data-color="cpu" cx="60" cy="60" r="43" pathLength="100"/>
-                <circle class="ring-track" cx="60" cy="60" r="32"/><circle class="ring-value" data-ring="gpu" data-color="gpu" cx="60" cy="60" r="32" pathLength="100"/>
-              </svg>
-              <ul class="legend">
-                <li><i class="dot" data-color="ram"></i>RAM<strong data-bind="ramUsage">--</strong></li>
-                <li><i class="dot" data-color="cpu"></i>CPU<strong data-bind="cpuUsage">--</strong></li>
-                <li><i class="dot" data-color="gpu"></i>GPU<strong data-bind="gpuUsage">--</strong></li>
-              </ul>
+          <h2 id="summaryTitle">Summary</h2>
+          <div class="gauges">
+            <div class="gauge-tile">
+              <svg class="rings" viewBox="0 0 100 100" aria-hidden="true"><circle class="ring-track" cx="50" cy="50" r="44"/><circle class="ring-value" data-ring="cpu" data-color="sum-cpu" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <div class="gauge-text"><span>CPU</span><strong data-bind="cpuTemp">--</strong><small data-bind="cpuSpeed">--</small></div>
             </div>
-            <div class="summary-info">
-              <h3>記憶體</h3>
-              <dl class="kv">
-                <div><dt>已用</dt><dd data-bind="ramUsed">--</dd></div>
-                <div><dt>總量</dt><dd data-bind="ramTotal">--</dd></div>
-                <div class="kv-full"><dt>SWAP</dt><dd data-bind="swapUsed">--</dd></div>
-              </dl>
-              <h3>處理器</h3>
-              <dl class="kv">
-                <div><dt>核心</dt><dd data-bind="cpuCores">--</dd></div>
-                <div><dt>執行緒</dt><dd data-bind="cpuThreads">--</dd></div>
-                <div><dt>時脈</dt><dd data-bind="cpuSpeed">--</dd></div>
-                <div><dt>溫度</dt><dd data-bind="cpuTemp">--</dd></div>
-              </dl>
-              <h3 class="summary-disk-head">
-                <span data-bind="sumDiskName">--</span>
-                <span class="pager">
-                  <button type="button" data-disk-step="-1" aria-label="上一顆硬碟" hidden>‹</button>
-                  <button type="button" data-disk-step="1" aria-label="下一顆硬碟" hidden>›</button>
-                </span>
-              </h3>
-              <dl class="kv">
-                <div><dt>已用</dt><dd data-bind="sumDiskUsed">--</dd></div>
-                <div><dt>總量</dt><dd data-bind="sumDiskTotal">--</dd></div>
-                <div class="kv-full"><dt>使用率</dt><dd data-bind="sumDiskPercent">--</dd></div>
-              </dl>
+            <div class="gauge-tile">
+              <svg class="rings" viewBox="0 0 100 100" aria-hidden="true"><circle class="ring-track" cx="50" cy="50" r="44"/><circle class="ring-value" data-ring="gpu" data-color="sum-gpu" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <div class="gauge-text"><span>GPU</span><strong data-bind="gpuTemp">--</strong><small data-bind="gpuClock">--</small></div>
+            </div>
+            <div class="gauge-tile">
+              <svg class="rings" viewBox="0 0 100 100" aria-hidden="true"><circle class="ring-track" cx="50" cy="50" r="44"/><circle class="ring-value" data-ring="ram" data-color="sum-ram" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <div class="gauge-text"><span>RAM</span><strong data-bind="ramUsage">--</strong><small data-bind="ramTotal">--</small></div>
             </div>
           </div>
+          <h3 class="panel-sub">Memory</h3>
+          <div class="bar bar--wide bar--stack" role="img" aria-label="Memory composition">
+            <span data-bar="ramApp" data-color="ram"></span><span data-bar="ramCache" data-color="mem-cache"></span><span data-bar="ramFree" data-color="mem-free"></span><span data-bar="ramOther" data-color="mem-other"></span>
+          </div>
+          <ul class="mem-legend">
+            <li><span><i class="dot" data-color="ram"></i>Used</span><strong data-bind="ramApp">--</strong></li>
+            <li><span><i class="dot" data-color="mem-cache"></i>Cached</span><strong data-bind="ramCache">--</strong></li>
+            <li><span><i class="dot" data-color="mem-free"></i>Free</span><strong data-bind="ramFree">--</strong></li>
+            <li><span><i class="dot" data-color="mem-other"></i>Other</span><strong data-bind="ramOther">--</strong></li>
+          </ul>
+          <h3 class="panel-sub storage-head">
+            <span>Storage</span>
+            <span class="pager">
+              <!-- Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0) -->
+              <button type="button" data-disk-step="-1" aria-label="Previous disk" hidden><svg viewBox="0 0 640 640" class="flip" aria-hidden="true"><path d="M441.3 299.8C451.5 312.4 450.8 330.9 439.1 342.6L311.1 470.6C301.9 479.8 288.2 482.5 276.2 477.5C264.2 472.5 256.5 460.9 256.5 448L256.5 192C256.5 179.1 264.3 167.4 276.3 162.4C288.3 157.4 302 160.2 311.2 169.3L439.2 297.3L441.4 299.7z"/></svg></button>
+              <button type="button" data-disk-step="1" aria-label="Next disk" hidden><svg viewBox="0 0 640 640" aria-hidden="true"><path d="M441.3 299.8C451.5 312.4 450.8 330.9 439.1 342.6L311.1 470.6C301.9 479.8 288.2 482.5 276.2 477.5C264.2 472.5 256.5 460.9 256.5 448L256.5 192C256.5 179.1 264.3 167.4 276.3 162.4C288.3 157.4 302 160.2 311.2 169.3L439.2 297.3L441.4 299.7z"/></svg></button>
+            </span>
+          </h3>
+          <p class="storage-name" data-bind="sumDiskName">--</p>
+          <dl class="kv kv--3">
+            <div><dt>Total</dt><dd data-bind="sumDiskTotal">--</dd></div>
+            <div><dt>Used</dt><dd data-bind="sumDiskUsed">--</dd></div>
+            <div><dt>Free</dt><dd data-bind="sumDiskFree">--</dd></div>
+          </dl>
+        </section>
+
+        <section class="card" aria-labelledby="networkTitle">
+          <h2 id="networkTitle">Network <label class="nic-pill">NIC: <select class="inline-select" data-setting-select="netInterface" data-all-label="all" aria-label="Network interface"></select></label></h2>
+          <div class="net-endpoints">
+            <!-- Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0) -->
+            <div class="net-endpoint" title="This computer"><svg class="net-icon" viewBox="0 0 640 640" aria-hidden="true"><path d="M128 96C92.7 96 64 124.7 64 160L64 416C64 451.3 92.7 480 128 480L272 480L256 528L184 528C170.7 528 160 538.7 160 552C160 565.3 170.7 576 184 576L456 576C469.3 576 480 565.3 480 552C480 538.7 469.3 528 456 528L384 528L368 480L512 480C547.3 480 576 451.3 576 416L576 160C576 124.7 547.3 96 512 96L128 96zM160 160L480 160C497.7 160 512 174.3 512 192L512 352C512 369.7 497.7 384 480 384L160 384C142.3 384 128 369.7 128 352L128 192C128 174.3 142.3 160 160 160z"/></svg><div><strong data-bind="netIp">--</strong><small data-bind="netMac">--</small></div></div>
+            <div class="net-endpoint" title="Gateway"><svg class="net-icon" viewBox="0 0 640 640" aria-hidden="true"><path d="M280 152L360 152L360 200L280 200L280 152zM272 96C245.5 96 224 117.5 224 144L224 208C224 234.5 245.5 256 272 256L288 256L288 288L64 288C46.3 288 32 302.3 32 320C32 337.7 46.3 352 64 352L160 352L160 384L144 384C117.5 384 96 405.5 96 432L96 496C96 522.5 117.5 544 144 544L240 544C266.5 544 288 522.5 288 496L288 432C288 405.5 266.5 384 240 384L224 384L224 352L416 352L416 384L400 384C373.5 384 352 405.5 352 432L352 496C352 522.5 373.5 544 400 544L496 544C522.5 544 544 522.5 544 496L544 432C544 405.5 522.5 384 496 384L480 384L480 352L576 352C593.7 352 608 337.7 608 320C608 302.3 593.7 288 576 288L352 288L352 256L368 256C394.5 256 416 234.5 416 208L416 144C416 117.5 394.5 96 368 96L272 96zM480 440L488 440L488 488L408 488L408 440L480 440zM224 440L232 440L232 488L152 488L152 440L224 440z"/></svg><div><strong data-bind="netGateway">--</strong><small data-bind="netGatewayMac">--</small></div></div>
+          </div>
+          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Network throughput history"><g class="grid-lines"></g><g data-chart="netDown" data-color="net-down"><path class="area"></path><path class="line"></path></g><g data-chart="netUp" data-color="net-up"><path class="area"></path><path class="line"></path></g></svg></div>
+          <ul class="legend legend--row">
+            <li><i class="dot" data-color="net-down"></i>Download<strong data-bind="netDownMbps">--</strong></li>
+            <li><i class="dot" data-color="net-up"></i>Upload<strong data-bind="netUpMbps">--</strong></li>
+          </ul>
         </section>
 
         <section class="card" aria-labelledby="sensorsTitle">
-          <h2 id="sensorsTitle">感測器 <span class="unit-toggle" role="group" aria-label="溫度單位"><button type="button" data-temp-unit="c">°C</button><button type="button" data-temp-unit="f">°F</button></span></h2>
+          <h2 id="sensorsTitle">Sensors <span class="unit-toggle" role="group" aria-label="Temperature unit"><button type="button" data-temp-unit="c">°C</button><button type="button" data-temp-unit="f">°F</button></span></h2>
           <dl class="rows">
-            <div><dt>CPU 溫度</dt><dd data-bind="cpuTemp">--</dd></div>
-            <div><dt>GPU 溫度</dt><dd data-bind="gpuTemp">--</dd></div>
+            <div><dt>CPU temperature</dt><dd data-bind="cpuTemp">--</dd></div>
+            <div><dt>GPU temperature</dt><dd data-bind="gpuTemp">--</dd></div>
           </dl>
           <dl class="rows sensor-list" data-sensor-list="8"></dl>
-          <button type="button" class="more-link" data-goto="sensors">顯示更多…</button>
+          <button type="button" class="more-link" data-goto="sensors">Show more…</button>
         </section>
 
         <section class="card" aria-labelledby="graphicsTitle">
-          <h2 id="graphicsTitle">圖形處理器 <select class="inline-select card-picker" data-setting-select="gpuIndex" aria-label="選擇 GPU"></select></h2>
+          <h2 id="graphicsTitle">Graphics <select class="inline-select card-picker" data-setting-select="gpuIndex" aria-label="Select GPU"></select></h2>
           <div class="graphics">
             <div class="gauge">
               <svg class="rings" viewBox="0 0 120 120" aria-hidden="true">
@@ -147,81 +158,64 @@
               <div class="bar-label"><span>VRAM</span><span data-bind="gpuVram">--</span></div>
               <div class="bar"><span data-bar="vram" data-color="gpu"></span></div>
               <dl class="kv kv--3">
-                <div><dt>溫度</dt><dd data-bind="gpuTemp">--</dd></div>
-                <div><dt>編碼</dt><dd data-bind="encoder">--</dd></div>
-                <div><dt>解碼</dt><dd data-bind="decoder">--</dd></div>
+                <div><dt>Temp</dt><dd data-bind="gpuTemp">--</dd></div>
+                <div><dt>Encode</dt><dd data-bind="encoder">--</dd></div>
+                <div><dt>Decode</dt><dd data-bind="decoder">--</dd></div>
               </dl>
             </div>
           </div>
         </section>
 
         <section class="card" aria-labelledby="cpuTitle">
-          <h2 id="cpuTitle">處理器</h2>
+          <h2 id="cpuTitle">Processor</h2>
           <div class="cpu-chart">
-            <div><div class="chart-heading"><span>核心</span></div><div class="core-bars" data-core-bars aria-label="各核心使用率"></div></div>
-            <div><div class="chart-heading"><span>使用率</span><span data-bind="cpuUsage">--</span></div>
-          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU 歷史使用率"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div></div>
+            <div><div class="chart-heading"><span>Cores</span></div><div class="core-bars" data-core-bars aria-label="Per-core usage"></div></div>
+            <div><div class="chart-heading"><span>Usage</span><span data-bind="cpuUsage">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="CPU usage history"><g class="grid-lines"></g><g data-chart="cpu" data-color="cpu"><path class="area"></path><path class="line"></path></g></svg></div></div>
           </div>
-          <dl class="rows proc-list" data-proc-list="cpu" aria-label="CPU 使用率前 5 名"></dl>
-          <button type="button" class="more-link" data-goto="apps">顯示應用程式…</button>
+          <dl class="rows proc-list" data-proc-list="cpu" aria-label="Top 5 by CPU"></dl>
+          <button type="button" class="more-link" data-goto="apps">Show applications…</button>
         </section>
 
         <section class="card" aria-labelledby="diskIoTitle">
-          <h2 id="diskIoTitle">磁碟 I/O</h2>
-          <div class="chart-heading"><span>速度（所有硬碟）</span><span data-bind="diskIoMax">--</span></div>
-          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="磁碟讀寫速度歷史圖表"><g class="grid-lines"></g><g data-chart="diskWrite" data-color="disk-write"><path class="area"></path><path class="line"></path></g><g data-chart="diskRead" data-color="disk-read"><path class="area"></path><path class="line"></path></g></svg></div>
+          <h2 id="diskIoTitle">Disk I/O</h2>
+          <div class="chart-heading"><span>Speed (all disks)</span><span data-bind="diskIoMax">--</span></div>
+          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Disk read/write history"><g class="grid-lines"></g><g data-chart="diskWrite" data-color="disk-write"><path class="area"></path><path class="line"></path></g><g data-chart="diskRead" data-color="disk-read"><path class="area"></path><path class="line"></path></g></svg></div>
           <ul class="legend legend--row">
-            <li><i class="dot" data-color="disk-read"></i>讀取<strong data-bind="diskReadNow">--</strong></li>
-            <li><i class="dot" data-color="disk-write"></i>寫入<strong data-bind="diskWriteNow">--</strong></li>
+            <li><i class="dot" data-color="disk-read"></i>Read<strong data-bind="diskReadNow">--</strong></li>
+            <li><i class="dot" data-color="disk-write"></i>Write<strong data-bind="diskWriteNow">--</strong></li>
           </ul>
-          <button type="button" class="more-link" data-goto="storage">顯示更多…</button>
+          <button type="button" class="more-link" data-goto="storage">Show more…</button>
         </section>
 
         <section class="card" aria-labelledby="memoryTitle">
-          <h2 id="memoryTitle">記憶體</h2>
-          <div class="bar bar--wide bar--stack" role="img" aria-label="記憶體組成">
-            <span data-bar="ramApp" data-color="ram"></span><span data-bar="ramCache" data-color="mem-cache"></span><span data-bar="ramFree" data-color="mem-free"></span>
+          <h2 id="memoryTitle">Memory</h2>
+          <div class="bar bar--wide bar--stack" role="img" aria-label="Memory composition">
+            <span data-bar="ramApp" data-color="ram"></span><span data-bar="ramCache" data-color="mem-cache"></span><span data-bar="ramFree" data-color="mem-free"></span><span data-bar="ramOther" data-color="mem-other"></span>
           </div>
           <ul class="legend legend--row legend--stack">
-            <li><i class="dot" data-color="ram"></i>應用程式<strong data-bind="ramApp">--</strong></li>
-            <li><i class="dot" data-color="mem-cache"></i>快取<strong data-bind="ramCache">--</strong></li>
-            <li><i class="dot" data-color="mem-free"></i>可用<strong data-bind="ramFree">--</strong></li>
-            <li><i class="dot dot--track"></i>總量<strong data-bind="ramTotal">--</strong></li>
+            <li><i class="dot" data-color="ram"></i>Used<strong data-bind="ramApp">--</strong></li>
+            <li><i class="dot" data-color="mem-cache"></i>Cached<strong data-bind="ramCache">--</strong></li>
+            <li><i class="dot" data-color="mem-free"></i>Free<strong data-bind="ramFree">--</strong></li>
+            <li><i class="dot" data-color="mem-other"></i>Other<strong data-bind="ramOther">--</strong></li>
+            <li><i class="dot dot--track"></i>Total<strong data-bind="ramTotal">--</strong></li>
           </ul>
-          <dl class="rows"><div><dt>速度</dt><dd data-bind="ramSpeed">--</dd></div></dl>
-          <div class="chart-heading"><span>壓力（PSI，10 秒平均）</span><span data-bind="memPressure">--</span></div>
-          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="記憶體壓力圖表"><g class="grid-lines"></g><g data-chart="memPressure" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
-          <dl class="rows proc-list" data-proc-list="memory" aria-label="記憶體用量前 5 名"></dl>
-          <button type="button" class="more-link" data-goto="apps">顯示應用程式…</button>
+          <dl class="rows"><div><dt>Speed</dt><dd data-bind="ramSpeed">--</dd></div></dl>
+          <div class="chart-heading"><span>Pressure (PSI, 10 s avg)</span><span data-bind="memPressure">--</span></div>
+          <div class="plot plot--short"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Memory pressure history"><g class="grid-lines"></g><g data-chart="memPressure" data-color="ram"><path class="area"></path><path class="line"></path></g></svg></div>
+          <dl class="rows proc-list" data-proc-list="memory" aria-label="Top 5 by memory"></dl>
+          <button type="button" class="more-link" data-goto="apps">Show applications…</button>
         </section>
 
         <section class="card" aria-labelledby="disksTitle">
-          <h2 id="disksTitle">磁碟</h2>
-          <div class="disk-list" data-disk-list aria-label="實體硬碟"></div>
-          <p class="empty-note" data-disk-empty>未偵測到實體硬碟</p>
-          <button type="button" class="more-link" data-goto="storage">顯示更多…</button>
-        </section>
-
-        <section class="card" aria-labelledby="networkTitle">
-          <h2 id="networkTitle">網路</h2>
-          <dl class="rows">
-            <div><dt>介面</dt><dd><select class="inline-select" data-setting-select="netInterface" aria-label="網路介面"></select></dd></div>
-            <div><dt>使用中</dt><dd data-bind="netInterfaceName">--</dd></div>
-            <div><dt>IPv4</dt><dd data-bind="netIp">--</dd></div>
-            <div><dt>MAC</dt><dd data-bind="netMac">--</dd></div>
-            <div><dt>閘道</dt><dd data-bind="netGateway">--</dd></div>
-          </dl>
-          <div class="chart-heading"><span>速度</span><span data-bind="netMax">--</span></div>
-          <div class="plot"><svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="網路傳輸速度歷史圖表"><g class="grid-lines"></g><g data-chart="netDown" data-color="net-down"><path class="area"></path><path class="line"></path></g><g data-chart="netUp" data-color="net-up"><path class="area"></path><path class="line"></path></g></svg></div>
-          <ul class="legend legend--row">
-            <li><i class="dot" data-color="net-down"></i>下載<strong data-bind="netDown">--</strong></li>
-            <li><i class="dot" data-color="net-up"></i>上傳<strong data-bind="netUp">--</strong></li>
-          </ul>
-          <button type="button" class="more-link" data-goto="network">顯示更多…</button>
+          <h2 id="disksTitle">Disks</h2>
+          <div class="disk-list" data-disk-list aria-label="Physical disks"></div>
+          <p class="empty-note" data-disk-empty>No physical disks detected</p>
+          <button type="button" class="more-link" data-goto="storage">Show more…</button>
         </section>
 
         <section class="card" id="batteryCard" aria-labelledby="batteryTitle" hidden>
-          <h2 id="batteryTitle">電池</h2>
+          <h2 id="batteryTitle">Battery</h2>
           <div class="battery-head">
             <strong class="battery-badge" data-bind="batteryPercent">--</strong>
             <span data-bind="batteryTime">--</span>
@@ -229,11 +223,11 @@
           </div>
           <div class="bar bar--wide"><span data-bar="battery" data-color="mem-free"></span></div>
           <dl class="kv kv--3">
-            <div><dt>健康度</dt><dd data-bind="batteryHealth">--</dd></div>
-            <div><dt>循環次數</dt><dd data-bind="batteryCycles">--</dd></div>
-            <div><dt>目前容量</dt><dd data-bind="batteryNow">--</dd></div>
-            <div><dt>充滿容量</dt><dd data-bind="batteryFull">--</dd></div>
-            <div><dt>設計容量</dt><dd data-bind="batteryDesign">--</dd></div>
+            <div><dt>Health</dt><dd data-bind="batteryHealth">--</dd></div>
+            <div><dt>Cycles</dt><dd data-bind="batteryCycles">--</dd></div>
+            <div><dt>Current</dt><dd data-bind="batteryNow">--</dd></div>
+            <div><dt>Full</dt><dd data-bind="batteryFull">--</dd></div>
+            <div><dt>Design</dt><dd data-bind="batteryDesign">--</dd></div>
           </dl>
         </section>
       </main>

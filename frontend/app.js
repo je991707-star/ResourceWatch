@@ -165,6 +165,15 @@
     return (unit === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + units[unit];
   }
 
+  // Same scaling as formatRate / the backend's format_bytes, without "/s".
+  const formatBytes = (value) => formatRate(value).replace("/s", "");
+  // Network panel: bits per second, e.g. "10.25 Mbps".
+  function formatMbps(bytesPerSecond) {
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 0) return "--";
+    const mbps = (bytesPerSecond * 8) / 1e6;
+    return `${mbps.toFixed(mbps >= 100 ? 1 : 2)} Mbps`;
+  }
+
   function uptimeFromSeconds(seconds) {
     const total = Math.max(0, Math.floor(seconds));
     const days = Math.floor(total / 86400);
@@ -414,6 +423,7 @@
     setText("gpuName", labeledGpuName(s.gpuName, s.gpuVendor));
     setText("gpuUsage", metricText(s.gpu));
     setText("gpuTemp", tempText(s.gpuTempText));
+    setText("gpuClock", s.gpuClockText);
     setText("gpuVram", pairText(s.vram));
     setText("encoder", metricText(s.encoder));
     setText("decoder", metricText(s.decoder));
@@ -426,7 +436,7 @@
     setText("swapUsed", pairText(s.swap));
     setRing("ram", s.ram);
     const parts = s.ramBreakdown || {};
-    for (const [key, metric] of [["ramApp", parts.app], ["ramCache", parts.cache], ["ramFree", parts.free]]) {
+    for (const [key, metric] of [["ramApp", parts.app], ["ramCache", parts.cache], ["ramFree", parts.free], ["ramOther", parts.other]]) {
       setText(key, metric?.usedText);
       setBar(key, metric);
     }
@@ -435,9 +445,12 @@
     setText("netIp", s.netIp);
     setText("netMac", s.netMac);
     setText("netGateway", s.netGateway);
+    setText("netGatewayMac", s.netGatewayMac);
     fillSettingSelect("netInterface", [["all", "所有實體介面"], ...(s.netInterfaces || []).map((i) => [i, i])]);
     setText("netUp", metricText(s.netUp));
     setText("netDown", metricText(s.netDown));
+    setText("netUpMbps", formatMbps(s.netUp?.rawValue));
+    setText("netDownMbps", formatMbps(s.netDown?.rawValue));
 
     const battery = s.battery;
     $("batteryCard").hidden = !battery;
@@ -445,9 +458,9 @@
       const percent = Number.isFinite(battery.percent) ? battery.percent : null;
       setText("batteryPercent", percent === null ? null : `${Math.round(percent)}%`);
       setBar("battery", { percent });
-      const status = { charging: "充電中", discharging: "使用電池", full: "已充滿", notCharging: "未充電" }[battery.status] || "未知";
+      const status = { charging: "Charging", discharging: "On battery", full: "Full", notCharging: "Not charging" }[battery.status] || "Unknown";
       setText("batteryStatus", status);
-      const prefix = { charging: "充滿還需 ", discharging: "剩餘 " }[battery.status];
+      const prefix = { charging: "Full in ", discharging: "Remaining " }[battery.status];
       setText("batteryTime", prefix && battery.timeText !== "--" ? prefix + battery.timeText : "--");
       setText("batteryHealth", Number.isFinite(battery.health) ? `${battery.health.toFixed(0)}%` : null);
       setText("batteryCycles", battery.cycles);
@@ -484,10 +497,12 @@
     summaryDisk = disks.length ? Math.min(summaryDisk, disks.length - 1) : 0;
     const shown = disks[summaryDisk];
     const shownUsage = shown && s.diskUsage?.[shown.name];
-    setText("sumDiskName", shown ? shown.name : "未偵測到硬碟");
+    setText("sumDiskName", shown ? [shown.name.toUpperCase(), shown.model].filter((v) => v && v !== "--").join(" · ") : "No disk detected");
     setText("sumDiskUsed", shownUsage?.usedText);
     setText("sumDiskTotal", shownUsage?.totalText);
-    setText("sumDiskPercent", shownUsage?.displayValue);
+    // diskUsage is a used/total pair: total = used / percent.
+    const usedBytes = shownUsage?.rawValue, usedPercent = shownUsage?.percent;
+    setText("sumDiskFree", usedPercent > 0 ? formatBytes(usedBytes * (100 / usedPercent - 1)) : null);
     for (const b of diskStepButtons) b.hidden = disks.length < 2;
 
     const h = s.history || {};
@@ -545,7 +560,9 @@
     const signature = JSON.stringify(options);
     for (const sel of settingSelects) {
       if (sel.dataset.settingSelect !== key || sel.dataset.options === signature) continue;
-      sel.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+      // data-all-label: a shorter label for "all" (the English dashboard's NIC pill).
+      const allLabel = sel.dataset.allLabel;
+      sel.replaceChildren(...options.map(([value, label]) => new Option(value === "all" && allLabel ? allLabel : label, value)));
       sel.dataset.options = signature;
     }
     syncSettingSelects();

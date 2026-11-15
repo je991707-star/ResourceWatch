@@ -228,7 +228,7 @@ impl MockSource {
                 now_text: "38.0 Wh".to_string(),
                 full_text: "62.0 Wh".to_string(),
                 design_text: "65.0 Wh".to_string(),
-                time_text: "2 小時 17 分".to_string(),
+                time_text: "2 h 17 min".to_string(),
             }),
             sensors: [
                 (

@@ -21,8 +21,13 @@
   --cpu: #d554c8;
   --gpu: #2f8ff0;
   --ram: #f4b03e;
-  --net-down: #34c26d;
-  --net-up: #2f8ff0;
+  --net-down: #2f8ff0;
+  --net-up: #34c26d;
+  --mem-free: #34c26d;
+  --mem-other: #8e9198;
+  --sum-cpu: #5ac8fa;
+  --sum-gpu: #a463f2;
+  --sum-ram: #5b8def;
   --disk-read: #e5484d;
   --disk-write: #2f8ff0;
   --ok: #68c887;
@@ -50,8 +55,13 @@
   --cpu: #b43aa8;
   --gpu: #1f74cc;
   --ram: #d48d12;
-  --net-down: #1f9a51;
-  --net-up: #1f74cc;
+  --net-down: #1f74cc;
+  --net-up: #1f9a51;
+  --mem-free: #1f9a51;
+  --mem-other: #9a9da4;
+  --sum-cpu: #1c9bd6;
+  --sum-gpu: #8240d4;
+  --sum-ram: #3b6fd6;
   --disk-read: #c9343a;
   --disk-write: #1f74cc;
   --ok: #2e9a55;
@@ -77,7 +87,11 @@ html, body {
 [data-color="net-down"] { --c: var(--net-down); }
 [data-color="net-up"] { --c: var(--net-up); }
 [data-color="mem-cache"] { --c: var(--gpu); }
-[data-color="mem-free"] { --c: var(--net-down); }
+[data-color="mem-free"] { --c: var(--mem-free); }
+[data-color="mem-other"] { --c: var(--mem-other); }
+[data-color="sum-cpu"] { --c: var(--sum-cpu); }
+[data-color="sum-gpu"] { --c: var(--sum-gpu); }
+[data-color="sum-ram"] { --c: var(--sum-ram); }
 [data-color="disk-read"] { --c: var(--disk-read); }
 [data-color="disk-write"] { --c: var(--disk-write); }
 
@@ -209,11 +223,32 @@ html, body {
 }
 .ring-track--thick, .ring-value--thick { stroke-width: 10; }
 
-.summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-.summary-gauge { display: grid; gap: 12px; align-content: start; }
-.summary-gauge .rings { max-width: 150px; margin: 0 auto; }
-.summary-info { min-width: 0; padding-left: 14px; border-left: 1px solid var(--card-border); }
-.summary-info .kv dd { white-space: normal; }
+/* SUMMARY: three gauges, memory bar, storage switcher */
+.gauges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--card-border); }
+.gauge-tile { position: relative; aspect-ratio: 1; max-width: 110px; width: 100%; margin: 0 auto; }
+.gauge-text { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.25; }
+.gauge-text span { font-size: 13px; }
+.gauge-text strong { font-size: 17px; font-weight: 500; }
+.gauge-text small { color: var(--muted); font-size: 11px; }
+.card .panel-sub { margin: 12px 0 8px; font-size: 13px; font-weight: 700; }
+.mem-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 0; padding: 0 0 12px; border-bottom: 1px solid var(--card-border); list-style: none; font-size: 12px; }
+.mem-legend li { display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.mem-legend span { display: flex; align-items: center; gap: 6px; }
+.mem-legend strong { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.storage-head { display: flex; align-items: center; justify-content: space-between; }
+.storage-name { margin: 0 0 6px; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pager svg { width: 18px; height: 18px; fill: currentColor; }
+.pager svg.flip { transform: scaleX(-1); }
+
+/* NETWORK: NIC picker, host / gateway endpoints */
+.nic-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: 4px; background: var(--track); color: var(--text); font-size: 11px; font-weight: 600; letter-spacing: 0; }
+.nic-pill .inline-select { min-width: 0; max-width: 140px; padding-top: 0; padding-bottom: 0; border: 0; background-color: transparent; }
+.net-endpoints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--card-border); }
+.net-endpoint { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.net-endpoint > div { display: grid; min-width: 0; line-height: 1.3; }
+.net-endpoint strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.net-endpoint small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.net-icon { flex: none; width: 24px; height: 24px; fill: currentColor; }
 
 .graphics { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; align-items: center; }
 .gauge { position: relative; width: 96px; height: 96px; }
@@ -287,8 +322,6 @@ html, body {
 .disk-rates span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--c); }
 .disk-row .disk-usage { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
 .disk-row .disk-usage .bar { height: 6px; }
-.summary-disk-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.summary-disk-head > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pager { display: flex; flex: none; gap: 2px; }
 .pager button { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
 .pager button:hover { background: var(--nav-hover); color: var(--text); }

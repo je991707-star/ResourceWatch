@@ -37,24 +37,30 @@ Tauri 桌面應用的前端（靜態檔，無打包工具、無 npm 依賴；`ta
 
 - `index.html`：側欄品牌列為應用圖示 `app-icon.png`＋名稱；左側導覽「儀表板」「儲存裝置」「網路」「感測器」「應用程式」「桌面小工具」，頂部收合按鈕，底部「設定」與淺色／深色主題切換按鈕。
   頂部主機資訊列：電腦圖示＋主機名稱＋運作時間；機型＋CPU 型號（窄視窗時隱藏）；即時／模擬狀態。
-  儀表板為多欄卡片（摘要：RAM／CPU／GPU 同心環形圖＋記憶體與處理器數值；感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
-  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：應用程式／快取／可用三段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；摘要卡片下方可用 ‹ › 切換顯示各硬碟的已用／總量／使用率；網路卡片：介面選單、使用中介面、IPv4、MAC、閘道與上傳／下載雙線圖；圖形處理器卡片標題列有 GPU 選單），感測器、磁碟、磁碟 I/O、網路卡片的「顯示更多…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
+  儀表板卡片文字為英文、標題大寫（其餘頁面仍為中文；與詳細頁共用、由 JS 產生的文字如硬碟列「未掛載」仍為中文）。
+  SUMMARY（第一張）：CPU／GPU／RAM 三個環形圖（`data-color` 為 `sum-cpu`／`sum-gpu`／`sum-ram`，環內為溫度＋時脈、溫度＋GPU 時脈 `gpuClock`、使用率＋總量）；
+  Memory 四段堆疊條 Used／Cached／Free／Other（`ramApp`、`ramCache`、`ramFree`、`ramOther`）；Storage：‹ › 切換硬碟，名稱為「大寫裝置名 · 型號」，Total／Used／Free。
+  NETWORK（第二張）：標題列 NIC 選單（`data-all-label="all"`）；本機 IP＋MAC 與閘道 IP＋MAC（`netGatewayMac`），圖示為內嵌的 Font Awesome Free SVG（desktop、network-wired，翻頁鈕為 caret-right／水平翻轉，CC BY 4.0 註記保留在標記中）；
+  下載／上傳雙線圖與 Mbps 數值（`netDownMbps`、`netUpMbps`）。其餘卡片（感測器；圖形處理器：GPU 環形圖＋VRAM 進度條＋溫度／編碼／解碼；
+  處理器卡片：各核心使用率小長條（`data-core-bars`，CPU 數變動才重建）＋整體使用率歷史圖；磁碟 I/O 卡片：讀取／寫入雙線圖（共用縱軸）＋目前加總速率；記憶體卡片：Used／Cached／Free／Other 四段堆疊條＋總量、速度、記憶體壓力歷史圖（縱軸上限為近期最大值，至少 10%）；磁碟清單：讀寫速率＋容量條與「已用 / 總量」（未掛載顯示「未掛載」）；圖形處理器卡片標題列有 GPU 選單），感測器、磁碟、磁碟 I/O 卡片的「Show more…」（`data-goto`）切換到對應詳細頁（磁碟 I/O → 儲存裝置頁）。詳細頁：儲存裝置頁＝硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖；網路頁＝介面選單、使用中介面、IPv4、MAC、閘道、上傳／下載速率＋大圖；感測器頁＝CPU／GPU 溫度、全部 hwmon 感測器、CPU 平均時脈。同一 `data-bind`／`data-chart` 可在多頁重複出現，全部一起更新。
   電池卡片（`#batteryCard`，`battery` 為 `null` 時隱藏）：百分比、狀態、剩餘／充滿時間、進度條、健康度、循環次數與容量。
   感測器卡片：CPU／GPU 溫度＋前 8 筆 hwmon 感測器（`data-sensor-list="8"`），感測器頁列出全部（`"all"`，相鄰的同一晶片感測器歸在晶片名稱標題 `.sensor-group` 下，列名只顯示標籤；卡片則以「晶片 · 標籤」顯示）；兩處都有 °C／°F 切換（`data-temp-unit`）。
   儲存裝置／網路詳細頁目前只顯示現有快照欄位。「桌面小工具」只是預留說明頁，不建立或控制 Plasma Widget；設定頁為應用內頁面（取代 KDE 設定視窗），含「外觀」卡片的「側欄毛玻璃」開關。
   資料來源為 mock 時顯示黃色提示列。標記以屬性綁定資料，同一數值可出現在多頁：`data-bind`（文字）、`data-ring`（環形圖百分比）、
   `data-bar`（進度條）、`data-chart`（歷史折線，`<g>` 內含 `.area`、`.line`）、`data-disk-list`（硬碟列容器）、`data-color`（指標色）。
-- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；側欄為中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色）。
+- `styles.css`：色彩 token（`:root` 為深色，`:root[data-theme="light"]` 覆寫淺色；側欄為中性燻黑 `--sidebar`，`--sidebar-glass` 為毛玻璃側欄的半透明色；`--net-down` 藍、`--net-up` 綠，記憶體 `--mem-free` 綠、`--mem-other` 灰，SUMMARY 環形圖 `--sum-cpu` 青、`--sum-gpu` 紫、`--sum-ram` 藍）。
   環形圖、長條、核心長條的過渡動畫（0.4 s）只在 `<html data-motion="on">` 時套用：這些屬性（stroke-dasharray、width、height）無法合成，每幀都要重排／重繪，更新間隔 500 ms 時動畫會一直跑（實測閒置 WebKit 約 70%、主程序約 50% 單核，關閉後皆約 5%）。
   視窗在 Wayland 為透明：`html, body` 背景透明，顯示區 `.app-main` 不透明（`--bg`），側欄只有 `<html data-glass="on">` 時才半透明，其餘情況為不透明 `--sidebar`。
   其餘樣式：卡片、環形圖（`pathLength=100` 的 circle，以 `stroke-dasharray` 顯示百分比）、
   進度條、折線圖與硬碟列樣式。
-- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 300px` 排成由上而下的多欄卡片（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）。
+- `application.css`：側欄、頂部資訊列、頁面外框；儀表板以 CSS `columns: 3 300px` 排成由上而下的多欄卡片，卡片間距（欄距與上下）與外距皆 30 px（卡片為 `inline-block`，避免下緣間距跑到下一欄頂端）；儀表板卡片標題大寫。
   側欄收合：`.app-shell.is-collapsed` 只剩圖示（58 px），由使用者按鈕或寬度 ≤760 px 觸發（≤760 px 時隱藏收合按鈕與頂部 GPU 資訊）。
   響應式：欄數依寬度自動減少、≤980 px 側欄變窄、≤420 px 摘要卡片改為上下排列。
 - `settings.css`：設定頁、mock 提示列、欄位錯誤訊息樣式，顏色全部使用 `styles.css` 的 token。
 - `app.js`：以 `window.__TAURI__.core.invoke` / `event.listen` 連接後端（`withGlobalTauri`）。
   啟動時先 `listen("snapshot")`、`listen("settings-changed")`，再呼叫 `get_settings`、`get_settings_info`、`get_snapshot`。
+  `formatBytes`（與後端 `format_bytes` 同規則）、`formatMbps`（B/s × 8 ÷ 10⁶，< 100 兩位小數）；SUMMARY 的 Free＝已用 ÷ 使用率 − 已用（`diskUsage` 為 used/total pair）。
+  `fillSettingSelect` 對有 `data-all-label` 的選單把 `all` 選項改用該標籤。電池卡片狀態與時間為英文（後端 `format_duration` 輸出 `2 h 17 min`）。
   `displaySettings()` 依 `updateInterval >= 1000` 設 `<html data-motion="on|off">`（未收到設定前為無動畫）。
   程序清單：只在儀表板或應用程式頁顯示且視窗可見（`document.hidden` 為 false）時輪詢 `get_processes`，第一次後 0.5 秒補一次（第一次沒有 CPU 比例），之後每 2 秒；
   切頁與 `visibilitychange` 時重新判斷，同時只會有一個輪詢迴圈。處理器卡片列 CPU 前 5 名、記憶體卡片列記憶體前 5 名（`data-proc-list="cpu|memory"`，「顯示應用程式…」→ 應用程式頁）；

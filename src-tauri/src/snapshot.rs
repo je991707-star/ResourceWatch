@@ -144,7 +144,7 @@ pub struct BatteryInfo {
     pub now_text: String,
     pub full_text: String,
     pub design_text: String,
-    /// Time to empty / to full, e.g. `"2 小時 17 分"`, `"--"` when unknown.
+    /// Time to empty / to full, e.g. `"2 h 17 min"`, `"--"` when unknown.
     pub time_text: String,
 }
 
@@ -240,15 +240,15 @@ pub struct Snapshot {
     pub history: History,
 }
 
-/// `"2 小時 17 分"` / `"45 分"`; `"--"` when missing.
+/// `"2 h 17 min"` / `"45 min"`; `"--"` when missing.
 pub fn format_duration(seconds: Option<f64>) -> String {
     let Some(s) = format::valid(seconds).filter(|s| *s >= 0.0) else {
         return MISSING.to_string();
     };
     let minutes = (s / 60.0).round() as u64;
     match minutes / 60 {
-        0 => format!("{} 分", minutes % 60),
-        h => format!("{h} 小時 {} 分", minutes % 60),
+        0 => format!("{} min", minutes % 60),
+        h => format!("{h} h {} min", minutes % 60),
     }
 }
 
@@ -321,8 +321,8 @@ mod tests {
 
     #[test]
     fn duration_format() {
-        assert_eq!(format_duration(Some(8220.0)), "2 小時 17 分");
-        assert_eq!(format_duration(Some(2700.0)), "45 分");
+        assert_eq!(format_duration(Some(8220.0)), "2 h 17 min");
+        assert_eq!(format_duration(Some(2700.0)), "45 min");
         assert_eq!(format_duration(None), "--");
     }
 

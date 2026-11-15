@@ -96,10 +96,11 @@
 .app-page:not(.dashboard):not(.app-settings-page) { display: grid; gap: 14px; max-width: 900px; }
 
 /* Masonry-like dashboard: cards flow top-to-bottom through as many columns as fit. */
-.dashboard { columns: 3 300px; column-gap: 14px; }
+.dashboard { columns: 3 300px; column-gap: 30px; padding: 30px; }
+.dashboard > .card > h2 { text-transform: uppercase; font-size: 16px; }
 /* inline-block keeps each card's bottom margin with it instead of carrying it to the next column's top. */
 .dashboard > .card[hidden] { display: none; }
-.dashboard > .card { display: inline-block; width: 100%; margin-bottom: 14px; vertical-align: top; break-inside: avoid; }
+.dashboard > .card { display: inline-block; width: 100%; margin-bottom: 30px; vertical-align: top; break-inside: avoid; }
 
 .widget-info p { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 
@@ -122,6 +123,5 @@
   .host-block--model { display: none; }
 }
 @media (max-width: 420px) {
-  .summary { grid-template-columns: minmax(0, 1fr); }
-  .summary-info { padding-left: 0; border-left: 0; }
+  .mem-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
