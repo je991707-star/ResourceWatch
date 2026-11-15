@@ -186,14 +186,29 @@
 
 驗證：深色與淺色展示頁截圖確認各元件；程序表為實際程序清單。下拉選單彈出、分段點選、表格排序與捲動需實際操作確認（截圖模式不含互動）。展示頁閒置 CPU 0%、RSS 43 MB。
 
-## Phase 4：儀表板 `[ ]`
-- [ ] 卡片：SUMMARY、Network、Sensors、Graphics、Processor、Disk I/O、Memory、Disks、Battery。
-  - 內容與目前一致，版型以 SUMMARY 為範本。
-  - 沒有電池時隱藏 Battery。
-- [ ] 1–3 欄自適應，瀑布流排版：卡片依固定順序分配到目前最短的一欄。
-  - 欄數依可用寬度與卡片最小寬度決定。
+## Phase 4：儀表板 `[x]`（輕量目標 CPU 未達標，見下方量測）
+實作：`crates/app/ui/{dashboard,data}.slint`、`crates/app/src/dashboard.rs`（說明見 `Readme_Architecture.md`）。
+- [x] 卡片：SUMMARY、Network、Sensors、Graphics、Processor、Disk I/O、Memory、Disks、Battery。
+  - 內容與目前一致，版型以 SUMMARY 為範本。數值與 `free`、`lsblk`、`df`、`ip route`、`nvidia-smi` 比對一致。
+  - 沒有電池時隱藏 Battery（模擬資料有電池，截圖確認顯示）。
+  - NIC／GPU 膠囊與 °C／°F 直接寫入設定（`State::commit`，同步 source 與排程器）。
+- [x] 1–3 欄自適應，瀑布流排版：卡片依固定順序分配到目前最短的一欄。
+  - 欄數依可用寬度與卡片最小寬度（300 px）決定；1220 寬（展開側欄）為 3 欄，680 寬為 1 欄。
   - 與舊版的差異：Slint 量不到文字是否被截斷，所以改用最小寬度門檻，不再依 GRAPHICS 文字截斷判斷。
-- [ ] 卡片內的「Show more…」連到對應詳細頁。
+- [x] 卡片內的「Show more…」連到對應詳細頁。
+
+### Phase 4 量測（2026-11-15，KWin Wayland、縮放 1.3、視窗 1220×790、release、預設 500 ms、儀表板顯示中）
+| 項目 | 結果 | 目標 |
+|---|---|---|
+| RSS | 60 MB（RssAnon 20／RssFile 30／RssShmem 13） | ≤ 60 MB |
+| 閒置 CPU | 3.4–4.0%（不含程序掃描約 2.5%） | ≤ 1% |
+
+優化過程與發現（未達標的原因）：
+- 每週期建立新 model → 改成就地更新：約 −0.7%。
+- 版面內 Text 改字會讓版面相依鏈失效（Slint 先標記髒再重算），整個瀑布流與所有讀取幾何的 Text／Path 被重繪，且每週期多一幀；改用 `Value` 元件後回到每週期 1 幀，只動標題列時 2.05% → 0.55%。
+- 仍未達標的主因：每週期約 10 張卡片各有小變動，Slint 的髒區最多 3 個矩形（`DirtyRegion::MAX_COUNT = 3`），分散的變動被合併成幾乎涵蓋整個內容區的方框，軟體渲染器等於每週期重畫整個儀表板；
+  實驗中長條圖約佔 0.8%、環形圖約 0.55%、核心直條約 0.25%，陰影、不透明底色、圓角弧線影響都在誤差內。
+- 可能的方向（需決定）：修補 Slint 的髒區數量上限（比照 softbuffer 的 vendored patch）、把介面更新頻率與取樣分開（例如介面最快 1 秒一次）、或接受較高的 CPU。Phase 7 依「輕量目標」重測。
 
 ## Phase 5：詳細頁 `[ ]`
 - [ ] 儲存裝置：硬碟清單（容量條、讀寫速率）＋磁碟 I/O 大圖。

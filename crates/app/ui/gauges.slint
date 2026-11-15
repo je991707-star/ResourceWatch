@@ -1,5 +1,33 @@
 import { Theme } from "theme.slint";
 
+// Single-line text whose layout size does not depend on its content. The
+// Text sits outside any layout inside a fixed-height box, so changing it
+// repaints only the text: a Text inside a layout makes the layout read its
+// content-based size, and every update would then invalidate the surrounding
+// layouts (and the dashboard masonry), re-evaluating and repainting far more
+// than the text. Width comes from the caller (`width`, or stretch).
+export component Value {
+    in property <string> text;
+    in property <length> font-size: 12px;
+    in property <int> font-weight: 400;
+    in property <color> color: Theme.text;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+    height: label.font-metrics.ascent - label.font-metrics.descent;
+    label := Text {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        text: root.text;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        color: root.color;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
 export struct StackPart {
     start: float, // 0..1 offset, from Rust `charts::stack`
     width: float, // 0..1 share
@@ -47,7 +75,10 @@ export component RingGauge inherits Rectangle {
         commands: "M \{r} 0 A \{r} \{r} 0 1 1 \{r} \{2 * r} A \{r} \{r} 0 1 1 \{r} 0";
     }
     // A round cap draws a dot even at 0 length, so the arc is hidden at 0 %.
-    if p > 0: Path {
+    // `visible`, not `if`: a condition on a value that changes every cycle makes
+    // Slint re-check the conditional element and render an extra frame.
+    Path {
+        visible: p > 0;
         width: 100%;
         height: 100%;
         viewbox-width: 2 * r;
@@ -58,23 +89,24 @@ export component RingGauge inherits Rectangle {
         stroke-line-cap: round;
         commands: "M \{r} 0 A \{r} \{r} 0 \{p > 50 ? 1 : 0} 1 \{r + r * sin(a)} \{r - r * cos(a)}";
     }
+    // Value (fixed line height) so changing readings do not re-layout the card.
     VerticalLayout {
         alignment: center;
         spacing: 1px;
-        if label != "": Text {
+        if label != "": Value {
             text: label;
             font-size: 11px;
             color: Theme.text-secondary;
             horizontal-alignment: center;
         }
-        Text {
+        Value {
             text: value;
             font-size: 17px;
             font-weight: 700;
             color: Theme.text;
             horizontal-alignment: center;
         }
-        if detail != "": Text {
+        if detail != "": Value {
             text: detail;
             font-size: 10px;
             color: Theme.text-tertiary;
@@ -128,12 +160,12 @@ export component Legend inherits VerticalLayout {
             color: Theme.text-secondary;
             vertical-alignment: center;
         }
-        Text {
+        Value {
             text: item.value;
+            width: 64px;
             font-size: 12px;
             font-weight: 600;
             color: Theme.text;
-            vertical-alignment: center;
         }
     }
 }
@@ -150,35 +182,39 @@ export component KvGrid inherits Rectangle {
         width: root.width / max(root.columns, 1) - 8px;
         height: root.row-height;
         spacing: 1px;
-        Text {
+        Value {
             text: kv.key;
             font-size: 11px;
             color: Theme.text-secondary;
-            overflow: elide;
         }
-        Text {
+        Value {
             text: kv.value;
             font-size: 13px;
             color: Theme.text;
-            overflow: elide;
         }
     }
 }
 
-// Bar chart drawn from Rust-generated path commands (`charts::bar_path`) in
-// pixel units: the viewbox equals the plot size, so bars stay a fixed pixel
-// width. `up`/`down` are the two halves of a mirrored pair; leave `down`
-// empty for a single series. `geometry-changed` fires when the plot is
-// resized so the owner can regenerate the paths right away.
+// Bar chart drawn from Rust-generated path commands (`charts::bar_path`).
+// `up`/`down` are the two halves of a mirrored pair; leave `down` empty for a
+// single series.
+// - `fixed-width` > 0 (dashboard): Rust draws all kept samples right-aligned
+//   on a `fixed-width` × 100 canvas; the viewbox shows its rightmost plot-width
+//   pixels at 1:1 (height stretched), so resizing needs no regeneration.
+// - otherwise the viewbox equals the plot size in pixels and
+//   `geometry-changed` fires on resize so the owner regenerates the paths.
 export component BarChart inherits Rectangle {
     in property <string> up;
     in property <string> down;
     in property <color> up-color: Theme.cpu;
     in property <color> down-color: Theme.net-down;
     in property <bool> mirrored;
+    in property <float> fixed-width: 0;
     out property <length> plot-width: self.width;
     out property <length> plot-height: self.height;
     callback geometry-changed();
+    property <float> vx: fixed-width > 0 ? fixed-width - root.width / 1px : 0;
+    property <float> vh: fixed-width > 0 ? 100 : root.height / 1px;
     changed width => { root.geometry-changed(); }
     changed height => { root.geometry-changed(); }
     border-radius: 8px;
@@ -191,8 +227,11 @@ export component BarChart inherits Rectangle {
     Path {
         width: 100%;
         height: 100%;
+        viewbox-x: root.vx;
         viewbox-width: root.width / 1px;
-        viewbox-height: root.height / 1px;
+        viewbox-height: root.vh;
+        fit: fill;
+        clip: true;
         commands: root.up;
         fill: root.up-color;
         stroke-width: 0;
@@ -200,10 +239,89 @@ export component BarChart inherits Rectangle {
     if mirrored: Path {
         width: 100%;
         height: 100%;
+        viewbox-x: root.vx;
         viewbox-width: root.width / 1px;
-        viewbox-height: root.height / 1px;
+        viewbox-height: root.vh;
+        fit: fill;
+        clip: true;
         commands: root.down;
         fill: root.down-color;
         stroke-width: 0;
+    }
+}
+
+// Single-value progress bar (VRAM, battery, disk usage). `fraction` < 0 = missing.
+export component ProgressBar inherits Rectangle {
+    in property <float> fraction: -1;
+    in property <color> fill: Theme.ram;
+    height: 6px;
+    border-radius: self.height / 2;
+    background: Theme.hover;
+    Rectangle {
+        visible: fraction > 0;
+        x: 0;
+        width: min(fraction, 1) * parent.width;
+        height: parent.height;
+        border-radius: parent.height / 2;
+        background: root.fill;
+    }
+}
+
+// Name / value rows (top processes, sensor list); names elide.
+export component Rows inherits VerticalLayout {
+    in property <[KeyValue]> items;
+    spacing: 2px;
+    for kv in items: HorizontalLayout {
+        height: 22px;
+        spacing: 8px;
+        Value {
+            text: kv.key;
+            font-size: 12px;
+            color: Theme.text-secondary;
+            horizontal-stretch: 1;
+        }
+        Value {
+            text: kv.value;
+            width: 84px;
+            font-size: 12px;
+            color: Theme.text;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// One vertical bar per logical CPU (0..100, < 0 missing), sharing the width.
+export component CoreBars inherits Rectangle {
+    in property <[float]> values;
+    in property <color> fill: Theme.cpu;
+    property <length> gap: values.length > 32 ? 1px : 2px;
+    property <length> bar: values.length > 0 ? (self.width - (values.length - 1) * gap) / values.length : 0;
+    for v[i] in values: Rectangle {
+        x: i * (root.bar + root.gap);
+        width: root.bar;
+        y: 0;
+        height: root.height;
+        border-radius: 2px;
+        background: Theme.hover;
+        Rectangle {
+            visible: v >= 0;
+            y: parent.height - self.height;
+            height: max(2px, min(v, 100) / 100 * parent.height);
+            border-radius: 2px;
+            background: root.fill;
+        }
+    }
+}
+
+// "Show more…" link at the bottom of a card.
+export component MoreLink inherits Text {
+    callback activated;
+    font-size: 12px;
+    color: ta.has-hover ? Theme.text : Theme.cpu;
+    accessible-role: button;
+    accessible-action-default => { root.activated(); }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
     }
 }

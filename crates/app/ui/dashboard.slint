@@ -1,0 +1,388 @@
+// Dashboard: nine GlassCards in a 1–3 column masonry. Cards keep a fixed
+// order and each goes to the currently shortest column (Slint has no loops, so
+// the placement is unrolled below). Column count comes from the available
+// width and `min-card`; a hidden card (no battery) takes no space.
+import { Theme } from "theme.slint";
+import { GlassCard, SectionHeading } from "card.slint";
+import { RingGauge, StackBar, Legend, KvGrid, KeyValue, BarChart, ProgressBar, Rows, CoreBars, MoreLink, Value } from "gauges.slint";
+import { Dash, DiskRow, FaIcons } from "data.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Width (px) of the canvas Rust draws dashboard charts on: 240 kept samples × 3 px.
+export global ChartCanvas {
+    out property <float> width: 720;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.edge-bottom;
+}
+
+component LegendChip inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <color> dot;
+    spacing: 6px;
+    VerticalLayout {
+        alignment: center;
+        Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: dot; }
+    }
+    Text { text: label; font-size: 12px; color: Theme.text-secondary; vertical-alignment: center; }
+    Value { text: value; width: 84px; font-size: 12px; font-weight: 600; color: Theme.text; }
+}
+
+component HeadingRow inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> value;
+    SectionHeading { text: root.text; horizontal-stretch: 1; }
+    Value { text: root.value; width: 96px; horizontal-alignment: right; font-size: 11px; font-weight: 600; color: Theme.text-tertiary; }
+}
+
+// Network endpoint: Font Awesome icon + address + MAC.
+component Endpoint inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> address;
+    in property <string> mac;
+    in property <string> label;
+    spacing: 8px;
+    accessible-role: text;
+    accessible-label: "\{label} \{address}";
+    VerticalLayout {
+        alignment: center;
+        Path {
+            width: 22px;
+            height: 22px;
+            viewbox-width: 640;
+            viewbox-height: 640;
+            commands: icon;
+            fill: Theme.text-secondary;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        Value { text: address; font-size: 13px; font-weight: 600; color: Theme.text; }
+        Value { text: mac; font-size: 10px; color: Theme.text-tertiary; }
+    }
+}
+
+component DiskItem inherits VerticalLayout {
+    in property <DiskRow> disk;
+    spacing: 3px;
+    HorizontalLayout {
+        spacing: 10px;
+        Text { text: disk.name; font-size: 13px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; overflow: elide; }
+        Value { text: disk.read; width: 72px; horizontal-alignment: right; font-size: 11px; color: Theme.disk-read; }
+        Value { text: disk.write; width: 72px; horizontal-alignment: right; font-size: 11px; color: Theme.disk-write; }
+    }
+    Text { text: disk.model; font-size: 11px; color: Theme.text-tertiary; overflow: elide; }
+    HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            ProgressBar { fraction: disk.usage; fill: Theme.ram; }
+        }
+        Value { text: disk.usage-text; width: 130px; horizontal-alignment: right; font-size: 11px; color: Theme.text-secondary; }
+    }
+}
+
+component PagerButton inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    callback clicked;
+    width: 22px;
+    height: 18px;
+    border-radius: 5px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { root.clicked(); }
+    Text { text: glyph; font-size: 12px; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component Dashboard inherits Rectangle {
+    // Page index to open (1 storage, 3 sensors, 4 applications).
+    callback goto(int);
+    property <length> gap: 12px;
+    property <length> min-card: 300px;
+    property <length> avail: sv.visible-width;
+    property <int> cols: max(1, min(3, floor((avail + gap) / (min-card + gap))));
+    property <length> colw: (avail - (cols - 1) * gap) / cols;
+
+    pure function pick(a: length, b: length, c: length, n: int) -> int {
+        if n <= 1 {
+            return 0;
+        }
+        if n == 2 {
+            return a <= b ? 0 : 1;
+        }
+        return a <= b && a <= c ? 0 : (b <= c ? 1 : 2);
+    }
+
+    property <length> a0: 0;
+    property <length> b0: 0;
+    property <length> c0: 0;
+    property <length> h0: card0.visible ? card0.preferred-height : 0;
+    property <int> col0: pick(a0, b0, c0, cols);
+    property <length> y0: col0 == 0 ? a0 : (col0 == 1 ? b0 : c0);
+    property <length> inc0: h0 > 0 ? h0 + gap : 0;
+    property <length> a1: a0 + (col0 == 0 ? inc0 : 0);
+    property <length> b1: b0 + (col0 == 1 ? inc0 : 0);
+    property <length> c1: c0 + (col0 == 2 ? inc0 : 0);
+    property <length> h1: card1.visible ? card1.preferred-height : 0;
+    property <int> col1: pick(a1, b1, c1, cols);
+    property <length> y1: col1 == 0 ? a1 : (col1 == 1 ? b1 : c1);
+    property <length> inc1: h1 > 0 ? h1 + gap : 0;
+    property <length> a2: a1 + (col1 == 0 ? inc1 : 0);
+    property <length> b2: b1 + (col1 == 1 ? inc1 : 0);
+    property <length> c2: c1 + (col1 == 2 ? inc1 : 0);
+    property <length> h2: card2.visible ? card2.preferred-height : 0;
+    property <int> col2: pick(a2, b2, c2, cols);
+    property <length> y2: col2 == 0 ? a2 : (col2 == 1 ? b2 : c2);
+    property <length> inc2: h2 > 0 ? h2 + gap : 0;
+    property <length> a3: a2 + (col2 == 0 ? inc2 : 0);
+    property <length> b3: b2 + (col2 == 1 ? inc2 : 0);
+    property <length> c3: c2 + (col2 == 2 ? inc2 : 0);
+    property <length> h3: card3.visible ? card3.preferred-height : 0;
+    property <int> col3: pick(a3, b3, c3, cols);
+    property <length> y3: col3 == 0 ? a3 : (col3 == 1 ? b3 : c3);
+    property <length> inc3: h3 > 0 ? h3 + gap : 0;
+    property <length> a4: a3 + (col3 == 0 ? inc3 : 0);
+    property <length> b4: b3 + (col3 == 1 ? inc3 : 0);
+    property <length> c4: c3 + (col3 == 2 ? inc3 : 0);
+    property <length> h4: card4.visible ? card4.preferred-height : 0;
+    property <int> col4: pick(a4, b4, c4, cols);
+    property <length> y4: col4 == 0 ? a4 : (col4 == 1 ? b4 : c4);
+    property <length> inc4: h4 > 0 ? h4 + gap : 0;
+    property <length> a5: a4 + (col4 == 0 ? inc4 : 0);
+    property <length> b5: b4 + (col4 == 1 ? inc4 : 0);
+    property <length> c5: c4 + (col4 == 2 ? inc4 : 0);
+    property <length> h5: card5.visible ? card5.preferred-height : 0;
+    property <int> col5: pick(a5, b5, c5, cols);
+    property <length> y5: col5 == 0 ? a5 : (col5 == 1 ? b5 : c5);
+    property <length> inc5: h5 > 0 ? h5 + gap : 0;
+    property <length> a6: a5 + (col5 == 0 ? inc5 : 0);
+    property <length> b6: b5 + (col5 == 1 ? inc5 : 0);
+    property <length> c6: c5 + (col5 == 2 ? inc5 : 0);
+    property <length> h6: card6.visible ? card6.preferred-height : 0;
+    property <int> col6: pick(a6, b6, c6, cols);
+    property <length> y6: col6 == 0 ? a6 : (col6 == 1 ? b6 : c6);
+    property <length> inc6: h6 > 0 ? h6 + gap : 0;
+    property <length> a7: a6 + (col6 == 0 ? inc6 : 0);
+    property <length> b7: b6 + (col6 == 1 ? inc6 : 0);
+    property <length> c7: c6 + (col6 == 2 ? inc6 : 0);
+    property <length> h7: card7.visible ? card7.preferred-height : 0;
+    property <int> col7: pick(a7, b7, c7, cols);
+    property <length> y7: col7 == 0 ? a7 : (col7 == 1 ? b7 : c7);
+    property <length> inc7: h7 > 0 ? h7 + gap : 0;
+    property <length> a8: a7 + (col7 == 0 ? inc7 : 0);
+    property <length> b8: b7 + (col7 == 1 ? inc7 : 0);
+    property <length> c8: c7 + (col7 == 2 ? inc7 : 0);
+    property <length> h8: card8.visible ? card8.preferred-height : 0;
+    property <int> col8: pick(a8, b8, c8, cols);
+    property <length> y8: col8 == 0 ? a8 : (col8 == 1 ? b8 : c8);
+    property <length> inc8: h8 > 0 ? h8 + gap : 0;
+    property <length> a9: a8 + (col8 == 0 ? inc8 : 0);
+    property <length> b9: b8 + (col8 == 1 ? inc8 : 0);
+    property <length> c9: c8 + (col8 == 2 ? inc8 : 0);
+
+    sv := ScrollView {
+        content-width: self.visible-width;
+        content-height: max(max(a9, b9), c9) - gap;
+
+        card0 := GlassCard {
+            x: col0 * (colw + gap);
+                y: y0;
+                width: colw;
+                height: self.preferred-height;
+            title: "SUMMARY";
+            HorizontalLayout {
+                alignment: space-around;
+                RingGauge { width: 92px; percent: Dash.cpu-percent; arc-color: Theme.cpu; label: "CPU"; value: Dash.cpu-temp; detail: Dash.cpu-speed; }
+                RingGauge { width: 92px; percent: Dash.gpu-percent; arc-color: Theme.gpu; label: "GPU"; value: Dash.gpu-temp; detail: Dash.gpu-clock; }
+                RingGauge { width: 92px; percent: Dash.ram-percent; arc-color: Theme.ram; label: "RAM"; value: Dash.ram-usage; detail: Dash.ram-total; }
+            }
+            SectionHeading { text: "Memory"; }
+            StackBar { parts: Dash.mem-parts; }
+            Legend { items: Dash.mem-legend; }
+            HorizontalLayout {
+                SectionHeading { text: "Storage"; horizontal-stretch: 1; }
+                if Dash.disk-count > 1: PagerButton { glyph: "‹"; label: "Previous disk"; clicked => { Dash.sum-disk-step(-1); } }
+                if Dash.disk-count > 1: PagerButton { glyph: "›"; label: "Next disk"; clicked => { Dash.sum-disk-step(1); } }
+            }
+            Text { text: Dash.sum-disk-name; font-size: 12px; color: Theme.text; overflow: elide; }
+            KvGrid { items: Dash.sum-disk-kv; }
+        }
+
+        card1 := GlassCard {
+            x: col1 * (colw + gap);
+                y: y1;
+                width: colw;
+                height: self.preferred-height;
+            title: "NETWORK";
+            pill-label: "NIC";
+            pill-options: Dash.net-options;
+            pill-index <=> Dash.net-index;
+            pill-selected(i) => { Dash.net-selected(i); }
+            HorizontalLayout {
+                spacing: 12px;
+                Endpoint { icon: FaIcons.computer; label: "This computer"; address: Dash.net-ip; mac: Dash.net-mac; horizontal-stretch: 1; }
+                Endpoint { icon: FaIcons.gateway; label: "Gateway"; address: Dash.net-gateway; mac: Dash.net-gateway-mac; horizontal-stretch: 1; }
+            }
+            BarChart {
+                height: 64px;
+                mirrored: true;
+                fixed-width: ChartCanvas.width;
+                up: Dash.net-up-path;
+                down: Dash.net-down-path;
+                up-color: Theme.net-up;
+                down-color: Theme.net-down;
+            }
+            HorizontalLayout {
+                spacing: 16px;
+                LegendChip { label: "Download"; value: Dash.net-down-mbps; dot: Theme.net-down; }
+                LegendChip { label: "Upload"; value: Dash.net-up-mbps; dot: Theme.net-up; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        card2 := GlassCard {
+            x: col2 * (colw + gap);
+                y: y2;
+                width: colw;
+                height: self.preferred-height;
+            title: "SENSORS";
+            segments: ["°C", "°F"];
+            segment-index <=> Dash.temp-unit;
+            segment-selected(i) => { Dash.temp-unit-selected(i); }
+            KvGrid { columns: 2; items: Dash.temps-kv; }
+            if Dash.sensors-short.length > 0: Divider { }
+            if Dash.sensors-short.length > 0: SectionHeading { text: "Details"; }
+            Rows { items: Dash.sensors-short; }
+            MoreLink { text: "Show more…"; activated => { root.goto(3); } }
+        }
+
+        card3 := GlassCard {
+            x: col3 * (colw + gap);
+                y: y3;
+                width: colw;
+                height: self.preferred-height;
+            title: "GRAPHICS";
+            pill-options: Dash.gpu-options;
+            pill-index <=> Dash.gpu-index;
+            pill-selected(i) => { Dash.gpu-selected(i); }
+            HorizontalLayout {
+                spacing: 14px;
+                RingGauge { width: 96px; thickness: 10px; percent: Dash.gpu-percent; arc-color: Theme.gpu; value: Dash.gpu-usage; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Text { text: Dash.gpu-name; font-size: 13px; font-weight: 600; color: Theme.text; overflow: elide; }
+                    HorizontalLayout {
+                        Text { text: "VRAM"; font-size: 11px; color: Theme.text-secondary; horizontal-stretch: 1; }
+                        Value { text: Dash.gpu-vram; width: 120px; horizontal-alignment: right; font-size: 11px; color: Theme.text; }
+                    }
+                    ProgressBar { fraction: Dash.gpu-vram-fraction; fill: Theme.gpu; }
+                    KvGrid { items: Dash.gpu-kv; }
+                }
+            }
+        }
+
+        card4 := GlassCard {
+            x: col4 * (colw + gap);
+                y: y4;
+                width: colw;
+                height: self.preferred-height;
+            title: "PROCESSOR";
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    spacing: 6px;
+                    width: 36%;
+                    SectionHeading { text: "Cores"; }
+                    CoreBars { height: 64px; values: Dash.cores; }
+                }
+                VerticalLayout {
+                    spacing: 6px;
+                    HeadingRow { text: "Usage"; value: Dash.cpu-usage; }
+                    BarChart { height: 64px; fixed-width: ChartCanvas.width; up: Dash.cpu-path; up-color: Theme.cpu; }
+                }
+            }
+            Divider { }
+            SectionHeading { text: "Top processes"; }
+            Rows { items: Dash.top-cpu; }
+            MoreLink { text: "Show applications…"; activated => { root.goto(4); } }
+        }
+
+        card5 := GlassCard {
+            x: col5 * (colw + gap);
+                y: y5;
+                width: colw;
+                height: self.preferred-height;
+            title: "DISK I/O";
+            HeadingRow { text: "Speed (all disks)"; value: Dash.disk-max; }
+            BarChart {
+                height: 72px;
+                mirrored: true;
+                fixed-width: ChartCanvas.width;
+                up: Dash.disk-read-path;
+                down: Dash.disk-write-path;
+                up-color: Theme.disk-read;
+                down-color: Theme.disk-write;
+            }
+            HorizontalLayout {
+                spacing: 16px;
+                LegendChip { label: "Read"; value: Dash.disk-read-now; dot: Theme.disk-read; }
+                LegendChip { label: "Write"; value: Dash.disk-write-now; dot: Theme.disk-write; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            MoreLink { text: "Show more…"; activated => { root.goto(1); } }
+        }
+
+        card6 := GlassCard {
+            x: col6 * (colw + gap);
+                y: y6;
+                width: colw;
+                height: self.preferred-height;
+            title: "MEMORY";
+            StackBar { parts: Dash.mem-parts; }
+            Legend { items: Dash.mem-legend; }
+            KvGrid { items: Dash.memory-kv; }
+            HeadingRow { text: "Pressure history"; value: "PSI, 10 s avg"; }
+            BarChart { height: 48px; fixed-width: ChartCanvas.width; up: Dash.pressure-path; up-color: Theme.ram; }
+            Divider { }
+            SectionHeading { text: "Top processes"; }
+            Rows { items: Dash.top-memory; }
+            MoreLink { text: "Show applications…"; activated => { root.goto(4); } }
+        }
+
+        card7 := GlassCard {
+            x: col7 * (colw + gap);
+                y: y7;
+                width: colw;
+                height: self.preferred-height;
+            title: "DISKS";
+            for d in Dash.disks: DiskItem { disk: d; }
+            if Dash.disks.length == 0: Text { text: "No physical disks detected"; font-size: 12px; color: Theme.text-secondary; }
+            MoreLink { text: "Show more…"; activated => { root.goto(1); } }
+        }
+
+        card8 := GlassCard {
+            x: col8 * (colw + gap);
+                y: y8;
+                width: colw;
+                height: self.preferred-height;
+            title: "BATTERY";
+            visible: Dash.has-battery;
+            HorizontalLayout {
+                spacing: 10px;
+                Value { text: Dash.battery-percent; width: 64px; font-size: 20px; font-weight: 700; color: Theme.text; }
+                Value { text: Dash.battery-time; font-size: 12px; color: Theme.text-secondary; horizontal-stretch: 1; }
+                Value { text: Dash.battery-status; width: 90px; horizontal-alignment: right; font-size: 11px; font-weight: 600; color: Theme.text-secondary; }
+            }
+            ProgressBar { fraction: Dash.battery-fraction; fill: Theme.net-up; }
+            KvGrid { items: Dash.battery-kv; }
+        }
+    }
+}

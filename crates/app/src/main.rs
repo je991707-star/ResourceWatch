@@ -1,7 +1,7 @@
 //! ResourceWatch Slint app (v0.2.0 redesign, docs/REDESIGN_V0.2.md).
 //!
 //! `resourcewatch-slint`                    open the window
-//! `resourcewatch-slint --snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery]`
+//! `resourcewatch-slint --snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery] [--size WxH]`
 //!                                          render headless with the software renderer to PNG
 //! `resourcewatch-slint --gallery [--theme dark|light]`
 //!                                          open the component gallery (Phase 3 components)
@@ -10,6 +10,7 @@
 #[cfg(target_os = "linux")]
 mod blur;
 mod charts;
+mod dashboard;
 mod gallery;
 mod processes;
 
@@ -20,7 +21,7 @@ use resourcewatch_core::snapshot::{DataSource, Snapshot};
 use resourcewatch_core::source::Source;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::ComponentHandle;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -57,48 +58,193 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(ui.run()?);
     }
 
-    let prefs = Rc::new(RefCell::new(Prefs::load(config_dir())));
-    let settings = prefs.borrow().current.clone();
+    let prefs = Prefs::load(config_dir());
+    let settings = prefs.current.clone();
     let ui = App::new()?;
     ui.set_version(env!("CARGO_PKG_VERSION").into());
     apply_prefs(&ui, &settings);
+    let state = Rc::new(State {
+        shared: Arc::new(Shared {
+            source: Mutex::new(Source::from_env(&settings)),
+            settings: Mutex::new(Arc::new(settings.clone())),
+        }),
+        prefs: RefCell::new(prefs),
+        scheduler: OnceCell::new(),
+        latest: RefCell::new(None),
+        view: RefCell::new(dashboard::View::default()),
+    });
+    STATE.with(|s| s.set(state.clone()).ok());
+    connect(&ui, &state);
 
+    if settings.sidebar_glass {
+        start_blur(&ui)?;
+    }
+    let weak = ui.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(300), move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_animated(true);
+        }
+    });
+
+    // Process list: polled only while the dashboard shows it (like the Tauri
+    // frontend's watchProcesses); the first scan has no CPU share, so a second
+    // one follows after 500 ms.
+    let poll = {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if ui.get_page() != 0 || ui.window().is_minimized() {
+                return;
+            }
+            let list = lock(&state.shared.source).processes(Instant::now());
+            dashboard::apply_processes(&ui, &list);
+        }
+    };
+    poll();
+    slint::Timer::single_shot(Duration::from_millis(500), poll.clone());
+    let proc_timer = slint::Timer::default();
+    proc_timer.start(slint::TimerMode::Repeated, Duration::from_secs(2), poll);
+
+    let shared = state.shared.clone();
+    let weak = ui.as_weak();
+    let interval = Duration::from_millis(settings.update_interval.into());
+    let scheduler = Scheduler::start(interval, move |now| {
+        // Lock order settings → source (never both held here).
+        let settings = lock(&shared.settings).clone();
+        let snapshot = lock(&shared.source).sample(now, &settings);
+        let weak = weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let (Some(ui), Some(state)) = (weak.upgrade(), STATE.with(|s| s.get().cloned())) else {
+                return;
+            };
+            *state.latest.borrow_mut() = Some(snapshot);
+            // Minimized: keep sampling (history continues) but skip UI work.
+            if !ui.window().is_minimized() {
+                state.render(&ui);
+            }
+        });
+    })?;
+    let _ = state.scheduler.set(scheduler);
+
+    ui.run()?;
+    if let Some(s) = state.scheduler.get() {
+        s.stop();
+    }
+    Ok(())
+}
+
+thread_local! {
+    /// UI-thread state for closures that arrive via `invoke_from_event_loop`
+    /// (which must be `Send`, so they cannot capture the `Rc`).
+    static STATE: OnceCell<Rc<State>> = const { OnceCell::new() };
+}
+
+/// Shared with the scheduler thread. Lock order: `settings` → `source`.
+struct Shared {
+    settings: Mutex<Arc<Settings>>,
+    source: Mutex<Source>,
+}
+
+/// UI-thread state.
+struct State {
+    shared: Arc<Shared>,
+    prefs: RefCell<Prefs>,
+    scheduler: OnceCell<Scheduler>,
+    latest: RefCell<Option<Snapshot>>,
+    view: RefCell<dashboard::View>,
+}
+
+impl State {
+    /// Validate → save → apply to source and scheduler (like Tauri's
+    /// `commit_settings`); nothing changes if validation or saving fails.
+    fn commit(&self, patch: &SettingsPatch) {
+        let mut prefs = self.prefs.borrow_mut();
+        let old_interval = prefs.current.update_interval;
+        if !prefs.update(patch) {
+            return;
+        }
+        let next = prefs.current.clone();
+        let mut settings = lock(&self.shared.settings);
+        lock(&self.shared.source).apply_settings(&next);
+        *settings = Arc::new(next.clone());
+        drop(settings);
+        if next.update_interval != old_interval {
+            if let Some(s) = self.scheduler.get() {
+                s.set_interval(Duration::from_millis(next.update_interval.into()));
+            }
+        }
+    }
+
+    /// Pushes the latest snapshot to the UI (title bar + dashboard).
+    fn render(&self, ui: &App) {
+        let latest = self.latest.borrow();
+        let Some(snapshot) = latest.as_ref() else {
+            return;
+        };
+        Host::from(snapshot).apply(ui);
+        if ui.get_page() == 0 {
+            let settings = self.prefs.borrow().current.clone();
+            dashboard::apply(ui, snapshot, &settings, &mut self.view.borrow_mut());
+        }
+    }
+}
+
+fn connect(ui: &App, state: &Rc<State>) {
     ui.on_close_window(|| {
         let _ = slint::quit_event_loop();
     });
-    let weak = ui.as_weak();
-    let p = prefs.clone();
+    let (weak, st) = (ui.as_weak(), state.clone());
     ui.on_prefs_changed(move || {
         let ui = weak.unwrap();
-        p.borrow_mut().update(&SettingsPatch {
+        st.commit(&SettingsPatch {
             theme: Some(ui.global::<Theme>().get_mode().into()),
             sidebar_collapsed: Some(ui.get_sidebar_collapsed()),
             ..Default::default()
         });
     });
+    // Returning to the dashboard shows the latest values at once.
+    let (weak, st) = (ui.as_weak(), state.clone());
+    ui.on_page_changed(move || st.render(&weak.unwrap()));
 
-    if settings.sidebar_glass {
-        start_blur(&ui)?;
-    }
-
-    let source = Arc::new(Mutex::new(Source::from_env(&settings)));
-    let weak = ui.as_weak();
-    let interval = Duration::from_millis(settings.update_interval.into());
-    // shortcut: the scheduler samples with the settings read at startup; Phase 6
-    // (settings page) must pass changed intervals/devices to it like Tauri's commit_settings.
-    let scheduler = Scheduler::start(interval, move |now| {
-        let host = Host::from(&lock(&source).sample(now, &settings));
-        let weak = weak.clone();
-        let _ = slint::invoke_from_event_loop(move || {
-            if let Some(ui) = weak.upgrade() {
-                host.apply(&ui);
-            }
+    let d = ui.global::<Dash>();
+    let st = state.clone();
+    d.on_net_selected(move |i| {
+        let value = st.view.borrow().net_values.get(i as usize).cloned();
+        if let Some(v) = value {
+            st.commit(&SettingsPatch {
+                net_interface: Some(v),
+                ..Default::default()
+            });
+        }
+    });
+    let st = state.clone();
+    d.on_gpu_selected(move |i| {
+        let value = st.view.borrow().gpu_values.get(i as usize).copied();
+        if let Some(v) = value {
+            st.commit(&SettingsPatch {
+                gpu_index: Some(v),
+                ..Default::default()
+            });
+        }
+    });
+    let (weak, st) = (ui.as_weak(), state.clone());
+    d.on_temp_unit_selected(move |i| {
+        st.commit(&SettingsPatch {
+            temp_unit: Some(if i == 1 { "f" } else { "c" }.into()),
+            ..Default::default()
         });
-    })?;
-
-    ui.run()?;
-    scheduler.stop();
-    Ok(())
+        st.render(&weak.unwrap());
+    });
+    let (weak, st) = (ui.as_weak(), state.clone());
+    d.on_sum_disk_step(move |delta| {
+        let count = st.latest.borrow().as_ref().map_or(0, |s| s.disks.len());
+        if count > 0 {
+            let mut view = st.view.borrow_mut();
+            view.sum_disk =
+                (view.sum_disk as i64 + i64::from(delta)).rem_euclid(count as i64) as usize;
+        }
+        st.render(&weak.unwrap());
+    });
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -140,19 +286,25 @@ impl Prefs {
         Self { store, current }
     }
 
-    /// Validates and saves; on any error the previous value stays in use.
-    fn update(&mut self, patch: &SettingsPatch) {
+    /// Validates and saves; returns whether the settings changed. On any error
+    /// the previous value stays in use.
+    fn update(&mut self, patch: &SettingsPatch) -> bool {
         let next = match self.current.apply(patch) {
             Ok(n) if n != self.current => n,
-            Ok(_) => return,
-            Err(e) => return eprintln!("ResourceWatch: settings: {e}"),
+            Ok(_) => return false,
+            Err(e) => {
+                eprintln!("ResourceWatch: settings: {e}");
+                return false;
+            }
         };
         if let Some(store) = &self.store {
             if let Err(e) = store.save(&next) {
-                return eprintln!("ResourceWatch: cannot save {}: {e}", store.path().display());
+                eprintln!("ResourceWatch: cannot save {}: {e}", store.path().display());
+                return false;
             }
         }
         self.current = next;
+        true
     }
 }
 
@@ -287,7 +439,11 @@ fn snapshot(out: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>
         .map_err(|e| format!("{e:?}"))?;
     let theme: slint::SharedString =
         flag_value(args, "--theme").map_or("dark".into(), |t| t.into());
-    window.set_size(slint::PhysicalSize::new(1220, 790));
+    let (w, h) = flag_value(args, "--size")
+        .and_then(|v| v.split_once('x'))
+        .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+        .unwrap_or((1220, 790));
+    window.set_size(slint::PhysicalSize::new(w, h));
     if args.iter().any(|a| a == "--gallery") {
         let ui = Gallery::new()?;
         ui.global::<Theme>().set_mode(theme);
@@ -308,8 +464,18 @@ fn snapshot(out: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>
             .and_then(|p| p.parse().ok())
             .unwrap_or(0),
     );
-    Host::from(&Source::from_env(&settings).sample(Instant::now(), &settings)).apply(&ui);
+    // A few cycles so rates, CPU shares and some history exist.
+    let mut source = Source::from_env(&settings);
+    let mut snap = source.sample(Instant::now(), &settings);
+    source.processes(Instant::now());
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(250));
+        snap = source.sample(Instant::now(), &settings);
+    }
+    Host::from(&snap).apply(&ui);
     ui.show()?;
+    dashboard::apply(&ui, &snap, &settings, &mut dashboard::View::default());
+    dashboard::apply_processes(&ui, &source.processes(Instant::now()));
     write_png(ui.window(), out)
 }
 
@@ -335,24 +501,24 @@ mod tests {
         assert_eq!(p.current, Settings::default(), "first start → defaults");
         let file = dir.join("config.json");
 
-        p.update(&SettingsPatch::default());
+        assert!(!p.update(&SettingsPatch::default()));
         assert!(!file.exists(), "no change → no write");
 
-        p.update(&SettingsPatch {
+        assert!(p.update(&SettingsPatch {
             theme: Some("light".into()),
             sidebar_collapsed: Some(true),
             ..Default::default()
-        });
+        }));
         let reloaded = Prefs::load(Some(dir.clone())).current;
         assert_eq!(
             (reloaded.theme.as_str(), reloaded.sidebar_collapsed),
             ("light", true)
         );
 
-        p.update(&SettingsPatch {
+        assert!(!p.update(&SettingsPatch {
             theme: Some("purple".into()),
             ..Default::default()
-        });
+        }));
         assert_eq!(
             p.current.theme, "light",
             "invalid value keeps the previous one"

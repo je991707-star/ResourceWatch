@@ -1,0 +1,92 @@
+// Live values shown by the dashboard (and later the detail pages), set by Rust
+// (`dashboard.rs`) from each snapshot. Texts are pre-formatted; missing values
+// arrive as "--", fractions/percents < 0 mean missing. Lists are models that
+// Rust updates in place; an array literal built in Slint from changing values
+// would recreate its repeated elements on every cycle.
+import { StackPart, LegendItem, KeyValue } from "gauges.slint";
+
+export struct DiskRow {
+    name: string,
+    model: string, // "model · size · TRANSPORT"
+    read: string,
+    write: string,
+    usage: float, // 0..1, < 0 = not mounted
+    usage-text: string,
+}
+
+export global Dash {
+    // SUMMARY / Processor
+    in property <float> cpu-percent: -1;
+    in property <string> cpu-usage: "--";
+    in property <string> cpu-temp: "--";
+    in property <string> cpu-speed: "--";
+    in property <[float]> cores; // per logical CPU, 0..100, < 0 missing
+    in property <string> cpu-path;
+    in property <[KeyValue]> top-cpu;
+    // Graphics
+    in property <float> gpu-percent: -1;
+    in property <string> gpu-usage: "--";
+    in property <string> gpu-temp: "--";
+    in property <string> gpu-clock: "--";
+    in property <string> gpu-name: "--";
+    in property <string> gpu-vram: "--";
+    in property <float> gpu-vram-fraction: -1;
+    in property <string> encoder: "--";
+    in property <string> decoder: "--";
+    in property <[KeyValue]> gpu-kv; // Temp / Encode / Decode
+    in property <[string]> gpu-options;
+    in-out property <int> gpu-index;
+    callback gpu-selected(int);
+    // Memory
+    in property <float> ram-percent: -1;
+    in property <string> ram-usage: "--";
+    in property <string> ram-total: "--";
+    in property <string> ram-speed: "--";
+    in property <string> mem-pressure: "--";
+    in property <[StackPart]> mem-parts;
+    in property <[LegendItem]> mem-legend;
+    in property <[KeyValue]> memory-kv; // Total / Speed / Pressure
+    in property <string> pressure-path;
+    in property <[KeyValue]> top-memory;
+    // Storage (summary pager) and disks
+    in property <int> disk-count;
+    in property <string> sum-disk-name: "--";
+    in property <[KeyValue]> sum-disk-kv;
+    callback sum-disk-step(int);
+    in property <[DiskRow]> disks;
+    in property <string> disk-max: "--";
+    in property <string> disk-read-path;
+    in property <string> disk-write-path;
+    in property <string> disk-read-now: "--";
+    in property <string> disk-write-now: "--";
+    // Network
+    in property <[string]> net-options;
+    in-out property <int> net-index;
+    callback net-selected(int);
+    in property <string> net-ip: "--";
+    in property <string> net-mac: "--";
+    in property <string> net-gateway: "--";
+    in property <string> net-gateway-mac: "--";
+    in property <string> net-up-path;
+    in property <string> net-down-path;
+    in property <string> net-up-mbps: "--";
+    in property <string> net-down-mbps: "--";
+    // Sensors
+    in-out property <int> temp-unit; // 0 = °C, 1 = °F
+    callback temp-unit-selected(int);
+    in property <[KeyValue]> temps-kv; // CPU / GPU
+    in property <[KeyValue]> sensors-short; // first 8
+    // Battery (card hidden when absent)
+    in property <bool> has-battery;
+    in property <string> battery-percent: "--";
+    in property <float> battery-fraction: -1;
+    in property <string> battery-time: "--";
+    in property <string> battery-status: "--";
+    in property <[KeyValue]> battery-kv;
+}
+
+// Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0)
+export global FaIcons {
+    out property <string> computer: "M128 96C92.7 96 64 124.7 64 160L64 416C64 451.3 92.7 480 128 480L272 480L256 528L184 528C170.7 528 160 538.7 160 552C160 565.3 170.7 576 184 576L456 576C469.3 576 480 565.3 480 552C480 538.7 469.3 528 456 528L384 528L368 480L512 480C547.3 480 576 451.3 576 416L576 160C576 124.7 547.3 96 512 96L128 96zM160 160L480 160C497.7 160 512 174.3 512 192L512 352C512 369.7 497.7 384 480 384L160 384C142.3 384 128 369.7 128 352L128 192C128 174.3 142.3 160 160 160z";
+    out property <string> gateway: "M280 152L360 152L360 200L280 200L280 152zM272 96C245.5 96 224 117.5 224 144L224 208C224 234.5 245.5 256 272 256L288 256L288 288L64 288C46.3 288 32 302.3 32 320C32 337.7 46.3 352 64 352L160 352L160 384L144 384C117.5 384 96 405.5 96 432L96 496C96 522.5 117.5 544 144 544L240 544C266.5 544 288 522.5 288 496L288 432C288 405.5 266.5 384 240 384L224 384L224 352L416 352L416 384L400 384C373.5 384 352 405.5 352 432L352 496C352 522.5 373.5 544 400 544L496 544C522.5 544 544 522.5 544 496L544 432C544 405.5 522.5 384 496 384L480 384L480 352L576 352C593.7 352 608 337.7 608 320C608 302.3 593.7 288 576 288L352 288L352 256L368 256C394.5 256 416 234.5 416 208L416 144C416 117.5 394.5 96 368 96L272 96zM480 440L488 440L488 488L408 488L408 440L480 440zM224 440L232 440L232 488L152 488L152 440L224 440z";
+}

@@ -53,8 +53,11 @@ export component Sidebar inherits GlassPanel {
     callback toggle-collapsed();
     callback cycle-theme();
 
+    // Off until the window is up, so the saved collapsed state applies without
+    // animating from the expanded width at startup.
+    in property <bool> animated;
     width: collapsed ? 56px : 208px;
-    animate width { duration: 160ms; easing: ease-out; }
+    animate width { duration: root.animated ? 160ms : 0ms; easing: ease-out; }
     radius: 14px;
     fill: Theme.sidebar-glass;
     edge-top: Theme.edge-top;

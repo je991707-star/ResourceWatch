@@ -141,13 +141,18 @@ Linux：`wayland-client`／`wayland-backend`（`client_system`，接手 winit �
 - 視窗模式：`BackendSelector` 選 winit＋`software` → `slint::set_xdg_app_id("resourcewatch")`（必須在選平台之後、建立視窗之前）。
 - 設定：`config_dir()` 為 `$XDG_CONFIG_HOME`（或 `~/.config`）`/io.github.local.resourcewatch`，與 Tauri 版共用同一個 `config.json`；`Prefs` 以 core `SettingsStore` 載入（容錯規則相同，警告印到 stderr）。
   `apply_prefs` 把 `theme` 設到 `Theme.mode`、`sidebarGlass` 設到 `Theme.glass`、`sidebarCollapsed` 設到側欄。UI 改變主題或側欄時呼叫 `prefs-changed`，`Prefs::update` 以 `Settings::apply` 驗證，值有變才寫檔；驗證或寫檔失敗保留原值（有單元測試）。
-- 資料：`Source::from_env`（`RESOURCEWATCH_MOCK=1` 為模擬）放在 `Arc<Mutex<_>>`，core `Scheduler::start(updateInterval, tick)` 在 `rw-scheduler` 執行緒取樣，
-  取出主機摘要 `Host`（純字串，可跨執行緒）後以 `slint::invoke_from_event_loop` 回到 UI 執行緒設定屬性。Slint 設定相同值時不會標記重繪，所以每個週期實際只重畫運作時間文字。
-  排程器目前用啟動時的設定取樣；設定頁（Phase 6）改間隔／裝置時須比照 Tauri `commit_settings` 通知 source 與排程器。
+- 狀態：`Shared`（`settings: Mutex<Arc<Settings>>`、`source: Mutex<Source>`，鎖序 settings → source）與排程器執行緒共用；UI 執行緒的 `State` 另存 `Prefs`、排程器、最新快照與 `dashboard::View`，
+  放在 `thread_local! STATE`，讓 `invoke_from_event_loop` 的閉包（必須 `Send`，不能帶 `Rc`）回到 UI 執行緒後取用。
+- `State::commit(patch)`：比照 Tauri `commit_settings`——`Prefs::update` 驗證並存檔（失敗則什麼都不變）→ `source.apply_settings` → 換掉共用的 settings → 間隔改變時 `scheduler.set_interval`。
+  儀表板的 NIC／GPU 膠囊、°C／°F、主題、側欄收合都經過這裡。
+- 資料流：core `Scheduler::start(updateInterval, tick)` 在 `rw-scheduler` 執行緒取樣（每週期讀當下的共用 settings），快照以 `invoke_from_event_loop` 送回 UI 執行緒存成 `latest`；
+  視窗最小化時只保存快照、不更新介面（歷史照常累積）。`State::render` 更新標題列 `Host`，目前在儀表板頁時再呼叫 `dashboard::apply`；切回儀表板（`page-changed`）時立即重畫一次。
+- 程序清單：比照 Tauri 前端 `watchProcesses`，只在儀表板顯示且未最小化時於 UI 執行緒每 2 秒 `source.processes()`（啟動時先掃一次、500 ms 後補一次以取得 CPU 比例），交給 `dashboard::apply_processes`。
+- 側欄寬度動畫在視窗顯示 300 ms 後才開啟（`animated`），儲存的收合狀態啟動時直接套用、不從展開寬度動畫縮回。
 - 毛玻璃：`sidebarGlass` 為 `true` 時 `start_blur`：`spawn_local` 等 `winit_window()`，以 raw-window-handle 的 `wl_display`／`wl_surface` 呼叫 `blur.rs`；
   成功後依視窗實際邏輯尺寸設定圓角模糊區域，並以 `on_winit_window_event` 在每次 `Resized`（含最大化／還原）重設，最大化時半徑 0；失敗（X11、無協定、合成器關閉模糊）設 `Theme.glass = false`，改用不透明底色。`WINDOW_RADIUS`（16）須與 `app.slint` 視窗圓角一致。
 - 最小化／最大化不經 Rust：Window 內建的 `minimized`／`maximized` 屬性與實際視窗狀態雙向同步（合成器端最大化也會寫回），`app.slint` 直接設定。
-- `--snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery]`：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`；`--gallery` 改畫元件展示頁），`write_png` 以 `take_snapshot()` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
+- `--snapshot out.png [--theme dark|light] [--collapsed] [--page N] [--gallery] [--size WxH]`（預設 1220×790；儀表板先取樣 5 次、掃描程序以取得速率與 CPU 比例）：自訂 `Platform` 回傳 `MinimalSoftwareWindow`，以 1220×790 無視窗繪製一次（主機資料取自實機或 `RESOURCEWATCH_MOCK=1`；`--gallery` 改畫元件展示頁），`write_png` 以 `take_snapshot()` 寫出 RGBA PNG。視覺驗證都用這個方式，避開 KWin 防搶焦點。
 - `--gallery [--theme dark|light]`：開啟元件展示頁視窗（`Gallery`，不透明、不請求模糊），可實際操作下拉選單、分段控制與表格排序。
 
 ### src/charts.rs
@@ -158,6 +163,16 @@ Slint `Path` 用的圖表幾何，單位為像素（`BarChart` 的 viewbox 等�
   `Dir::Full` 從底部算滿高；`Dir::Up`／`Dir::Down` 為成對序列的上下半邊（上傳／讀取向上、下載／寫入向下）。
 - `pair_max(a, b)`：成對序列共用的縱軸上限＝兩者最大值 ×1.12（至少 1）。
 - `stack(parts, total)`：堆疊條各段的起點與寬度（0–1），缺值或負值為 0，總和超過時截到滿格。
+
+### src/dashboard.rs
+
+快照 → `Dash` global。格式規則沿用 Tauri 前端 `render()`：缺值維持 `--`；後端已格式化的文字直接沿用；`temp_text` 把 `"48.6 °C"` 在選 °F 時換算（`format_temp` 用於感測器原始值）；`format_mbps`（網路卡片 bps）；
+程序記憶體 `proc_memory`（≥ 1 GiB 用 GiB 一位小數，否則整數 MiB）；GPU 名稱缺品牌時補上（`labeled_gpu_name`）；儲存空間 Free＝used×(100/percent−1)。
+- 列表用 `sync(current, set, new)` 就地更新：同長度只換有變的列（`set_row_data`），長度變了才 `set_vec`，第一次才建立 `VecModel`——每週期建新 model 會讓 Slint 重建所有重複元件。
+- 圖表：`canvas_path` 以 `ChartCanvas.width`（720＝240 點×3 px）×100 的畫布產生 `Layout::Fixed` 路徑（CPU、記憶體壓力、網路上下、磁碟讀寫）；成對序列用 `pair_max` 共用縱軸，Disk I/O 標示的最大值不含 12% 留白；記憶體壓力上限取近期峰值、至少 10%。
+- `View`：快照沒有的 UI 狀態——SUMMARY 儲存翻頁的硬碟索引、NIC／GPU 膠囊選項對應的設定值（缺席的已存介面仍保留在選單）。
+- `apply_processes`：CPU 前 5（缺值排最後）與記憶體前 5。
+- 單元測試涵蓋溫度換算、Mbps、程序記憶體／CPU 文字、GPU 品牌、Free 計算。
 
 ### src/processes.rs
 
@@ -199,7 +214,7 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 ### ui/sidebar.slint
 
 `Sidebar`（第 2 層，`GlassPanel` 圓角 14、陰影）：頂部 App 圖示＋名稱（`@image-url` 讀 `src-tauri/icons/64x64.png`）與收合鈕；中段主頁面（儀表板、儲存裝置、網路、感測器、應用程式，`pages` 由 `app.slint` 傳入）；
-底部「設定」（頁索引 `pages.length`）、主題切換鈕（跟隨系統 → 深色 → 淺色循環）、版本。收合時寬 56 px 只顯示圖示，展開 208 px；寬度變化 160 ms 過渡。
+底部「設定」（頁索引 `pages.length`）、主題切換鈕（跟隨系統 → 深色 → 淺色循環）、版本。收合時寬 56 px 只顯示圖示，展開 208 px；寬度變化 160 ms 過渡（`animated` 為 false 時 0 ms，啟動時不播放）。
 
 ### ui/card.slint
 
@@ -213,7 +228,13 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 - `StackBar`：圓角軌道上的堆疊條，各段 `{start, width, color}` 來自 `charts::stack`。軟體渲染器的 `clip` 只裁成直角矩形，所以由第一段／最後一段自己設左／右圓角（個別角半徑）。
 - `Legend`：圓點＋標籤＋數值，垂直排列、整塊置中。
 - `KvGrid`：鍵值格，`columns` 欄（預設 3），每格 40 px 高，數值過長以 `elide` 截斷。
-- `BarChart`：顯示 Rust 產生的 `up`／`down` 路徑（`mirrored` 時畫中線與下半部）；`plot-width`／`plot-height` 輸出給 Rust，尺寸改變（`changed width/height`）時呼叫 `geometry-changed`，擁有者立刻重算，不等下一次取樣。
+- `BarChart`：顯示 Rust 產生的 `up`／`down` 路徑（`mirrored` 時畫中線與下半部）。`fixed-width` > 0（儀表板）時，Rust 在 `fixed-width`×100 的畫布上靠右畫出全部樣本，
+  viewbox 只取最右邊「自身寬度」像素（`fit: fill`、`clip: true`，橫向 1:1、縱向拉伸），縮放不必重算；否則 viewbox 等於自身像素尺寸，`plot-width`／`plot-height` 輸出給 Rust，尺寸改變時呼叫 `geometry-changed` 由擁有者重算。
+- `Value`：會頻繁變動的單行文字。Text 放在固定行高（`font-metrics` 的 ascent−descent）的容器內、不參與版面，寬度由呼叫端指定或伸展。
+  Slint 的屬性是「先標記髒、晚點重算」：版面內的 Text 每次改字都會讓所在版面（以至儀表板瀑布流）失效，所有讀取幾何的 Text／Path 都被重繪，還會多算一幀；改用 `Value` 後只重畫文字本身。
+  環形圖內文字、KV、圖例數值、名稱／數值列、標題列主機資訊都用它。
+- `ProgressBar`（VRAM、電池、硬碟使用量）、`Rows`（名稱／數值列，名稱截斷）、`CoreBars`（各邏輯 CPU 直條，absolute 排列）、`MoreLink`（卡片底部「Show more…」）。
+- 環形圖弧線、進度條、核心直條的顯示用 `visible`，不用 `if`（條件依賴每週期變動的值時，`if` 會讓 Slint 重新檢查條件元件）。
 
 ### ui/controls.slint
 
@@ -225,15 +246,31 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
 `ProcessTable`：可排序程序表（名稱、PID、CPU、記憶體）。點目前排序欄切換升降冪；換欄時名稱／PID 預設升冪、CPU／記憶體預設降冪，並呼叫 `sort-changed(column, ascending)` 由 Rust 排序；
 排序欄標題顯示 ▲／▼。列表用 std-widgets 的 `ListView`（只建立可見列），奇數列淡底色。資料列 `ProcessRow` 為已格式化的字串。
 
+### ui/data.slint
+
+`global Dash`：儀表板（之後詳細頁也用）顯示的所有值，由 `dashboard.rs` 設定——預先格式化的文字、比例（< 0 為缺值）、列表 model（Rust 就地更新；在 Slint 用變動的值組陣列字面值會每週期重建重複元件），
+以及 NIC／GPU／°C°F 選擇與 SUMMARY 儲存翻頁的回呼。`DiskRow`：硬碟列（名稱、「型號 · 容量 · 介面」、讀寫速率、使用比例與文字，未掛載為 −1／「未掛載」）。
+`global FaIcons`：Network 卡片的電腦與閘道圖示（Font Awesome Free 7.3.1，CC BY 4.0，註記保留在檔案內）。
+
+### ui/dashboard.slint
+
+`Dashboard`：九張 `GlassCard`，內容與 Tauri 版一致——SUMMARY（CPU／GPU／RAM 環形圖、記憶體組成、儲存翻頁與 Total／Used／Free）、NETWORK（NIC 膠囊、本機與閘道位址／MAC、上傳下載鏡像圖、Mbps）、
+SENSORS（°C／°F、CPU／GPU 溫度、前 8 個感測器）、GRAPHICS（GPU 膠囊、使用率環、名稱、VRAM、Temp／Encode／Decode）、PROCESSOR（各核心直條、使用率圖、CPU 前 5 程序）、
+DISK I/O（讀寫鏡像圖、目前速率）、MEMORY（組成、Total／Speed／Pressure、壓力歷史、記憶體前 5 程序）、DISKS（每顆硬碟的速率、型號、使用量）、BATTERY（沒有電池時 `visible: false`、不佔空間）。
+「Show more…」／「Show applications…」呼叫 `goto(頁)`：Sensors → 感測器、Disk I/O／Disks → 儲存裝置、Processor／Memory → 應用程式。
+- 瀑布流：欄數＝`floor((可用寬 + 12) / (300 + 12))` 夾在 1–3，欄寬平分；卡片依固定順序放到目前最短的一欄。Slint 沒有迴圈，所以 9 個步驟展開為屬性鏈（`h/col/y/inc` 與各欄底部 `a/b/c`），
+  `pick()` 取最短欄（同高取左邊）；高度取卡片 `preferred-height`（隱藏卡片為 0、不加間距）。內容放在 std-widgets 的 `ScrollView`，內容高度＝最高欄。
+- `ChartCanvas.width`（720）：儀表板圖表畫布寬度，Rust 也讀它產生路徑。
+
 ### ui/gallery.slint
 
 `Gallery`（由 `app.slint` 匯出）：以兩欄 `GlassCard` 展示所有元件——SUMMARY（環形圖含 0% 與缺值、堆疊條、圖例、KV）、PROCESSES（可排序表）、NETWORK（NIC 膠囊＋鏡像長條）、PROCESSOR（GPU 膠囊＋固定 2 px 長條）、DETAIL（`historyPoints` 平均分布）、SENSORS（°C／°F 分段）。不在 App 導覽內，只供驗證與手動操作。
 
 ### ui/app.slint
 
-`App`（匯出 `Theme`、`Gallery` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
+`App`（匯出 `Theme`、`Gallery`、`Dash`、`ChartCanvas` 給 Rust）：`no-frame`、透明背景、`resize-border-width: 6px`（無邊框邊緣縮放）、初始 1220×790、最小 640×480。
 第 1 層為整個視窗的 `GlassPanel`（圓角 16，最大化時 0），內含側欄與右欄；右欄上方為標題列（`WindowMoveArea` 拖動、雙擊切換內建 `maximized`、頁面標題＋`HostBar`＋`WindowButtons`），下方為第 3 層內容卡片。
-各頁目前只顯示頁名與預計實作的 Phase（佔位）。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
+第 1 頁（儀表板）為 `Dashboard`，其餘頁目前只顯示頁名與預計實作的 Phase（佔位）；`page` 改變時呼叫 `page-changed`。`animated` 由 Rust 在啟動後開啟，傳給側欄。主題切換與側欄收合在 UI 端改值後呼叫 `prefs-changed` 存檔；回呼命名 `close-window`，避開 Window 內建的 `close`。
 
 
 ## crates/core/

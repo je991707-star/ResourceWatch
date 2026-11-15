@@ -8,8 +8,10 @@ import { Icons } from "icons.slint";
 import { Sidebar, NavEntry } from "sidebar.slint";
 import { WindowButtons, HostBar } from "titlebar.slint";
 import { Gallery } from "gallery.slint";
+import { Dashboard, ChartCanvas } from "dashboard.slint";
+import { Dash } from "data.slint";
 
-export { Theme, Gallery }
+export { Theme, Gallery, Dash, ChartCanvas }
 
 export component App inherits Window {
     // Host summary, set by Rust from each snapshot.
@@ -20,9 +22,12 @@ export component App inherits Window {
     in property <bool> mock;
     in property <string> version;
     in-out property <bool> sidebar-collapsed;
+    in property <bool> animated; // set by Rust once the window is shown
     in-out property <int> page;
     // Persisted display preferences (Theme.mode, sidebar-collapsed) changed.
     callback prefs-changed();
+    callback page-changed();
+    changed page => { root.page-changed(); }
     callback close-window();
 
     property <[NavEntry]> pages: [
@@ -60,6 +65,7 @@ export component App inherits Window {
                 pages: root.pages;
                 page <=> root.page;
                 collapsed: root.sidebar-collapsed;
+                animated: root.animated;
                 version: root.version;
                 theme-label: Theme.mode == "dark" ? "深色" : (Theme.mode == "light" ? "淺色" : "跟隨系統");
                 toggle-collapsed => {
@@ -112,8 +118,13 @@ export component App inherits Window {
                     }
                 }
 
-                // Layer 3: content. Pages are placeholders until their phase.
-                GlassPanel {
+                // Layer 3: content cards. Pages after the dashboard are
+                // placeholders until their phase.
+                if root.page == 0: Dashboard {
+                    vertical-stretch: 1;
+                    goto(p) => { root.page = p; }
+                }
+                if root.page != 0: GlassPanel {
                     vertical-stretch: 1;
                     radius: 14px;
                     fill: Theme.card-glass;
