@@ -70,11 +70,11 @@ component DiskItem inherits VerticalLayout {
     spacing: 3px;
     HorizontalLayout {
         spacing: 10px;
-        Text { text: disk.name; font-size: 13px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; overflow: elide; }
+        Value { text: disk.name; font-size: 13px; font-weight: 600; color: Theme.text; horizontal-stretch: 1; }
         Value { text: disk.read; width: 72px; horizontal-alignment: right; font-size: 11px; color: Theme.disk-read; }
         Value { text: disk.write; width: 72px; horizontal-alignment: right; font-size: 11px; color: Theme.disk-write; }
     }
-    Text { text: disk.model; font-size: 11px; color: Theme.text-tertiary; overflow: elide; }
+    Value { text: disk.model; font-size: 11px; color: Theme.text-tertiary; }
     HorizontalLayout {
         spacing: 8px;
         VerticalLayout {

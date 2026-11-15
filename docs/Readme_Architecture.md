@@ -116,7 +116,7 @@ v0.2.0 Phase 0 的 Slint 技術驗證程式（獨立 crate，自帶空 `[workspa
 
 Cargo workspace：成員 `crates/core`、`crates/app`、`src-tauri`；`exclude = ["spikes"]`（`spikes/*` 各自帶空的 `[workspace]`，獨立建置）。
 `[profile.release]`（`lto`、`codegen-units = 1`、`strip`）只能寫在 workspace 根目錄；`Cargo.lock` 與建置輸出 `target/` 也在根目錄（`.gitignore` 忽略 `/target/`）。
-`[patch.crates-io]` 把 `softbuffer` 換成 `patches/softbuffer`（只影響 `crates/app` 的 Slint 依賴樹）。
+`[patch.crates-io]` 把 `softbuffer`、`i-slint-core`、`i-slint-renderer-software` 換成 `patches/` 下的修補版（只影響 `crates/app` 的 Slint 依賴樹）。
 檢查一律在根目錄執行：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`。
 
 ## patches/softbuffer/
@@ -124,6 +124,13 @@ Cargo workspace：成員 `crates/core`、`crates/app`、`src-tauri`；`exclude =
 softbuffer 0.4.8 原樣複製（移除 benches），只把 Wayland 的 `wl_shm::Format::Xrgb8888` 改成 `Argb8888`（`src/backends/wayland/buffer.rs` 兩處，註記 `ResourceWatch patch`）。
 原版丟棄 alpha，Slint 軟體渲染器畫出的視窗在 Wayland 上是不透明的，模糊雖然請求成功卻看不到；Slint 寫入的就是預乘 ARGB，與 `Argb8888` 相符。局部重繪時髒區先以視窗背景色覆寫（非疊加），透明不會累積。
 Slint 或 softbuffer 升級時須重新比對這份修補。
+
+## patches/i-slint-core/、patches/i-slint-renderer-software/
+
+Slint 1.18.1 的兩個內部 crate 原樣複製（移除 benches 與 Cargo.lock），只改重畫區域的矩形數上限，修改處註記 `ResourceWatch patch`：
+- `i-slint-core/partial_renderer.rs`：`DirtyRegion::MAX_COUNT` 3 → 32（陣列長度 32 是 `Default` 的上限）。上限 3 時，儀表板每週期分散在各卡片的小變動會被合併成幾乎涵蓋整個內容區的方框，軟體渲染器等於每週期重畫整個儀表板。
+- `i-slint-renderer-software/lib.rs`：移除 `PHYSICAL_REGION_MAX_SIZE == 3`／`MAX_COUNT == 3` 斷言，改為兩者相等。該值只為 C++（cbindgen）ABI 固定；Rust 端的區域拆線（`region_line_ranges`）適用任意矩形數，`region_iter` 單元測試在修補後通過。
+Slint 升級時須重新比對這兩處；`slint`／`slint-build` 版本鎖在 `=1.18.1`。
 
 ## crates/app/
 
@@ -232,7 +239,7 @@ event queue 刻意洩漏（每視窗一次），避免之後的事件打到已�
   viewbox 只取最右邊「自身寬度」像素（`fit: fill`、`clip: true`，橫向 1:1、縱向拉伸），縮放不必重算；否則 viewbox 等於自身像素尺寸，`plot-width`／`plot-height` 輸出給 Rust，尺寸改變時呼叫 `geometry-changed` 由擁有者重算。
 - `Value`：會頻繁變動的單行文字。Text 放在固定行高（`font-metrics` 的 ascent−descent）的容器內、不參與版面，寬度由呼叫端指定或伸展。
   Slint 的屬性是「先標記髒、晚點重算」：版面內的 Text 每次改字都會讓所在版面（以至儀表板瀑布流）失效，所有讀取幾何的 Text／Path 都被重繪，還會多算一幀；改用 `Value` 後只重畫文字本身。
-  環形圖內文字、KV、圖例數值、名稱／數值列、標題列主機資訊都用它。
+  環形圖內文字、KV、圖例數值與標籤、名稱／數值列、硬碟列、標題列主機資訊都用它。列表的某一列以 `set_row_data` 更新時，該列「所有」欄位的相依都會失效，所以重複元件內連不變的標籤也要用 `Value`。
 - `ProgressBar`（VRAM、電池、硬碟使用量）、`Rows`（名稱／數值列，名稱截斷）、`CoreBars`（各邏輯 CPU 直條，absolute 排列）、`MoreLink`（卡片底部「Show more…」）。
 - 環形圖弧線、進度條、核心直條的顯示用 `visible`，不用 `if`（條件依賴每週期變動的值時，`if` 會讓 Slint 重新檢查條件元件）。
 
