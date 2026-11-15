@@ -133,7 +133,7 @@
 - [x] 做一個最小 Slint 視窗（透明、無邊框、有一張卡片與一張每 500 ms 更新的長條圖），確認：
   - [x] 透明＋背景模糊有效。軟體渲染器需搭配修補過的 softbuffer（Wayland 改用 `Argb8888`，原版 `Xrgb8888` 會讓視窗不透明）；修補後全螢幕截圖確認視窗後方內容被模糊。模糊區域需設成與視窗相同的圓角矩形（`blur.rs` 的 `set_shape`，每次縮放重設），否則圓角外也被模糊，看起來像鋸齒；修正後截圖確認圓角外不再有模糊雜訊。
   - [x] 縮放、拖動時沒有空白，內容不會消失（使用者確認）。圖表原本只在 500 ms 取樣時重算，縮放時跟不上；改成圖表尺寸一變就重算，KWin 腳本放大視窗後 0.3 秒截圖確認長條已貼齊新右緣。
-  - [x] 圓角無鋸齒：視窗與卡片改用 `GlassPanel`（見「繪圖」），快照與實機截圖確認圓弧平滑、無亮點；閒置 CPU 0.45%、RSS 24 MB。
+  - [x] 圓角無鋸齒：視窗與卡片改用 `GlassPanel`（見「視窗與玻璃」），快照與實機截圖確認圓弧平滑、無亮點；閒置 CPU 0.45%、RSS 24 MB。
   - [x] 自訂標題列可以拖動、邊緣可以縮放，右上角三顆按鈕正常（使用者確認）。
   - [x] Wayland app_id 為 `resourcewatch`，KWin 顯示正確的圖示（KWin 腳本讀到 `desktopFileName=resourcewatch`，對應 `~/.local/share/applications/resourcewatch.desktop`）。
 - [x] 量測 RSS 與閒置 CPU（`/proc/<pid>/status`、`/proc/<pid>/stat`），和目前的 Tauri 版比較，數據記錄在本文件。
