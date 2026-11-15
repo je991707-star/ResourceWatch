@@ -4,69 +4,72 @@
  * (.app-main) is opaque and the sidebar is translucent only with data-glass="on". */
 :root {
   color-scheme: dark;
-  --bg: #26272b;
-  --sidebar: #1c1c1e;
-  --sidebar-glass: rgba(22, 22, 24, .7);
-  --sidebar-text: #e4e4e6;
-  --nav-hover: rgba(255, 255, 255, .07);
-  --nav-active: rgba(255, 255, 255, .13);
-  --card: #323338;
-  --card-border: #3d3f45;
-  --text: #f0f1f3;
-  --muted: #a3a6ad;
-  --track: #4a4c53;
-  --grid: rgba(255, 255, 255, .08);
-  --chart-bg: #2b2c31;
-  --focus: #7db3f0;
-  --cpu: #d554c8;
-  --gpu: #2f8ff0;
-  --ram: #f4b03e;
-  --net-down: #2f8ff0;
-  --net-up: #34c26d;
-  --mem-free: #34c26d;
-  --mem-other: #8e9198;
-  --sum-cpu: #5ac8fa;
-  --sum-gpu: #a463f2;
-  --sum-ram: #5b8def;
-  --disk-read: #e5484d;
-  --disk-write: #2f8ff0;
-  --ok: #68c887;
-  --warn: #e3b867;
-  --danger: #f0a19f;
+  /* Deep, slightly cool neutrals; cards one clear step above the background. */
+  --bg: #111318;
+  --sidebar: #0c0d11;
+  --sidebar-glass: rgba(12, 13, 17, .72);
+  --sidebar-text: #e6e8ed;
+  --nav-hover: rgba(255, 255, 255, .05);
+  --nav-active: rgba(255, 255, 255, .10);
+  --card: #1a1d23;
+  --card-border: #262a31;
+  --text: #e8eaef;
+  --muted: #8b919c;
+  --track: #2c3038;
+  --grid: rgba(255, 255, 255, .06);
+  --chart-bg: #15181d;
+  --area-opacity: .22;
+  --focus: #6ea8ff;
+  --cpu: #d66be8;
+  --gpu: #3d8bfd;
+  --ram: #f5b14c;
+  --net-down: #3d8bfd;
+  --net-up: #3ccf7e;
+  --mem-free: #3ccf7e;
+  --mem-other: #6b7280;
+  --sum-cpu: #4cc9f0;
+  --sum-gpu: #a970ff;
+  --sum-ram: #5b8cff;
+  --disk-read: #ff5c6c;
+  --disk-write: #3d8bfd;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
   --radius: 14px;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #ecedf0;
-  --sidebar: #dedfe2;
-  --sidebar-glass: rgba(232, 233, 236, .72);
-  --sidebar-text: #2a2b2e;
-  --nav-hover: rgba(0, 0, 0, .05);
-  --nav-active: rgba(0, 0, 0, .1);
+  --bg: #f4f6f9;
+  --sidebar: #e9ecf1;
+  --sidebar-glass: rgba(236, 239, 244, .72);
+  --sidebar-text: #1f242d;
+  --nav-hover: rgba(15, 23, 42, .05);
+  --nav-active: rgba(15, 23, 42, .09);
   --card: #ffffff;
-  --card-border: #dcdde2;
-  --text: #1e2024;
-  --muted: #6a6e77;
-  --track: #dfe0e5;
-  --grid: rgba(0, 0, 0, .07);
-  --chart-bg: #f6f7f9;
-  --focus: #2f78d0;
-  --cpu: #b43aa8;
-  --gpu: #1f74cc;
-  --ram: #d48d12;
-  --net-down: #1f74cc;
-  --net-up: #1f9a51;
-  --mem-free: #1f9a51;
-  --mem-other: #9a9da4;
-  --sum-cpu: #1c9bd6;
-  --sum-gpu: #8240d4;
-  --sum-ram: #3b6fd6;
-  --disk-read: #c9343a;
-  --disk-write: #1f74cc;
-  --ok: #2e9a55;
-  --warn: #b98618;
-  --danger: #c0392b;
+  --card-border: #e3e7ed;
+  --text: #161a22;
+  --muted: #667085;
+  --track: #e6e9ef;
+  --grid: rgba(15, 23, 42, .06);
+  --chart-bg: #f8fafc;
+  --area-opacity: .16;
+  --focus: #2563eb;
+  --cpu: #b544c9;
+  --gpu: #2563eb;
+  --ram: #d97706;
+  --net-down: #2563eb;
+  --net-up: #16a34a;
+  --mem-free: #16a34a;
+  --mem-other: #9ca3af;
+  --sum-cpu: #0ea5e9;
+  --sum-gpu: #7c3aed;
+  --sum-ram: #3b82f6;
+  --disk-read: #dc2626;
+  --disk-write: #2563eb;
+  --ok: #16a34a;
+  --warn: #b45309;
+  --danger: #dc2626;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -284,7 +287,7 @@ html, body {
 .plot--short { height: 48px; }
 .plot--tall { height: 200px; }
 .plot svg { display: block; width: 100%; height: 100%; }
-.plot .area { fill: var(--c); opacity: .35; }
+.plot .area { fill: var(--c); opacity: var(--area-opacity); }
 .plot .line { fill: none; stroke: var(--c); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .plot .is-missing { display: none; }
 .grid-lines path { fill: none; stroke: var(--grid); stroke-width: .6; vector-effect: non-scaling-stroke; }
