@@ -232,7 +232,7 @@ Metric 子物件：`{displayValue: string, percent: number|null, rawValue: numbe
 
 `status`：`ready` / `loading`（啟動後 5 秒內缺失）/ `unavailable`。百分比型 Metric 沒有 used/total（為 `"--"`），速率型 `percent` 為 `null`。
 
-`Metric::percent / pair / rate` 建構子負責把缺失、非有限值、負值與總量 0 轉成 `null` / `"--"` / `status: "unavailable"`，不轉成 0。`format_uptime()` 對應舊版 `uptimeFromSeconds`；`format_duration()` 輸出電池剩餘時間（`2 小時 17 分`）。
+`Metric::percent / pair / rate` 建構子負責把缺失、非有限值、負值與總量 0 轉成 `null` / `"--"` / `status: "unavailable"`，不轉成 0。`format_uptime()` 對應舊版 `uptimeFromSeconds`；`format_duration()` 輸出電池剩餘時間（`2 h 17 min`、`45 min`）。
 
 ### src/format.rs
 
