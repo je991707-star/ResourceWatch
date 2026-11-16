@@ -88,10 +88,11 @@ function ring(rings, size, text) {
   const out = rings.map((segs, k) => {
     const r = 50 - sw / 2 - k * (sw + gap);
     let start = 0;
-    const flat = segs.length > 1 ? ' flat' : '';
+    // Stacked segments keep round caps: trim each by its cap overhang (in pathLength units) plus a small gap.
+    const trim = segs.length > 1 ? (sw / (2 * Math.PI * r)) * 100 + 1.5 : 0;
     const arcs = segs.map(([p, cls]) => {
       const v = Math.min(Math.max(p ?? 0, 0), 99.9 - start);
-      const c = v > 0 ? `<circle class="${cls}${flat}" cx="50" cy="50" r="${r}" pathLength="100" stroke-width="${sw}" stroke-dasharray="${v} 100" stroke-dashoffset="${-start}" transform="rotate(-90 50 50)"/>` : '';
+      const c = v > 0 ? `<circle class="${cls}" cx="50" cy="50" r="${r}" pathLength="100" stroke-width="${sw}" stroke-dasharray="${Math.max(v - trim, 0.01)} 100" stroke-dashoffset="${-(start + trim / 2)}" transform="rotate(-90 50 50)"/>` : '';
       start += v;
       return c;
     }).join('');
@@ -127,12 +128,12 @@ function record(s) {
 function summaryCard(s) {
   const m = s.mem, disks = s.disks.filter((x) => x.total);
   sumDisk = Math.min(sumDisk, Math.max(disks.length - 1, 0));
-  const d = disks[sumDisk];
+  const d = disks[sumDisk], gpu = s.gpus[0]?.usage;
   const parts = memParts(m);
   const gauge = ring([
     parts.slice(0, 2).map(([cls, , v]) => [ratio(v, m.total), cls]),
     [[s.cpu.usage, 'c-magenta']],
-    [[d && ratio(d.used, d.total), 'c-cyan']],
+    [[gpu, 'c-cyan']],
   ], 140);
   const right = `${legend(parts.map(([cls, k, v]) => [cls, k, bytes(v)]))}
     <div class="sect"><h3>${esc(info?.cpuModel || '處理器')}</h3>${kv([['核心', info?.cpuCores ?? '--'], ['執行緒', info?.cpuThreads ?? '--']])}</div>
@@ -140,18 +141,16 @@ function summaryCard(s) {
       <button class="arrow" data-disk="-1"${sumDisk ? '' : ' disabled'}>‹</button><button class="arrow" data-disk="1"${sumDisk < disks.length - 1 ? '' : ' disabled'}>›</button></h3>
       ${kv([['已使用', bytes(d.used)], ['總量', bytes(d.total)], ['可用', bytes(d.total - d.used)]])}</div>` : ''}`;
   return card('摘要', `<div class="summary"><div class="gauge">${gauge}<ul>
-      <li><i class="dot c-yellow"></i>${bytes(m.total)}</li>
-      <li><i class="dot c-magenta"></i>${pct(s.cpu.usage)}</li>
-      <li><i class="dot c-cyan"></i>${pct(d && ratio(d.used, d.total))}</li></ul></div><div>${right}</div></div>`);
+      <li><i class="dot c-yellow"></i><span>記憶體</span><b>${bytes(m.total)}</b></li>
+      <li><i class="dot c-magenta"></i><span>處理器</span><b>${pct(s.cpu.usage)}</b></li>
+      <li><i class="dot c-cyan"></i><span>顯示卡</span><b>${pct(gpu)}</b></li></ul></div><div>${right}</div></div>`);
 }
 
 function cpuCard(s) {
-  const n = s.cpu.cores.length || 1;
-  const cores = `<svg class="cores" viewBox="0 0 ${n * 4} 100" preserveAspectRatio="none">${s.cpu.cores.map((v, i) =>
-    `<rect class="c-blue" x="${i * 4}" y="${100 - Math.max(v ?? 0, 2)}" width="3" height="${Math.max(v ?? 0, 2)}"/>`).join('')}</svg>`;
+  const cores = `<div class="cores">${s.cpu.cores.map((v) => `<i data-h="${Math.max(v ?? 0, 3).toFixed(1)}"></i>`).join('')}</div>`;
   const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
   return card('處理器', `<div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
-    <table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table>${more('apps', '顯示應用程式…')}`);
+    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
 }
 
 function memCard(s) {
@@ -186,12 +185,13 @@ function disksCard(s) {
 
 function gpuCard(s) {
   if (!s.gpus.length) return card('顯示卡', '<div class="empty">未偵測到可讀取的顯示卡</div>');
-  return s.gpus.map((g, i) => card('顯示卡', `<div class="cpu-row">${ring([[[g.usage, 'c-blue']]], 90, pct(g.usage))}<div>
-      <b>${esc(g.name)}</b><div class="muted">溫度 ${temp(g.temp)}</div>
-      ${cap('顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`)}${bar([[ratio(g.memUsed, g.memTotal), 'c-yellow']], true)}</div></div>
-      <div class="codec"><div><span>編碼器</span><b>${pct(g.encoder)}</b>${bar([[g.encoder, 'c-green']])}</div>
-        <div><span>解碼器</span><b>${pct(g.decoder)}</b>${bar([[g.decoder, 'c-magenta']])}</div></div>
-      ${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}`)).join('');
+  const meter = (k, v, p, cls) => `<div><span>${k}</span><b>${esc(v)}</b>${bar([[p, cls]])}</div>`;
+  return s.gpus.map((g, i) => card('顯示卡', `<div class="gpu-head"><b class="ell" title="${esc(g.name)}">${esc(g.name)}</b><span class="muted">${temp(g.temp)}</span></div>
+      <div class="gpu-row">${ring([[[g.usage, 'c-blue']]], 96, pct(g.usage))}<div class="meters">
+        ${meter('顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`, ratio(g.memUsed, g.memTotal), 'c-yellow')}
+        ${meter('編碼器', pct(g.encoder), g.encoder, 'c-green')}
+        ${meter('解碼器', pct(g.decoder), g.decoder, 'c-magenta')}</div></div>
+      <div class="sect">${cap('使用率', '')}${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}</div>`)).join('');
 }
 
 function sensorsCard(s) {
@@ -343,6 +343,7 @@ function render() {
     // Proportional widths through CSSOM: the CSP blocks style attributes in HTML.
     const blocks = [...document.querySelectorAll('[data-grow]')];
     blocks.forEach((el) => { el.style.flexGrow = el.dataset.grow; });
+    document.querySelectorAll('[data-h]').forEach((el) => { el.style.height = `${el.dataset.h}%`; });
     blocks.forEach((el) => { if (el.clientWidth < 40) el.textContent = ''; }); // too narrow for a readable name (title still has it)
   }
   hostBar();

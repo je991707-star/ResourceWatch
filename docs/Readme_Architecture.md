@@ -34,7 +34,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 - 依賴：`tauri` 2、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
-- CSP：`script-src 'self'; style-src 'self'`——HTML 裡不能有 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度在 `render` 之後以 CSSOM（`el.style.flexGrow`）設定。
+- CSP：`script-src 'self'; style-src 'self'`——HTML 裡不能有 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
 - capabilities：`core:default`＋`dialog:allow-open`，沒有 fs／shell／http 外掛。
 
 ### src/main.rs
@@ -128,12 +128,12 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
 - 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5，應用程式頁最多 300 列、點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
 - 頁面（`PAGES`）：
-  - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈磁碟用量；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
-    處理器（各執行緒直條＋使用率曲線＋前 5 程序）、記憶體（堆疊條、組成與交換、壓力曲線（上限取近期峰值、至少 10%）、前 5 程序）、網路（有預設閘道的網卡：IP／MAC／閘道、上下行曲線、累計與速率）、
-    磁碟（檔案系統用量條）、顯示卡（使用率環、VRAM 條、溫度、曲線）、磁碟 I/O、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
+  - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈第一張顯示卡使用率，環下標註記憶體總量／處理器／顯示卡；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
+    處理器（各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（堆疊條、組成與交換、壓力曲線（上限取近期峰值、至少 10%）、前 5 程序）、網路（有預設閘道的網卡：IP／MAC／閘道、上下行曲線、累計與速率）、
+    磁碟（檔案系統用量條）、顯示卡、磁碟 I/O、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
   - 主機列：左側為發行版 logo（`SystemInfo.logo`）；沒有 logo 檔時依 `osId` 用 Font Awesome 品牌圖示（fedora、ubuntu、debian、redhat、centos、suse），其餘用 `fa-linux`。
   - 摘要的硬碟區與磁碟卡片以實體硬碟為單位，顯示型號（NVMe 型號的 `_` 換成空格；沒有型號時用裝置名稱）與其上檔案系統的用量；未掛載的硬碟顯示「未掛載 · 容量」，滑鼠提示有裝置名稱與掛載點。
-  - 顯示卡卡片：使用率環、VRAM、溫度、編碼器／解碼器使用率條、曲線。
+  - 顯示卡卡片：第一列型號（過長截斷）＋右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；曲線固定保留 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題右側綠／紅點為連線狀態；連線中的顯示位址、大字速率與累計、上下行大圖。
@@ -141,7 +141,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積）、
-  `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；多段時線端改平頭）。
+  `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時每段扣掉圓頭超出的長度再留小間隙，避免相鄰段重疊）。
 - 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
 - `window.__TAURI__` 不存在時改用 `window.mockInvoke`：只供在一般瀏覽器載入頁面、注入假資料檢查排版，App 內不會用到。
