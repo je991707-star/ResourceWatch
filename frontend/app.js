@@ -1,7 +1,8 @@
 'use strict';
 // Polls the Rust commands and re-renders the current page. Missing values are null → "--".
 const invoke = window.__TAURI__?.core.invoke ?? window.mockInvoke;
-const N = 60; // history points (1 per second)
+const N = 60; // line-chart points (1 per sample)
+const NB = 120; // samples kept; bar charts show all of them, line charts the last N
 const hist = {};
 let snap = null;
 let info = null;
@@ -19,7 +20,7 @@ const store = (k, v) => { try { if (v === undefined) return localStorage.getItem
 const push = (k, v) => {
   const a = (hist[k] ??= []);
   a.push(v);
-  if (a.length > N) a.shift();
+  if (a.length > NB) a.shift();
 };
 const last = (k) => hist[k]?.at(-1) ?? null;
 
@@ -66,6 +67,7 @@ function bar(segs, thick) {
 
 // series: [{ data, cls }]; max fixed (percent) or auto from data. `mode`: '' line+area, 'solid' filled.
 function chart(series, max, tall) {
+  series = series.map((s) => ({ ...s, data: (s.data ?? []).slice(-N) }));
   max = max ?? Math.max(1, ...series.flatMap((s) => (s.data ?? []).filter((v) => v != null))) * 1.15;
   const y = (v) => (100 - (Math.min(v, max) / max) * 97).toFixed(1);
   const paths = series.map(({ data = [], cls, solid }) => {
@@ -83,17 +85,15 @@ function chart(series, max, tall) {
 }
 
 // Mirrored bars: `up` grows upward from the midline, `down` downward; each half has its own auto scale
-// so a quiet direction stays readable next to a busy one. Zero samples draw as dots along the midline.
+// so a quiet direction stays readable next to a busy one. HTML bars (heights via data-h → CSSOM in render)
+// keep their rounded outer ends, which a stretched SVG would distort. Zero samples stay as stubs on the midline.
 function mirror(up, down, tall) {
-  const bars = ({ data = [], cls }, top) => {
+  const half = ({ data = [], cls }, top) => {
     const max = Math.max(1, ...data.filter((v) => v != null));
-    return data.map((v, i) => {
-      if (v == null) return '';
-      const h = Math.max((v / max) * 48, 1.5);
-      return `<rect class="${cls}" x="${N - data.length + i + 0.225}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.55" height="${h.toFixed(1)}"/>`;
-    }).join('');
+    const bars = data.map((v) => (v == null ? '<i></i>' : `<i class="${cls}" data-h="${Math.max((v / max) * 100, 4).toFixed(1)}"></i>`));
+    return `<div class="half${top ? ' up' : ''}">${'<i></i>'.repeat(NB - data.length)}${bars.join('')}</div>`;
   };
-  return `<svg class="chart mirror${tall ? ' tall' : ''}" viewBox="0 0 ${N} 100" preserveAspectRatio="none"><line class="grid-line" x1="0" x2="${N}" y1="50" y2="50"/>${bars(up, true)}${bars(down, false)}</svg>`;
+  return `<div class="mirror${tall ? ' tall' : ''}">${half(up, true)}${half(down, false)}</div>`;
 }
 
 // rings: outer first, each a list of [percent, cls] segments.
