@@ -1,6 +1,6 @@
 [package]
 name = "resourcewatch"
-version = "1.0.0"
+version = "0.3.1"
 description = "ResourceWatch Linux desktop resource monitor"
 license = "MIT"
 edition = "2021"

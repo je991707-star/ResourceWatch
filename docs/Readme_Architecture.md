@@ -33,6 +33,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 - 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
+- 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.3.1，對應 tag `v0.3.1`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js，改版時一併更新。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
 - CSP：`script-src 'self'; style-src 'self' 'unsafe-inline'`——腳本只能來自 App 本身；`style-src` 允許內嵌樣式，是為了讓開發者模式的檢查器能新增 CSS（Style Attribute 與「+」新規則都是內嵌樣式）。程式碼本身仍不在 HTML 寫 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
 - capabilities：`core:default`＋`dialog:allow-open`，沒有 fs／shell／http 外掛。
