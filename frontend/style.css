@@ -217,8 +217,13 @@ th[data-sort] { cursor: pointer; }
 th[data-sort]:hover { color: var(--text); }
 .zebra tbody tr:nth-child(odd) td { background: var(--field); } /* data rows only: headers sit in <thead> */
 .zebra th { padding-left: 10px; padding-right: 10px; }
-.app-ic { width: 18px; height: 18px; margin-right: 10px; vertical-align: -4px; object-fit: contain; }
-i.app-ic { display: inline-block; font-size: 15px; line-height: 18px; text-align: center; color: var(--muted); }
+.app-ic { display: inline-block; width: 18px; height: 18px; margin-right: 10px; vertical-align: middle; object-fit: contain; }
+i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--muted); }
+/* dashboard process lists: fixed boxes, so names, values and icon kinds never change a row's size */
+.procs { table-layout: fixed; }
+.procs td { height: 34px; padding-top: 0; padding-bottom: 0; line-height: 18px; vertical-align: middle; }
+.procs .num { width: 90px; }
+.procs td.grow { width: auto; max-width: none; overflow: hidden; text-overflow: ellipsis; }
 .zebra td { padding: 7px 10px; }
 .zebra td:first-child { border-radius: 6px 0 0 6px; }
 .zebra td:last-child { border-radius: 0 6px 6px 0; }

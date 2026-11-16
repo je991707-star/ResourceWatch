@@ -182,7 +182,7 @@ function cpuCard(s) {
   const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${appIcon(p.name)}${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
   return card('處理器', `<h3 class="sub">${icon('gpu')}<span class="ell" title="${esc(info?.cpuModel || '')}">${esc(info?.cpuModel || '--')}</span></h3>
     <div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
-    <div class="sect"><table class="zebra">${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
+    <div class="sect"><table class="zebra procs">${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
 }
 
 function memCard(s) {
@@ -191,7 +191,7 @@ function memCard(s) {
   const spec = `<i class="spacer"></i><span class="spec">${esc(info?.memSpec ?? bytes(m.total))}</span>`;
   return card('記憶體', `${bar(parts.map(([cls, , v]) => [ratio(v, m.total), cls]), true)}
     <div class="sect">${legend([...parts.map(([cls, k, v]) => [cls, k, bytes(v)]), ['c-gray', 'SWAP', `${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`]])}</div>
-    <div class="sect"><table class="zebra"><thead><tr><th>名稱</th><th class="num">記憶體</th></tr></thead>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
+    <div class="sect"><table class="zebra procs"><thead><tr><th>名稱</th><th class="num">記憶體</th></tr></thead>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
 }
 
 function addrBlock(n) {
