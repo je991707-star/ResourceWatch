@@ -10,7 +10,8 @@ let procs = [];
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
-let dashNic = null; // network card ‹ › choice (interface name); null → primaryNet
+// Dashboard ‹ › choices by key (interface name, GPU index, disk name); null → the card's default.
+const pick = { nic: null, gpu: null, io: null };
 // Network card totals restart from a saved baseline per interface; kernel counters reset on reboot, so a
 // baseline above the current counter is stale and ignored.
 let netBase = {};
@@ -21,7 +22,6 @@ let prefs = { ...DEFAULTS };
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const sum = (a) => (a.length && a.every((v) => v != null) ? a.reduce((x, y) => x + y, 0) : null);
 const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } };
 const push = (k, v) => {
   const a = (hist[k] ??= []);
@@ -53,7 +53,7 @@ const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
-  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', reset: 'fa-solid fa-rotate-left',
+  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', reset: 'fa-solid fa-rotate-left',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -137,8 +137,7 @@ const topProcs = (key, n) => [...procs].filter((p) => p[key] != null).sort((a, b
 function record(s) {
   push('cpu', s.cpu.usage);
   s.gpus.forEach((g, i) => push(`gpu${i}`, g.usage));
-  push('diskR', sum(s.disks.map((d) => d.readBps)));
-  push('diskW', sum(s.disks.map((d) => d.writeBps)));
+  s.disks.forEach((d) => { push(`r:${d.name}`, d.readBps); push(`w:${d.name}`, d.writeBps); });
   s.net.forEach((n) => { push(`rx:${n.name}`, n.rxBps); push(`tx:${n.name}`, n.txBps); });
 }
 
@@ -154,7 +153,7 @@ function summaryCard(s) {
     [[gpu, 'c-cyan']],
   ], 140);
   const right = `${legend(parts.map(([cls, k, v]) => [cls, k, bytes(v)]))}
-    <div class="sect"><h3>${esc(info?.cpuModel || '處理器')}</h3>${kv([['核心', info?.cpuCores ?? '--'], ['執行緒', info?.cpuThreads ?? '--']])}</div>
+    <div class="sect"><h3>${esc(info?.cpuModel?.replace(/\s*@.*$/, '') || '處理器')}</h3>${kv([['核心', info?.cpuCores ?? '--'], ['執行緒', info?.cpuThreads ?? '--']])}</div>
     ${d ? `<div class="sect"><h3>${icon('storage')}<span class="ell" title="${esc(diskName(d))}">${esc(diskName(d))}</span><i class="spacer"></i>
       <button class="arrow" data-disk="-1"${sumDisk ? '' : ' disabled'}>‹</button><button class="arrow" data-disk="1"${sumDisk < disks.length - 1 ? '' : ' disabled'}>›</button></h3>
       ${kv([['已使用', bytes(d.used)], ['總量', bytes(d.total)], ['可用', bytes(d.total - d.used)]])}</div>` : ''}`;
@@ -168,7 +167,8 @@ function cpuCard(s) {
   const cores = `<div class="cores">${s.cpu.cores.map((v) => `<i data-h="${Math.max(v ?? 0, 3).toFixed(1)}"></i>`).join('')}</div>`;
   const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
   return card('處理器', `<div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
-    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
+    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`,
+    `<i class="spacer"></i><span class="spec ell" title="${esc(info?.cpuModel || '')}">${esc(info?.cpuModel || '')}</span>`);
 }
 
 function memCard(s) {
@@ -194,12 +194,14 @@ function flow([upL, upK], [downL, downK]) {
     ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' })}`;
 }
 
+// ‹ › stepping through `keys` from index i; a click stores the neighbour's key in pick[kind].
+const flipper = (kind, keys, i) => [[-1, '‹'], [1, '›']].map(([d, t]) =>
+  `<button class="arrow" data-pick="${kind}" data-val="${esc(keys[i + d] ?? '')}"${keys[i + d] != null ? '' : ' disabled'}>${t}</button>`).join('');
+
 function netCard(s) {
-  const n = s.net.find((x) => x.name === dashNic) ?? primaryNet(s);
+  const n = s.net.find((x) => x.name === pick.nic) ?? primaryNet(s);
   if (!n) return card('網路', '<div class="empty">沒有實體網路介面</div>');
-  const i = s.net.indexOf(n), step = (d) => s.net[i + d]?.name;
-  const arrow = (d, t) => `<button class="arrow" data-nic="${esc(step(d) ?? '')}"${step(d) ? '' : ' disabled'}>${t}</button>`;
-  return card('網路', `<h3 class="sub">${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}${arrow(-1, '‹')}${arrow(1, '›')}<i class="spacer"></i>
+  return card('網路', `<h3 class="sub">${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}${flipper('nic', s.net.map((x) => x.name), s.net.indexOf(n))}<i class="spacer"></i>
       <span class="muted sm">累計 ↑ ${bytes(sinceBase(n, 'txTotal'))} · ↓ ${bytes(sinceBase(n, 'rxTotal'))}</span><button class="arrow reset" data-netreset="${esc(n.name)}" title="重設累計">${icon('reset')}</button></h3>
     ${flow(['上傳', `tx:${n.name}`], ['下載', `rx:${n.name}`])}`);
 }
@@ -214,12 +216,13 @@ function disksCard(s) {
 function gpuCard(s) {
   if (!s.gpus.length) return card('顯示卡', '<div class="empty">未偵測到可讀取的顯示卡</div>');
   const meter = (k, v, p, cls) => `<div><span>${k}</span><b>${esc(v)}</b>${bar([[p, cls]])}</div>`;
-  return s.gpus.map((g, i) => card('顯示卡', `<div class="gpu-head"><b class="ell" title="${esc(g.name)}">${esc(g.name)}</b><span class="muted">${temp(g.temp)}</span></div>
+  const i = Math.min(+pick.gpu || 0, s.gpus.length - 1), g = s.gpus[i];
+  return card('顯示卡', `<h3 class="sub">${icon('gpu')}<span class="ell" title="${esc(g.name)}">${esc(g.name)}</span>${flipper('gpu', s.gpus.map((_, k) => String(k)), i)}<i class="spacer"></i><span class="muted sm">${temp(g.temp)}</span></h3>
       <div class="gpu-row">${ring([[[g.usage, 'c-blue']]], 96, pct(g.usage))}<div class="meters">
         ${meter('顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`, ratio(g.memUsed, g.memTotal), 'c-yellow')}
         ${meter('編碼器', pct(g.encoder), g.encoder, 'c-green')}
         ${meter('解碼器', pct(g.decoder), g.decoder, 'c-magenta')}</div></div>
-      <div class="sect">${cap('使用率', '')}${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}</div>`)).join('');
+      <div class="sect">${cap('使用率', '')}${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}</div>`);
 }
 
 function sensorsCard(s) {
@@ -229,13 +232,16 @@ function sensorsCard(s) {
 }
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} rpm`);
 
-function ioCard() {
-  return card('磁碟 I/O', flow(['讀取', 'diskR'], ['寫入', 'diskW']));
+function ioCard(s) {
+  const d = s.disks.find((x) => x.name === pick.io) ?? s.disks[0];
+  if (!d) return card('磁碟 I/O', '<div class="empty">沒有實體磁碟</div>');
+  return card('磁碟 I/O', `<h3 class="sub">${icon('storage')}<span class="ell" title="${esc(d.name)}">${esc(diskName(d))}</span>${flipper('io', s.disks.map((x) => x.name), s.disks.indexOf(d))}</h3>
+    ${flow(['讀取', `r:${d.name}`], ['寫入', `w:${d.name}`])}`);
 }
 
 // ── pages ──
 const PAGES = {
-  dash: ['儀表板', (s) => `<div class="masonry">${[summaryCard(s), cpuCard(s), memCard(s), netCard(s), disksCard(s), gpuCard(s), ioCard(), sensorsCard(s)].join('')}</div>`],
+  dash: ['儀表板', (s) => `<div class="masonry">${[summaryCard(s), cpuCard(s), memCard(s), netCard(s), disksCard(s), gpuCard(s), ioCard(s), sensorsCard(s)].join('')}</div>`],
 
   apps: ['應用程式', () => {
     const k = sort.key, dir = sort.desc ? -1 : 1;
@@ -391,7 +397,7 @@ try { prefs = { ...DEFAULTS, ...JSON.parse(store('rw-prefs') || '{}') }; } catch
 let timer = null;
 function setPref(key, val) {
   prefs[key] = key === 'interval' ? +val : val;
-  if (key === 'nic') dashNic = null; // a new default replaces the card's ‹ › choice
+  if (key === 'nic') pick.nic = null; // a new default replaces the card's ‹ › choice
   store('rw-prefs', JSON.stringify(prefs));
   applyPrefs();
   render();
@@ -434,8 +440,8 @@ $('#content').addEventListener('click', (e) => {
     if (n) { netBase[n.name] = { rxTotal: n.rxTotal, txTotal: n.txTotal }; store('rw-netbase', JSON.stringify(netBase)); }
     return render();
   }
-  const nic = t.closest('[data-nic]');
-  if (nic) { dashNic = nic.dataset.nic; return render(); }
+  const pk = t.closest('[data-pick]');
+  if (pk) { pick[pk.dataset.pick] = pk.dataset.val; return render(); }
   const th = t.closest('th[data-sort]');
   if (!th) return;
   const key = th.dataset.sort;

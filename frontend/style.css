@@ -290,8 +290,6 @@ th[data-sort]:hover { color: var(--text); }
 .err { color: var(--red); margin-bottom: 12px; }
 
 /* gpu meters + settings */
-.gpu-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
-.gpu-head .muted { margin-left: auto; white-space: nowrap; }
 .gpu-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 20px; align-items: center; }
 .meters { display: grid; gap: 14px; }
 .meters div { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; }
