@@ -68,9 +68,11 @@ nav {
 }
 nav.collapsed { width: 68px; }
 nav.collapsed .label { display: none; }
-.icon-btn { align-self: flex-end; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 6px; cursor: pointer; margin-bottom: 18px; font-size: 16px; }
+.icon-btn { align-self: flex-start; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 6px; cursor: pointer; margin-bottom: 18px; font-size: 16px; }
 .icon-btn:hover { background: var(--field); color: var(--text); }
 nav.collapsed .icon-btn { align-self: center; }
+#collapse { margin-left: 3px; }
+nav.collapsed #collapse { margin-left: 0; }
 #pages { display: flex; flex-direction: column; gap: 4px; }
 .nav-item {
   display: flex;
