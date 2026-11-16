@@ -10,6 +10,7 @@ let procs = [];
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
+let dashNic = null; // network card ‹ › choice (interface name); null → primaryNet
 const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '', dev: '' };
 let prefs = { ...DEFAULTS };
 
@@ -190,10 +191,12 @@ function flow([upL, upK], [downL, downK]) {
 }
 
 function netCard(s) {
-  const n = primaryNet(s);
+  const n = s.net.find((x) => x.name === dashNic) ?? primaryNet(s);
   if (!n) return card('網路', '<div class="empty">沒有實體網路介面</div>');
-  return card('網路', `${flow(['上傳', `tx:${n.name}`], ['下載', `rx:${n.name}`])}
-    <div class="sect"><h3>${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}<i class="spacer"></i><span class="muted sm">累計 ↑ ${bytes(n.txTotal)} · ↓ ${bytes(n.rxTotal)}</span></h3>${addrBlock(n)}</div>`);
+  const i = s.net.indexOf(n), step = (d) => s.net[i + d]?.name;
+  const arrow = (d, t) => `<button class="arrow" data-nic="${esc(step(d) ?? '')}"${step(d) ? '' : ' disabled'}>${t}</button>`;
+  return card('網路', `<h3 class="sub">${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}<span class="muted sm">累計 ↑ ${bytes(n.txTotal)} · ↓ ${bytes(n.rxTotal)}</span><i class="spacer"></i>${arrow(-1, '‹')}${arrow(1, '›')}</h3>
+    ${flow(['上傳', `tx:${n.name}`], ['下載', `rx:${n.name}`])}`);
 }
 
 function disksCard(s) {
@@ -383,6 +386,7 @@ try { prefs = { ...DEFAULTS, ...JSON.parse(store('rw-prefs') || '{}') }; } catch
 let timer = null;
 function setPref(key, val) {
   prefs[key] = key === 'interval' ? +val : val;
+  if (key === 'nic') dashNic = null; // a new default replaces the card's ‹ › choice
   store('rw-prefs', JSON.stringify(prefs));
   applyPrefs();
   render();
@@ -419,6 +423,8 @@ $('#content').addEventListener('click', (e) => {
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');
   if (flip) { sumDisk += +flip.dataset.disk; return render(); }
+  const nic = t.closest('[data-nic]');
+  if (nic) { dashNic = nic.dataset.nic; return render(); }
   const th = t.closest('th[data-sort]');
   if (!th) return;
   const key = th.dataset.sort;
