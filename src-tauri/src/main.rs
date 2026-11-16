@@ -3,7 +3,7 @@ mod gpu;
 mod sys;
 
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 type Mon<'a> = State<'a, Mutex<sys::Monitor>>;
 type DirCache<'a> = State<'a, Mutex<du::Cache>>;
@@ -56,7 +56,6 @@ fn set_dev_mode(window: tauri::WebviewWindow, on: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Opens the inspector in its own window instead of docked inside the app.
 #[tauri::command]
 fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
     window
@@ -64,7 +63,6 @@ fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
             use webkit2gtk::{WebInspectorExt, WebViewExt};
             if let Some(i) = wv.inner().inspector() {
                 i.show();
-                i.detach();
             }
         })
         .map_err(|e| e.to_string())
@@ -82,6 +80,18 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(sys::Monitor::new()))
         .manage(Mutex::new(du::Cache::default()))
+        .setup(|app| {
+            // Keep the inspector in its own window: returning true from "attach" cancels docking.
+            if let Some(w) = app.get_webview_window("main") {
+                w.with_webview(|wv| {
+                    use webkit2gtk::{WebInspectorExt, WebViewExt};
+                    if let Some(i) = wv.inner().inspector() {
+                        i.connect_attach(|_| true);
+                    }
+                })?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             snapshot,
             processes,

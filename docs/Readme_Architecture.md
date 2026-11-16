@@ -46,7 +46,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄、發行版 logo） |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
-| `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`WebInspector::show` 後 `detach`；`tauri` 啟用 `devtools` feature，release 版也可用） |
+| `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時對 inspector 的 `attach` 訊號回傳 `true`，取消嵌入 App；`tauri` 啟用 `devtools` feature，release 版也可用） |
 | `set_dev_mode(on)` | — | 切換 WebKit `enable-developer-extras`：關閉時右鍵沒有「檢查元素」、也開不了檢查器 |
 
 `Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。
