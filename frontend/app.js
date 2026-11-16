@@ -45,7 +45,7 @@ function duration(s) {
 const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
-  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up',
+  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
@@ -82,15 +82,18 @@ function chart(series, max, tall) {
   return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N - 1} 100" preserveAspectRatio="none">${grid}${paths.join('')}</svg>`;
 }
 
-// Mirrored bars: `up` grows upward from the midline, `down` downward; both share one auto scale.
+// Mirrored bars: `up` grows upward from the midline, `down` downward; each half has its own auto scale
+// so a quiet direction stays readable next to a busy one. Zero samples draw as dots along the midline.
 function mirror(up, down, tall) {
-  const max = Math.max(1, ...[...(up.data ?? []), ...(down.data ?? [])].filter((v) => v != null));
-  const bars = ({ data = [], cls }, top) => data.map((v, i) => {
-    if (!v) return '';
-    const h = Math.max((v / max) * 48, 1);
-    return `<rect class="${cls}" x="${N - data.length + i + 0.15}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.7" height="${h.toFixed(1)}"/>`;
-  }).join('');
-  return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N} 100" preserveAspectRatio="none"><line class="grid-line" x1="0" x2="${N}" y1="50" y2="50"/>${bars(up, true)}${bars(down, false)}</svg>`;
+  const bars = ({ data = [], cls }, top) => {
+    const max = Math.max(1, ...data.filter((v) => v != null));
+    return data.map((v, i) => {
+      if (v == null) return '';
+      const h = Math.max((v / max) * 48, 1.5);
+      return `<rect class="${cls}" x="${N - data.length + i + 0.15}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.7" height="${h.toFixed(1)}"/>`;
+    }).join('');
+  };
+  return `<svg class="chart mirror${tall ? ' tall' : ''}" viewBox="0 0 ${N} 100" preserveAspectRatio="none"><line class="grid-line" x1="0" x2="${N}" y1="50" y2="50"/>${bars(up, true)}${bars(down, false)}</svg>`;
 }
 
 // rings: outer first, each a list of [percent, cls] segments.
@@ -178,11 +181,19 @@ function addrBlock(n) {
     <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div></div>`;
 }
 
+const peak = (k) => Math.max(0, ...(hist[k] ?? []).filter((v) => v != null));
+// Big current rates, mirrored bars and window peaks; `up`/`down` are [label, hist key].
+function flow([upL, upK], [downL, downK]) {
+  return `<div class="rates"><div><b>${rate(last(upK))}</b><span>${upL}</span></div><div><b>${rate(last(downK))}</b><span>${downL}</span></div></div>
+    ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' })}
+    <div class="foot peaks"><span><i class="dot c-magenta"></i>峰值 ↑<b>${rate(peak(upK))}</b></span><span><i class="dot c-blue"></i>峰值 ↓<b>${rate(peak(downK))}</b></span></div>`;
+}
+
 function netCard(s) {
   const n = primaryNet(s);
   if (!n) return card('網路', '<div class="empty">沒有實體網路介面</div>');
-  return card('網路', `${addrBlock(n)}${cap('速度', esc(n.name))}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-blue' }, { data: hist[`rx:${n.name}`], cls: 'c-green' })}
-    <div class="foot"><span><i class="dot c-blue"></i>↑ ${bytes(n.txTotal)}（${rate(n.txBps)}）</span><span><i class="dot c-green"></i>↓ ${bytes(n.rxTotal)}（${rate(n.rxBps)}）</span></div>`);
+  return card('網路', `${flow(['上傳', `tx:${n.name}`], ['下載', `rx:${n.name}`])}
+    <div class="sect"><h3>${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}<i class="spacer"></i><span class="muted sm">累計 ↑ ${bytes(n.txTotal)} · ↓ ${bytes(n.rxTotal)}</span></h3>${addrBlock(n)}</div>`);
 }
 
 function disksCard(s) {
@@ -211,8 +222,7 @@ function sensorsCard(s) {
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} rpm`);
 
 function ioCard() {
-  return card('磁碟 I/O', `${cap('速度', '')}${mirror({ data: hist.diskR, cls: 'c-red' }, { data: hist.diskW, cls: 'c-blue' })}
-    <div class="foot"><span><i class="dot c-red"></i>讀取 ${rate(last('diskR'))}</span><span><i class="dot c-blue"></i>寫入 ${rate(last('diskW'))}</span></div>`);
+  return card('磁碟 I/O', flow(['讀取', 'diskR'], ['寫入', 'diskW']));
 }
 
 // ── pages ──
@@ -253,9 +263,9 @@ const PAGES = {
       const dot = `<i class="spacer"></i><i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
       return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n)}<div class="speeds"><div>
-          <div class="rate">${icon('down')}<b><i class="dot c-green"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}</span></div>
-          <div class="rate">${icon('up')}<b><i class="dot c-blue"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}</span></div></div>
-        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-blue' }, { data: hist[`rx:${n.name}`], cls: 'c-green' }, true)}</div></div></section>`;
+          <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}</span></div>
+          <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}</span></div></div>
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div></section>`;
     }).join('')}</div>`;
   }],
 
