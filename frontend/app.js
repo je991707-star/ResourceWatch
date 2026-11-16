@@ -48,7 +48,7 @@ function duration(s) {
   return `${d ? `${d} 天 ` : ''}${h} 小時 ${m} 分`;
 }
 
-// ── icons: Font Awesome Free (frontend/vendor/fontawesome) ──
+// ── icons: Font Awesome Free (frontend/vendor/fontawesome); `gpu` is also the CPU card's chip ──
 const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
@@ -166,9 +166,9 @@ function summaryCard(s) {
 function cpuCard(s) {
   const cores = `<div class="cores">${s.cpu.cores.map((v) => `<i data-h="${Math.max(v ?? 0, 3).toFixed(1)}"></i>`).join('')}</div>`;
   const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
-  return card('處理器', `<div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
-    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`,
-    `<i class="spacer"></i><span class="spec ell" title="${esc(info?.cpuModel || '')}">${esc(info?.cpuModel || '')}</span>`);
+  return card('處理器', `<h3 class="sub">${icon('gpu')}<span class="ell" title="${esc(info?.cpuModel || '')}">${esc(info?.cpuModel || '--')}</span></h3>
+    <div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
+    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
 }
 
 function memCard(s) {
