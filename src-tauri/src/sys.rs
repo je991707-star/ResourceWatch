@@ -109,9 +109,11 @@ pub struct Proc {
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     hostname: String,
+    /// os-release NAME + VERSION_ID, e.g. "Bazzite 45" (PRETTY_NAME when NAME is missing).
     os: String,
+    /// Desktop environment and version, e.g. "KDE Plasma 6.8.2"; None outside a known desktop session.
+    desktop: Option<String>,
     kernel: String,
-    model: String,
     cpu_model: String,
     cpu_cores: Option<usize>,
     cpu_threads: usize,
@@ -131,30 +133,18 @@ pub fn system_info() -> SystemInfo {
             .map(|v| v.trim_matches('"').to_string())
             .unwrap_or_default()
     };
-    let os = field("PRETTY_NAME");
+    let os = match (field("NAME"), field("VERSION_ID")) {
+        (n, _) if n.is_empty() => field("PRETTY_NAME"),
+        (n, v) if v.is_empty() => n,
+        (n, v) => format!("{n} {v}"),
+    };
     let cpuinfo = read("/proc/cpuinfo");
     let (cpu_model, cpu_cores, cpu_threads) = parse_cpuinfo(&cpuinfo);
-    // Many desktop boards leave product_name as a placeholder; the board name is more useful then.
-    let dmi = |k: &str| read(format!("/sys/class/dmi/id/{k}")).trim().to_string();
-    let product = dmi("product_name");
-    let placeholder = [
-        "O.E.M.",
-        "System Product Name",
-        "Default string",
-        "Not Applicable",
-    ];
-    let model = if product.is_empty() || placeholder.iter().any(|p| product.contains(p)) {
-        format!("{} {}", dmi("board_vendor"), dmi("board_name"))
-            .trim()
-            .to_string()
-    } else {
-        product
-    };
     SystemInfo {
         hostname: read("/proc/sys/kernel/hostname").trim().to_string(),
         os,
+        desktop: desktop(),
         kernel: read("/proc/sys/kernel/osrelease").trim().to_string(),
-        model,
         cpu_model,
         cpu_cores,
         cpu_threads,
@@ -163,6 +153,41 @@ pub fn system_info() -> SystemInfo {
         logo: distro_logo(&field("LOGO")),
         mem_spec: parse_mem_spec(&read("/run/udev/data/+dmi:id")),
     }
+}
+
+/// XDG_CURRENT_DESKTOP (first entry) → display name, plus the version its shell binary prints for
+/// `--version`. Unknown desktops show their XDG name; a missing binary just drops the version.
+fn desktop() -> Option<String> {
+    let xdg = std::env::var("XDG_CURRENT_DESKTOP").ok()?;
+    let id = xdg.split(':').next()?.trim();
+    let (name, bin) = match id.to_ascii_uppercase().as_str() {
+        "" => return None,
+        "KDE" => ("KDE Plasma", "plasmashell"),
+        "GNOME" => ("GNOME", "gnome-shell"),
+        "X-CINNAMON" | "CINNAMON" => ("Cinnamon", "cinnamon"),
+        "XFCE" => ("Xfce", "xfce4-session"),
+        "MATE" => ("MATE", "mate-session"),
+        "LXQT" => ("LXQt", "lxqt-session"),
+        "BUDGIE" => ("Budgie", "budgie-desktop"),
+        _ => return Some(id.to_string()),
+    };
+    let out = std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .ok();
+    let version = out.and_then(|o| first_version(&String::from_utf8_lossy(&o.stdout)));
+    Some(version.map_or(name.to_string(), |v| format!("{name} {v}")))
+}
+
+/// First token that looks like a dotted version ("plasmashell 6.8.2" → "6.8.2").
+fn first_version(text: &str) -> Option<String> {
+    text.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',')
+        .find(|w| {
+            w.contains('.')
+                && w.split('.')
+                    .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .map(str::to_string)
 }
 
 /// systemd-udev's world-readable copy of SMBIOS type 17 (`E:MEMORY_DEVICE_<n>_<KEY>=<v>`; the raw DMI
@@ -806,6 +831,16 @@ mod tests {
             Some("1.5 GB 2400")
         );
         assert_eq!(parse_mem_spec("E:MEMORY_ARRAY_LOCATION=x\n"), None);
+        assert_eq!(
+            first_version("plasmashell 6.8.2\n").as_deref(),
+            Some("6.8.2")
+        );
+        assert_eq!(first_version("GNOME Shell 47.1\n").as_deref(), Some("47.1"));
+        assert_eq!(
+            first_version("xfce4-session 4.18.1 (Xfce 4.18)\n").as_deref(),
+            Some("4.18.1")
+        );
+        assert_eq!(first_version("no version here"), None);
     }
 
     #[test]

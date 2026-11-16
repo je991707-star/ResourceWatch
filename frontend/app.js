@@ -362,7 +362,7 @@ function hostBar() {
   const logo = info?.logo ? `<img class="logo" src="${esc(info.logo)}" alt="">` : `<i class="logo fa-brands fa-${BRAND[info?.osId] ?? 'linux'}"></i>`;
   $('#host').innerHTML = `${logo}
     <div class="hcol"><b>${esc(info?.hostname || '--')}</b><span>運作時間：<em>${duration(snap?.uptime)}</em></span></div>
-    <div class="hcol"><b>${esc(info?.model || info?.os || '--')}</b><span>${esc(info?.os || '')}</span><span>${esc(info?.cpuModel || '')}</span></div>`;
+    <div class="hcol"><b>${esc(info?.os || '--')}</b><span>${esc(info?.desktop || '')}</span></div>`;
 }
 
 function render() {

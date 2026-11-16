@@ -74,13 +74,14 @@ Snapshot {
   uptime                                                         // 秒
 }
 Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
-SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home, osId, logo, memSpec }
+SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home, osId, logo, memSpec }
 ```
 
 - CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。型號（`cpuModel`）經 `clean_cpu_name` 整理：移除 `(R)`／`(TM)`／`®`／`™`、獨立的 `CPU`／`Processor` 字樣，以及緊接在 `Processor` 前的 `N-Core`（AMD）；品牌、系列、型號與 `@ 頻率` 保留，例如 `Intel(R) Xeon(R) CPU E3-1231 v3 @ 3.40GHz` → `Intel Xeon E3-1231 v3 @ 3.40GHz`、`AMD Ryzen 7 5800X 8-Core Processor` → `AMD Ryzen 7 5800X`。
 - 記憶體規格（`memSpec`）：SMBIOS 原始表只有 root 可讀，改讀 systemd-udev 的 `/run/udev/data/+dmi:id`（`E:MEMORY_DEVICE_<n>_SIZE／TYPE／CONFIGURED_SPEED_MTS／SPEED_MTS`）。容量加總為 GB（整數不帶小數），類型取第一條非 Unknown，速度取各條實際運作速度的最小值（沒有時用額定速度），例如 `16 GB DDR3 1600`；沒有任何記憶體條資料（虛擬機）時為 `null`。
   `cpuCores`＝`(physical id, core id)` 不重複組數（讀不到為 `null`），`cpuThreads`＝`processor` 數。
-- 機型：DMI `product_name`；空的或是佔位字串（`To be filled by O.E.M.`、`System Product Name`、`Default string`）時改用 `board_vendor board_name`。
+- 發行版（`os`）：os-release `NAME` + `VERSION_ID`（例如 `Bazzite 45`）；沒有 `VERSION_ID` 時只有名稱，沒有 `NAME` 時用 `PRETTY_NAME`。
+- 桌面環境（`desktop`）：`XDG_CURRENT_DESKTOP` 第一項對應顯示名稱與 shell 執行檔（KDE → `KDE Plasma`／`plasmashell`、GNOME／`gnome-shell`、Cinnamon、Xfce、MATE、LXQt、Budgie），啟動時執行一次 `<執行檔> --version`，取第一個點分數字為版本（`first_version`），例如 `KDE Plasma 6.8.2`；執行檔不存在時只有名稱，未知桌面直接顯示 XDG 名稱，沒有該變數時為 `null`。
 - 網路：IPv4 由 `getifaddrs` 取得；閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。
 - 檔案系統：`/proc/self/mountinfo` 只取 `/dev/` 裝置（排除 loop）。同一裝置會掛很多次（btrfs 子卷、ostree 的 `/etc` bind mount），
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
@@ -135,7 +136,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈第一張顯示卡使用率，環下標註記憶體總量／處理器／顯示卡（圓環上方留 20px、與下方數值相隔 32px）；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
     處理器（各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（標題右側為 `memSpec`，讀不到時為系統可用總量；堆疊條、組成與 SWAP（數值不換行）、前 5 程序）、網路（頂端一列：網卡圖示（`wl*` 用 Wi-Fi，其餘乙太網路）與名稱、‹ › 切換鈕（`dashNic` 記住所選介面名稱，未選時用 `primaryNet`，即設定中的儀表板網路卡；改設定時清除），靠右為累計流量與重設鈕。重設時把該介面當下的 `rxTotal`／`txTotal` 存成起點（`localStorage` `rw-netbase`），累計顯示與起點的差；計數器小於起點（重開機歸零）時起點視為失效、顯示原值；其下 `flow`：兩欄大字速率（數字左側為顏色圓點，下方依序為標籤與近 120 筆峰值）、對稱條狀圖）、
     磁碟（檔案系統用量條）、顯示卡、磁碟 I/O（`flow`：讀取在上、寫入在下，版面同網路卡）、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
-  - 主機列：左側為發行版 logo（`SystemInfo.logo`）；沒有 logo 檔時依 `osId` 用 Font Awesome 品牌圖示（fedora、ubuntu、debian、redhat、centos、suse），其餘用 `fa-linux`。
+  - 主機列：左側為發行版 logo（`SystemInfo.logo`），接著主機名稱與運作時間，再來是發行版與版本（`os`）、桌面環境與版本（`desktop`）；沒有 logo 檔時依 `osId` 用 Font Awesome 品牌圖示（fedora、ubuntu、debian、redhat、centos、suse），其餘用 `fa-linux`。
   - 摘要的硬碟區與磁碟卡片以實體硬碟為單位，顯示型號（NVMe 型號的 `_` 換成空格；沒有型號時用裝置名稱）與其上檔案系統的用量；未掛載的硬碟顯示「未掛載 · 容量」，滑鼠提示有裝置名稱與掛載點。
   - 顯示卡卡片：第一列型號（過長截斷）＋右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
