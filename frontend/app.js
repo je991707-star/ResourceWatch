@@ -90,7 +90,7 @@ function mirror(up, down, tall) {
     return data.map((v, i) => {
       if (v == null) return '';
       const h = Math.max((v / max) * 48, 1.5);
-      return `<rect class="${cls}" x="${N - data.length + i + 0.3}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.4" height="${h.toFixed(1)}"/>`;
+      return `<rect class="${cls}" x="${N - data.length + i + 0.225}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.55" height="${h.toFixed(1)}"/>`;
     }).join('');
   };
   return `<svg class="chart mirror${tall ? ' tall' : ''}" viewBox="0 0 ${N} 100" preserveAspectRatio="none"><line class="grid-line" x1="0" x2="${N}" y1="50" y2="50"/>${bars(up, true)}${bars(down, false)}</svg>`;
