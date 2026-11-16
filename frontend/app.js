@@ -88,14 +88,12 @@ function ring(rings, size, text) {
   const out = rings.map((segs, k) => {
     const r = 50 - sw / 2 - k * (sw + gap);
     let start = 0;
-    // Stacked segments keep round caps: trim each by its cap overhang (in pathLength units) plus a small gap.
-    const trim = segs.length > 1 ? (sw / (2 * Math.PI * r)) * 100 + 1.5 : 0;
     const arcs = segs.map(([p, cls]) => {
       const v = Math.min(Math.max(p ?? 0, 0), 99.9 - start);
-      const c = v > 0 ? `<circle class="${cls}" cx="50" cy="50" r="${r}" pathLength="100" stroke-width="${sw}" stroke-dasharray="${Math.max(v - trim, 0.01)} 100" stroke-dashoffset="${-(start + trim / 2)}" transform="rotate(-90 50 50)"/>` : '';
+      const c = v > 0 ? `<circle class="${cls}" cx="50" cy="50" r="${r}" pathLength="100" stroke-width="${sw}" stroke-dasharray="${v} 100" stroke-dashoffset="${-start}" transform="rotate(-90 50 50)"/>` : '';
       start += v;
       return c;
-    }).join('');
+    }).reverse().join(''); // earlier segments on top, so each round end cap overlaps the next segment
     return `<circle class="track" cx="50" cy="50" r="${r}" stroke-width="${sw}"/>${arcs}`;
   }).join('');
   return `<svg class="ring" viewBox="0 0 100 100" width="${size}" height="${size}">${out}${text ? `<text x="50" y="50">${esc(text)}</text>` : ''}</svg>`;

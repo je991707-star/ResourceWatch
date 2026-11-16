@@ -141,7 +141,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積）、
-  `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時每段扣掉圓頭超出的長度再留小間隙，避免相鄰段重疊）。
+  `bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時反向繪製，讓前一段的圓頭疊在下一段上）。
 - 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
 - `window.__TAURI__` 不存在時改用 `window.mockInvoke`：只供在一般瀏覽器載入頁面、注入假資料檢查排版，App 內不會用到。
