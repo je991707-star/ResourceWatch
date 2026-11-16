@@ -188,11 +188,11 @@ function addrBlock(n) {
 }
 
 const peak = (k) => Math.max(0, ...(hist[k] ?? []).filter((v) => v != null));
-// Big current rates, mirrored bars and window peaks; `up`/`down` are [label, hist key].
+// Big current rates (color dot, label, window peak) above mirrored bars; `up`/`down` are [label, hist key].
 function flow([upL, upK], [downL, downK]) {
-  return `<div class="rates"><div><b>${rate(last(upK))}</b><span>${upL}</span></div><div><b>${rate(last(downK))}</b><span>${downL}</span></div></div>
-    ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' })}
-    <div class="foot peaks"><span><i class="dot c-magenta"></i>峰值 ↑<b>${rate(peak(upK))}</b></span><span><i class="dot c-blue"></i>峰值 ↓<b>${rate(peak(downK))}</b></span></div>`;
+  const col = (l, k, cls) => `<div><b><i class="dot ${cls}"></i>${rate(last(k))}</b><span>${l}</span><span class="peak">峰值 ${rate(peak(k))}</span></div>`;
+  return `<div class="rates">${col(upL, upK, 'c-magenta')}${col(downL, downK, 'c-blue')}</div>
+    ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' })}`;
 }
 
 function netCard(s) {

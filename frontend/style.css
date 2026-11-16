@@ -148,6 +148,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .sect h3 .spacer, h3.sub .spacer { flex: 1; }
 h3.sub { margin-bottom: 16px; }
 h3.sub .sm { font-weight: 500; }
+h3.sub .arrow { padding: 0 4px 5px; }
 h3.sub .arrow:first-of-type { margin-left: 4px; }
 .arrow.reset .i { width: auto; font-size: 11px; color: var(--muted); }
 .arrow.reset:hover .i { color: var(--text); }
@@ -229,10 +230,10 @@ th[data-sort]:hover { color: var(--text); }
 .foot { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
 .foot span { display: flex; align-items: center; gap: 6px; }
 .rates { display: grid; grid-template-columns: 1fr 1fr; text-align: center; margin-bottom: 16px; }
-.rates b { display: block; font-size: 24px; font-weight: 500; line-height: 1.1; }
+.rates b { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 24px; font-weight: 500; line-height: 1.1; }
+.rates b .dot { width: 10px; height: 10px; }
 .rates span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
-.foot.peaks { display: grid; grid-template-columns: 1fr 1fr; }
-.peaks b { margin-left: auto; font-weight: 600; }
+.rates .peak { margin-top: 2px; font-size: 11px; }
 
 /* network page */
 .iface h2 .dot { width: 12px; height: 12px; }
