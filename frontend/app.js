@@ -71,11 +71,11 @@ function bar(segs, thick) {
   return `<svg class="bar${thick ? ' thick' : ''}" viewBox="0 0 100 12" preserveAspectRatio="none"><rect class="track" width="100" height="12"/>${rects}</svg>`;
 }
 
-// series: [{ data, cls }]; max fixed (percent) or auto from data. `mode`: '' line+area, 'solid' filled.
+// series: [{ data, cls, solid }]; max fixed (percent) or auto from data. Line on top of a translucent or (solid) opaque area.
 function chart(series, max, tall) {
   series = series.map((s) => ({ ...s, data: (s.data ?? []).slice(-N) }));
   max = max ?? Math.max(1, ...series.flatMap((s) => (s.data ?? []).filter((v) => v != null))) * 1.15;
-  const y = (v) => (100 - (Math.min(v, max) / max) * 97).toFixed(1);
+  const y = (v) => (99 - (Math.min(v, max) / max) * 96).toFixed(1); // 0 sits just above the edge so its line stays visible
   const paths = series.map(({ data = [], cls, solid }) => {
     const off = N - data.length;
     const runs = [[]];
@@ -83,7 +83,7 @@ function chart(series, max, tall) {
     return runs.filter((r) => r.length).map((r) => {
       const line = r.map(([x, yy], i) => `${i ? 'L' : 'M'}${x} ${yy}`).join('');
       const area = `<path class="${solid ? 'solid' : 'area'} ${cls}" d="${line}L${r.at(-1)[0]} 100L${r[0][0]} 100Z"/>`;
-      return solid ? area : `${area}<path class="line ${cls}" d="${line}"/>`;
+      return `${area}<path class="line ${cls}" d="${line}"/>`; // the line keeps an all-zero series visible
     }).join('');
   });
   const grid = [33, 66].map((g) => `<line class="grid-line" x1="0" x2="${N - 1}" y1="${g}" y2="${g}"/>`).join('');

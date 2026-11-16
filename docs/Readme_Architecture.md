@@ -143,7 +143,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 感測器：依晶片分組。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
-- 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積）、
+- 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積；面積上一律再畫一條線，0 的位置在 y=99，全為 0 的序列（例如沒有記憶體壓力時）仍看得到底線）、
   `mirror`（上下對稱條狀圖：中線以上為上傳／讀取（桃紅）、以下為下載／寫入（藍），上下各自依近期最大值縮放，0 畫成中線上的短條；以 HTML flex 排 120 根長條（間隔 1 px、外側端點 2 px 圓角：上半部圓在頂端、下半部圓在底端），高度以 `data-h` 經 CSSOM 設定，不用 SVG 以免圓角被拉伸變形；用於 `flow` 與網路頁）、`bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時反向繪製，讓前一段的圓頭疊在下一段上）。
 - 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`、`dev`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
