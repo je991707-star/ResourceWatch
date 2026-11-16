@@ -375,6 +375,7 @@ function applyPrefs() {
   clearInterval(timer);
   timer = setInterval(tick, [500, 1000, 2000, 5000].includes(prefs.interval) ? prefs.interval : 1000);
   invoke('set_dev_mode', { on: !!prefs.dev }).catch(() => {});
+  setPaused(paused);
 }
 media.addEventListener('change', applyPrefs);
 $('#theme').addEventListener('click', () => setPref('theme', { system: 'dark', dark: 'light', light: 'system' }[prefs.theme] ?? 'system'));
@@ -404,11 +405,23 @@ $('#content').addEventListener('click', (e) => {
   render();
 });
 
+// Developer mode: pausing stops the per-tick re-render so the inspector's element tree stays put.
+let paused = false;
+function setPaused(on) {
+  paused = on && !!prefs.dev;
+  $('#pause').hidden = !prefs.dev;
+  $('#pause').innerHTML = `<i class="fa-solid ${paused ? 'fa-play' : 'fa-pause'}"></i>`;
+  $('#pause').title = paused ? '繼續更新（F8）' : '暫停更新（F8）';
+}
+$('#pause').addEventListener('click', () => setPaused(!paused));
 document.addEventListener('keydown', (e) => {
-  if (prefs.dev && (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i'))) { e.preventDefault(); invoke('open_devtools'); }
+  if (!prefs.dev) return;
+  if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i')) { e.preventDefault(); invoke('open_devtools'); }
+  if (e.key === 'F8') { e.preventDefault(); setPaused(!paused); }
 });
 
 async function tick() {
+  if (paused) return;
   try {
     snap = await invoke('snapshot');
     record(snap);
@@ -420,7 +433,7 @@ async function tick() {
 }
 
 async function pollProcs() {
-  if ((page !== 'dash' && page !== 'apps') || document.hidden) return;
+  if ((page !== 'dash' && page !== 'apps') || document.hidden || paused) return;
   try {
     procs = await invoke('processes');
     if (page === 'apps') render();
