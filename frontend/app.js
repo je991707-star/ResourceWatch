@@ -82,6 +82,17 @@ function chart(series, max, tall) {
   return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N - 1} 100" preserveAspectRatio="none">${grid}${paths.join('')}</svg>`;
 }
 
+// Mirrored bars: `up` grows upward from the midline, `down` downward; both share one auto scale.
+function mirror(up, down, tall) {
+  const max = Math.max(1, ...[...(up.data ?? []), ...(down.data ?? [])].filter((v) => v != null));
+  const bars = ({ data = [], cls }, top) => data.map((v, i) => {
+    if (!v) return '';
+    const h = Math.max((v / max) * 48, 1);
+    return `<rect class="${cls}" x="${N - data.length + i + 0.15}" y="${(top ? 50 - h : 50).toFixed(1)}" width="0.7" height="${h.toFixed(1)}"/>`;
+  }).join('');
+  return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N} 100" preserveAspectRatio="none"><line class="grid-line" x1="0" x2="${N}" y1="50" y2="50"/>${bars(up, true)}${bars(down, false)}</svg>`;
+}
+
 // rings: outer first, each a list of [percent, cls] segments.
 function ring(rings, size, text) {
   const sw = 8, gap = 3.5;
@@ -170,8 +181,8 @@ function addrBlock(n) {
 function netCard(s) {
   const n = primaryNet(s);
   if (!n) return card('網路', '<div class="empty">沒有實體網路介面</div>');
-  return card('網路', `${addrBlock(n)}${cap('速度', esc(n.name))}${chart([{ data: hist[`rx:${n.name}`], cls: 'c-green' }, { data: hist[`tx:${n.name}`], cls: 'c-blue' }])}
-    <div class="foot"><span><i class="dot c-green"></i>↓ ${bytes(n.rxTotal)}（${rate(n.rxBps)}）</span><span><i class="dot c-blue"></i>↑ ${bytes(n.txTotal)}（${rate(n.txBps)}）</span></div>`);
+  return card('網路', `${addrBlock(n)}${cap('速度', esc(n.name))}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-blue' }, { data: hist[`rx:${n.name}`], cls: 'c-green' })}
+    <div class="foot"><span><i class="dot c-blue"></i>↑ ${bytes(n.txTotal)}（${rate(n.txBps)}）</span><span><i class="dot c-green"></i>↓ ${bytes(n.rxTotal)}（${rate(n.rxBps)}）</span></div>`);
 }
 
 function disksCard(s) {
@@ -200,7 +211,7 @@ function sensorsCard(s) {
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} rpm`);
 
 function ioCard() {
-  return card('磁碟 I/O', `${cap('速度', '')}${chart([{ data: hist.diskR, cls: 'c-red' }, { data: hist.diskW, cls: 'c-blue' }])}
+  return card('磁碟 I/O', `${cap('速度', '')}${mirror({ data: hist.diskR, cls: 'c-red' }, { data: hist.diskW, cls: 'c-blue' })}
     <div class="foot"><span><i class="dot c-red"></i>讀取 ${rate(last('diskR'))}</span><span><i class="dot c-blue"></i>寫入 ${rate(last('diskW'))}</span></div>`);
 }
 
@@ -244,7 +255,7 @@ const PAGES = {
       return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n)}<div class="speeds"><div>
           <div class="rate">${icon('down')}<b><i class="dot c-green"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-blue"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}</span></div></div>
-        <div>${cap('速度', '')}${chart([{ data: hist[`rx:${n.name}`], cls: 'c-green' }, { data: hist[`tx:${n.name}`], cls: 'c-blue' }], null, true)}</div></div></section>`;
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-blue' }, { data: hist[`rx:${n.name}`], cls: 'c-green' }, true)}</div></div></section>`;
     }).join('')}</div>`;
   }],
 
