@@ -15,3 +15,4 @@ serde = { version = "1", features = ["derive"] }
 libc = "0.2"
 libloading = "0.8"
 tauri-plugin-dialog = "2"
+webkit2gtk = "2.0" # same crate wry uses; inspector settings it does not expose

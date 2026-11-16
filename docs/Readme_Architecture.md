@@ -31,7 +31,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json
 
-- 依賴：`tauri` 2（`devtools` feature）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
+- 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`（與 wry 同一版本，用來切換 developer extras 與分離檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
 - CSP：`script-src 'self'; style-src 'self'`——HTML 裡不能有 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
@@ -46,7 +46,8 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄、發行版 logo） |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
-| `open_devtools` | — | 開啟 WebKit 檢查器（`tauri` 啟用 `devtools` feature，release 版也可用） |
+| `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`WebInspector::show` 後 `detach`；`tauri` 啟用 `devtools` feature，release 版也可用） |
+| `set_dev_mode(on)` | — | 切換 WebKit `enable-developer-extras`：關閉時右鍵沒有「檢查元素」、也開不了檢查器 |
 
 `Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。
 啟動時偵測到 NVIDIA 專有驅動（`/proc/driver/nvidia`）且使用者沒有自行設定時，設 `WEBKIT_DISABLE_DMABUF_RENDERER=1`：WebKitGTK 的 DMA-BUF 渲染在 X11 會空白、在 Wayland 縮放會落後。
@@ -136,7 +137,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 摘要的硬碟區與磁碟卡片以實體硬碟為單位，顯示型號（NVMe 型號的 `_` 換成空格；沒有型號時用裝置名稱）與其上檔案系統的用量；未掛載的硬碟顯示「未掛載 · 容量」，滑鼠提示有裝置名稱與掛載點。
   - 顯示卡卡片：第一列型號（過長截斷）＋右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；曲線固定保留 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
-    儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵）；「關於」顯示版本、系統與 Font Awesome 授權。
+    儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題右側綠／紅點為連線狀態；連線中的顯示位址、大字速率與累計、上下行大圖。
   - 感測器：依晶片分組。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。

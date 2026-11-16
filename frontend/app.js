@@ -374,6 +374,7 @@ function applyPrefs() {
   $('#theme').title = `主題：${label}`;
   clearInterval(timer);
   timer = setInterval(tick, [500, 1000, 2000, 5000].includes(prefs.interval) ? prefs.interval : 1000);
+  invoke('set_dev_mode', { on: !!prefs.dev }).catch(() => {});
 }
 media.addEventListener('change', applyPrefs);
 $('#theme').addEventListener('click', () => setPref('theme', { system: 'dark', dark: 'light', light: 'system' }[prefs.theme] ?? 'system'));

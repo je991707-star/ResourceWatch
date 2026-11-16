@@ -43,10 +43,31 @@ fn dir_children(path: String, cache: DirCache) -> Vec<du::Entry> {
     lock(&cache).children(&path)
 }
 
-/// Web inspector for the settings page's developer mode; the `devtools` feature keeps it in release builds.
+/// Developer mode: WebKit only offers "Inspect Element" and the inspector while developer extras are on.
 #[tauri::command]
-fn open_devtools(window: tauri::WebviewWindow) {
-    window.open_devtools();
+fn set_dev_mode(window: tauri::WebviewWindow, on: bool) -> Result<(), String> {
+    window
+        .with_webview(move |wv| {
+            use webkit2gtk::{SettingsExt, WebViewExt};
+            if let Some(s) = WebViewExt::settings(&wv.inner()) {
+                s.set_enable_developer_extras(on);
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Opens the inspector in its own window instead of docked inside the app.
+#[tauri::command]
+fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .with_webview(|wv| {
+            use webkit2gtk::{WebInspectorExt, WebViewExt};
+            if let Some(i) = wv.inner().inspector() {
+                i.show();
+                i.detach();
+            }
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -67,7 +88,8 @@ fn main() {
             system_info,
             scan_dir,
             dir_children,
-            open_devtools
+            open_devtools,
+            set_dev_mode
         ])
         .run(tauri::generate_context!())
         .expect("failed to start ResourceWatch");
