@@ -2574,6 +2574,7 @@ dependencies = [
 name = "resourcewatch"
 version = "1.0.0"
 dependencies = [
+ "gtk",
  "libc",
  "libloading 0.8.9",
  "serde",

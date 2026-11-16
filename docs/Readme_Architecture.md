@@ -31,7 +31,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json
 
-- 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`（與 wry 同一版本，用來切換 developer extras 與分離檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
+- 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
 - CSP：`script-src 'self'; style-src 'self'`——HTML 裡不能有 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
@@ -46,7 +46,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄、發行版 logo） |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
-| `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時對 inspector 的 `attach` 訊號回傳 `true`，取消嵌入 App；`tauri` 啟用 `devtools` feature，release 版也可用） |
+| `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時攔截 inspector 的 `attach` 訊號並回傳 `true` 取消嵌入 App，改由 `inspector_window` 把檢查器的 view 放進自建的 GTK 視窗「ResourceWatch 檢查器」；已開啟時只把視窗帶到前面，關閉視窗會一併關閉檢查器，反之亦然；`tauri` 啟用 `devtools` feature，release 版也可用） |
 | `set_dev_mode(on)` | — | 切換 WebKit `enable-developer-extras`：關閉時右鍵沒有「檢查元素」、也開不了檢查器 |
 
 `Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。

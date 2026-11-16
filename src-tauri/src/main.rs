@@ -68,6 +68,35 @@ fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Hosts the inspector's view in a separate top-level window; closing either side closes the other.
+fn inspector_window(i: &webkit2gtk::WebInspector) {
+    use gtk::prelude::*;
+    use webkit2gtk::WebInspectorExt;
+    let Some(view) = i.web_view() else { return };
+    if let Some(win) = view
+        .toplevel()
+        .and_then(|t| t.downcast::<gtk::Window>().ok())
+    {
+        if view.parent().is_some() {
+            win.present(); // already hosted
+            return;
+        }
+    }
+    let win = gtk::Window::new(gtk::WindowType::Toplevel);
+    win.set_title("ResourceWatch 檢查器");
+    win.set_default_size(1100, 720);
+    win.add(&view);
+    let insp = i.clone();
+    win.connect_delete_event(move |w, _| {
+        insp.close();
+        w.hide();
+        gtk::glib::Propagation::Stop
+    });
+    let w = win.clone();
+    i.connect_closed(move |_| unsafe { w.destroy() });
+    win.show_all();
+}
+
 fn main() {
     // NVIDIA proprietary driver: WebKitGTK's DMA-BUF renderer leaves the window blank on X11
     // and lags behind resizes on Wayland. Set before any thread starts.
@@ -81,12 +110,15 @@ fn main() {
         .manage(Mutex::new(sys::Monitor::new()))
         .manage(Mutex::new(du::Cache::default()))
         .setup(|app| {
-            // Keep the inspector in its own window: returning true from "attach" cancels docking.
+            // WebKit docks the inspector inside the app; take over "attach" and host it in our own window.
             if let Some(w) = app.get_webview_window("main") {
                 w.with_webview(|wv| {
                     use webkit2gtk::{WebInspectorExt, WebViewExt};
                     if let Some(i) = wv.inner().inspector() {
-                        i.connect_attach(|_| true);
+                        i.connect_attach(|i| {
+                            inspector_window(i);
+                            true
+                        });
                     }
                 })?;
             }
