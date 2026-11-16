@@ -77,7 +77,7 @@ Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss ×
 SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home, osId, logo }
 ```
 
-- CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。
+- CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。型號（`cpuModel`）經 `clean_cpu_name` 整理：移除 `(R)`／`(TM)`／`®`／`™`、獨立的 `CPU`／`Processor` 字樣，以及緊接在 `Processor` 前的 `N-Core`（AMD）；品牌、系列、型號與 `@ 頻率` 保留，例如 `Intel(R) Xeon(R) CPU E3-1231 v3 @ 3.40GHz` → `Intel Xeon E3-1231 v3 @ 3.40GHz`、`AMD Ryzen 7 5800X 8-Core Processor` → `AMD Ryzen 7 5800X`。
   `cpuCores`＝`(physical id, core id)` 不重複組數（讀不到為 `null`），`cpuThreads`＝`processor` 數。
 - 機型：DMI `product_name`；空的或是佔位字串（`To be filled by O.E.M.`、`System Product Name`、`Default string`）時改用 `board_vendor board_name`。
 - 網路：IPv4 由 `getifaddrs` 取得；閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。

@@ -251,7 +251,7 @@ fn parse_cpuinfo(text: &str) -> (String, Option<usize>, usize) {
         };
         match k.trim() {
             "processor" => threads += 1,
-            "model name" if model.is_empty() => model = v.trim().to_string(),
+            "model name" if model.is_empty() => model = clean_cpu_name(v),
             "physical id" => phys = v.trim(),
             "core id" => {
                 cores.insert((phys, v.trim()));
@@ -260,6 +260,33 @@ fn parse_cpuinfo(text: &str) -> (String, Option<usize>, usize) {
         }
     }
     (model, (!cores.is_empty()).then_some(cores.len()), threads)
+}
+
+/// Drops marketing noise from a cpuinfo model name: trademark marks, the words "CPU"/"Processor" and an
+/// "N-Core" right before "Processor" (AMD). Brand, family, model number and "@ x.xxGHz" stay.
+fn clean_cpu_name(raw: &str) -> String {
+    let mut s = raw.to_string();
+    for mark in ["(R)", "(r)", "(TM)", "(tm)", "(Tm)", "®", "™"] {
+        s = s.replace(mark, " ");
+    }
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let is = |w: &str, t: &str| w.eq_ignore_ascii_case(t);
+    let kept: Vec<&str> = words
+        .iter()
+        .enumerate()
+        .filter(|&(i, w)| {
+            let before_processor = words.get(i + 1).is_some_and(|n| is(n, "processor"));
+            !(is(w, "cpu")
+                || is(w, "processor")
+                || before_processor && w.to_ascii_lowercase().ends_with("-core"))
+        })
+        .map(|(_, w)| *w)
+        .collect();
+    if kept.is_empty() {
+        raw.trim().to_string()
+    } else {
+        kept.join(" ")
+    }
 }
 
 /// /proc/net/route → iface → default gateway (addresses are hex in network byte order).
@@ -758,6 +785,36 @@ mod tests {
     fn cpuinfo_and_routes() {
         let c = "processor\t: 0\nmodel name\t: Xeon\nphysical id\t: 0\ncore id\t: 0\n\nprocessor\t: 1\nmodel name\t: Xeon\nphysical id\t: 0\ncore id\t: 0\n\nprocessor\t: 2\nphysical id\t: 0\ncore id\t: 1\n";
         assert_eq!(parse_cpuinfo(c), ("Xeon".into(), Some(2), 3));
+        for (raw, want) in [
+            (
+                "Intel(R) Xeon(R) CPU E3-1231 v3 @ 3.40GHz",
+                "Intel Xeon E3-1231 v3 @ 3.40GHz",
+            ),
+            (
+                "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
+                "Intel Core i7-8700 @ 3.20GHz",
+            ),
+            (
+                "12th Gen Intel(R) Core(TM) i5-12400F",
+                "12th Gen Intel Core i5-12400F",
+            ),
+            ("AMD Ryzen 7 5800X 8-Core Processor", "AMD Ryzen 7 5800X"),
+            (
+                "AMD Ryzen 5 PRO 4650G with Radeon Graphics",
+                "AMD Ryzen 5 PRO 4650G with Radeon Graphics",
+            ),
+            (
+                "Pentium(R) Dual-Core  CPU      E5200  @ 2.50GHz",
+                "Pentium Dual-Core E5200 @ 2.50GHz",
+            ),
+            (
+                "Intel(R) Celeron(R) N5105 @ 2.00GHz",
+                "Intel Celeron N5105 @ 2.00GHz",
+            ),
+            ("CPU", "CPU"),
+        ] {
+            assert_eq!(clean_cpu_name(raw), want);
+        }
         // the kernel prints the network-order address read as a native u32
         let r = format!("Iface\tDestination\tGateway\tFlags\nenp3s0\t00000000\t{:08X}\t0003\nenp3s0\t0001A8C0\t00000000\t0001\n", u32::from_ne_bytes([192, 168, 1, 1]));
         assert_eq!(parse_routes(&r)["enp3s0"], "192.168.1.1");
