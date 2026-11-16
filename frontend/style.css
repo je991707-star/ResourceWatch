@@ -175,7 +175,9 @@ h3.sub .arrow:first-of-type { margin-left: 4px; }
 /* charts, bars, rings (SVG attributes: CSP forbids inline style) */
 .chart { display: block; width: 100%; height: 54px; }
 .chart.tall { height: 120px; }
-.chart .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.chart .grid-line { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .grid-line.top { stroke-dasharray: 8 4; }
+.chart .grid-line.mid { stroke-dasharray: 3 3; }
 .chart .line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .chart .area { stroke: none; opacity: .22; }
 .mirror { display: grid; grid-template-rows: 1fr 1fr; height: 72px; }

@@ -86,7 +86,8 @@ function chart(series, max, tall) {
       return `${area}<path class="line ${cls}" d="${line}"/>`; // the line keeps an all-zero series visible
     }).join('');
   });
-  const grid = [33, 66].map((g) => `<line class="grid-line" x1="0" x2="${N - 1}" y1="${g}" y2="${g}"/>`).join('');
+  // top (max) long dashes, middle (half) short dashes, bottom (zero) solid; y() maps max/half/0 to 3/51/99
+  const grid = [[3, 'top'], [51, 'mid'], [99, 'base']].map(([g, c]) => `<line class="grid-line ${c}" x1="0" x2="${N - 1}" y1="${g}" y2="${g}"/>`).join('');
   return `<svg class="chart${tall ? ' tall' : ''}" viewBox="0 0 ${N - 1} 100" preserveAspectRatio="none">${grid}${paths.join('')}</svg>`;
 }
 
