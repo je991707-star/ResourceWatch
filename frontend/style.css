@@ -277,6 +277,7 @@ th[data-sort]:hover { color: var(--text); }
 .set-row:first-of-type { border-top: 0; }
 .set-row p { margin: 0; display: flex; flex-direction: column; gap: 2px; }
 .set-row p span { color: var(--muted); font-size: 12px; }
+.set-ctl { display: flex; align-items: center; gap: 8px; }
 .seg { display: inline-flex; flex-wrap: wrap; background: var(--field); border-radius: 8px; padding: 2px; }
 .seg button { border: 0; background: none; color: var(--text); font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
 .seg button.on { background: var(--sel); font-weight: 600; }

@@ -9,7 +9,7 @@ let procs = [];
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
-const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '' };
+const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '', dev: '' };
 let prefs = { ...DEFAULTS };
 
 const $ = (s) => document.querySelector(s);
@@ -230,6 +230,7 @@ const PAGES = {
       row('更新間隔', `曲線保留最近 ${N} 筆`, seg('interval', [[500, '0.5 秒'], [1000, '1 秒'], [2000, '2 秒'], [5000, '5 秒']])),
       row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
       row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+      row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
     ].join(''))}${card('關於', `<div class="about">ResourceWatch 1.0.0 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
   }],
@@ -390,6 +391,7 @@ $('#content').addEventListener('click', (e) => {
   if (page === 'storage') return duClick(t);
   const link = t.closest('[data-goto]');
   if (link) return go(link.dataset.goto);
+  if (t.closest('[data-devtools]')) return invoke('open_devtools');
   const pref = t.closest('[data-pref]');
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');
@@ -399,6 +401,10 @@ $('#content').addEventListener('click', (e) => {
   const key = th.dataset.sort;
   sort = sort.key === key ? { key, desc: !sort.desc } : { key, desc: key === 'cpu' || key === 'mem' };
   render();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (prefs.dev && (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i'))) { e.preventDefault(); invoke('open_devtools'); }
 });
 
 async function tick() {

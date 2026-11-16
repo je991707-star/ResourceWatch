@@ -43,6 +43,12 @@ fn dir_children(path: String, cache: DirCache) -> Vec<du::Entry> {
     lock(&cache).children(&path)
 }
 
+/// Web inspector for the settings page's developer mode; the `devtools` feature keeps it in release builds.
+#[tauri::command]
+fn open_devtools(window: tauri::WebviewWindow) {
+    window.open_devtools();
+}
+
 fn main() {
     // NVIDIA proprietary driver: WebKitGTK's DMA-BUF renderer leaves the window blank on X11
     // and lags behind resizes on Wayland. Set before any thread starts.
@@ -60,7 +66,8 @@ fn main() {
             processes,
             system_info,
             scan_dir,
-            dir_children
+            dir_children,
+            open_devtools
         ])
         .run(tauri::generate_context!())
         .expect("failed to start ResourceWatch");
