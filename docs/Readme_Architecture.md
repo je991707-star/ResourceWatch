@@ -54,7 +54,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### src/sys.rs
 
-解析器都吃字串、有單元測試（`stat`、`meminfo`、`pressure`、`cpuinfo`、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`、base64）。
+解析器都吃字串、有單元測試（`stat`、`meminfo`、`cpuinfo`（含 CPU 名稱整理）、記憶體規格（udev）、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`、base64）。
 `Monitor` 保存上次的 CPU jiffies、磁碟扇區、網路位元組、各程序 ticks 與取樣時間，速率＝差值／實際經過秒數。
 
 JSON（camelCase）：
@@ -62,8 +62,8 @@ JSON（camelCase）：
 ```text
 Snapshot {
   cpu:     { usage, cores: (number|null)[], freqMhz, temp }   // %；temp 取第一個 coretemp/k10temp/zenpower/cpu_thermal 溫度
-  mem:     { total, used, available, free, cached, swapTotal, swapUsed, pressure }
-           // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable；pressure = /proc/pressure/memory some avg10（%）
+  mem:     { total, used, available, free, cached, swapTotal, swapUsed }
+           // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable
   gpus:    [{ name, usage, memUsed, memTotal, temp, encoder, decoder }] // encoder/decoder：NVENC／NVDEC 使用率 %，非 NVIDIA 為 null
   disks:   [{ name, model, size, readBps, writeBps, used, total, mounts }]
            // 只列有 /sys/block/<n>/device、容量 > 0、不是光碟機（sr*）的實體磁碟；used/total/mounts 為掛載在這顆硬碟上的檔案系統加總（沒有掛載時 used/total 為 null）
@@ -74,10 +74,11 @@ Snapshot {
   uptime                                                         // 秒
 }
 Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
-SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home, osId, logo }
+SystemInfo { hostname, os, kernel, model, cpuModel, cpuCores, cpuThreads, home, osId, logo, memSpec }
 ```
 
 - CPU：`/proc/stat` 前 8 欄（guest 已含在 user）加總為 total，idle＋iowait 為閒置；第一列為整體，其餘為各執行緒。頻率為 `/proc/cpuinfo` 各 `cpu MHz` 平均。型號（`cpuModel`）經 `clean_cpu_name` 整理：移除 `(R)`／`(TM)`／`®`／`™`、獨立的 `CPU`／`Processor` 字樣，以及緊接在 `Processor` 前的 `N-Core`（AMD）；品牌、系列、型號與 `@ 頻率` 保留，例如 `Intel(R) Xeon(R) CPU E3-1231 v3 @ 3.40GHz` → `Intel Xeon E3-1231 v3 @ 3.40GHz`、`AMD Ryzen 7 5800X 8-Core Processor` → `AMD Ryzen 7 5800X`。
+- 記憶體規格（`memSpec`）：SMBIOS 原始表只有 root 可讀，改讀 systemd-udev 的 `/run/udev/data/+dmi:id`（`E:MEMORY_DEVICE_<n>_SIZE／TYPE／CONFIGURED_SPEED_MTS／SPEED_MTS`）。容量加總為 GB（整數不帶小數），類型取第一條非 Unknown，速度取各條實際運作速度的最小值（沒有時用額定速度），例如 `16 GB DDR3 1600`；沒有任何記憶體條資料（虛擬機）時為 `null`。
   `cpuCores`＝`(physical id, core id)` 不重複組數（讀不到為 `null`），`cpuThreads`＝`processor` 數。
 - 機型：DMI `product_name`；空的或是佔位字串（`To be filled by O.E.M.`、`System Product Name`、`Default string`）時改用 `board_vendor board_name`。
 - 網路：IPv4 由 `getifaddrs` 取得；閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。
@@ -120,19 +121,19 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
 - 圖示一律是 Font Awesome 字型（`.i` 固定 20 px 寬、置中），不再有自繪 SVG 圖示。
 - 色彩 token 在 `:root`（淺色）與 `:root[data-theme="dark"]`（深色）；主題的「跟隨系統」由 app.js 換算成 `data-theme`，CSS 只有兩套值。
   深色為中性灰：主區 `#262627`、側欄 `#2f2f31`、卡片 `#353537`（圓角 16、無邊框、無透明、無模糊）。
-- 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／CPU 曲線藍、上傳／讀取桃紅、下載／寫入藍、可用綠、CPU 環洋紅、顯示卡環青、記憶體壓力橘、交換灰。
+- 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／CPU 曲線藍、上傳／讀取桃紅、下載／寫入藍、可用綠、CPU 環洋紅、顯示卡環青、SWAP 灰。
 - 卡片內間距：卡片內距 20／22（上／其他）、標題下 18、分區（`.sect` 分隔線）上下各 18、區塊之間 16（圖表後的 `.foot`、`.addr` 與速率、GPU 各列）、同一區塊的行距 10（`.kv`、`.legend`、環下數值；標籤與數值間 2）、小標題 `.cap` 下 8、表格儲存格 6；卡片之間 24；卡片內一般表格首尾欄不留左右內距，與卡片文字對齊（`.zebra`、`.files` 除外）。
 - 版面：側欄 220 px（收合 68 px，只留圖示）；收合鈕展開時靠左（左移 3 px 對齊選單圖示），收合時置中；儀表板用 CSS 多欄（`columns: 3 330px`）做瀑布流，卡片 `break-inside: avoid`；其他頁用 `.stack`（直向）或 `.grid`。
 - 儲存頁：`.levels` 左欄資料夾名稱、右欄色塊條 `.strip`；色塊顏色 `.s0`–`.s9` 依大小（100 MB 綠 → 50 GB 以上紅），選取的色塊有黃色內框。右側 `.files` 清單。
 
 ### app.js
 
-- 每秒 `snapshot` → `record` 把 CPU、記憶體壓力、各 GPU、磁碟讀寫總和、各網卡上下行存入 60 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
+- 每秒 `snapshot` → `record` 把 CPU、各 GPU、磁碟讀寫總和、各網卡上下行存入 60 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
   儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
 - 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5，應用程式頁最多 300 列、點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
 - 頁面（`PAGES`）：
   - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈第一張顯示卡使用率，環下標註記憶體總量／處理器／顯示卡（圓環上方留 20px、與下方數值相隔 32px）；記憶體組成、CPU 型號／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
-    處理器（各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（堆疊條、組成與交換、壓力曲線（上限取近期峰值、至少 10%）、前 5 程序）、網路（頂端一列：網卡圖示（`wl*` 用 Wi-Fi，其餘乙太網路）與名稱、‹ › 切換鈕（`dashNic` 記住所選介面名稱，未選時用 `primaryNet`，即設定中的儀表板網路卡；改設定時清除），靠右為累計流量與重設鈕。重設時把該介面當下的 `rxTotal`／`txTotal` 存成起點（`localStorage` `rw-netbase`），累計顯示與起點的差；計數器小於起點（重開機歸零）時起點視為失效、顯示原值；其下 `flow`：兩欄大字速率（數字左側為顏色圓點，下方依序為標籤與近 120 筆峰值）、對稱條狀圖）、
+    處理器（各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（標題右側為 `memSpec`，讀不到時為系統可用總量；堆疊條、組成與 SWAP（數值不換行）、前 5 程序）、網路（頂端一列：網卡圖示（`wl*` 用 Wi-Fi，其餘乙太網路）與名稱、‹ › 切換鈕（`dashNic` 記住所選介面名稱，未選時用 `primaryNet`，即設定中的儀表板網路卡；改設定時清除），靠右為累計流量與重設鈕。重設時把該介面當下的 `rxTotal`／`txTotal` 存成起點（`localStorage` `rw-netbase`），累計顯示與起點的差；計數器小於起點（重開機歸零）時起點視為失效、顯示原值；其下 `flow`：兩欄大字速率（數字左側為顏色圓點，下方依序為標籤與近 120 筆峰值）、對稱條狀圖）、
     磁碟（檔案系統用量條）、顯示卡、磁碟 I/O（`flow`：讀取在上、寫入在下，版面同網路卡）、感測器（前 8 筆）。「顯示應用程式…」「顯示更多…」以 `data-goto` 切頁。
   - 主機列：左側為發行版 logo（`SystemInfo.logo`）；沒有 logo 檔時依 `osId` 用 Font Awesome 品牌圖示（fedora、ubuntu、debian、redhat、centos、suse），其餘用 `fa-linux`。
   - 摘要的硬碟區與磁碟卡片以實體硬碟為單位，顯示型號（NVMe 型號的 `_` 換成空格；沒有型號時用裝置名稱）與其上檔案系統的用量；未掛載的硬碟顯示「未掛載 · 容量」，滑鼠提示有裝置名稱與掛載點。
@@ -143,7 +144,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 感測器：依晶片分組。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
-- 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線，`solid` 為實心面積；面積上一律再畫一條線，0 的位置在 y=99，全為 0 的序列（例如沒有記憶體壓力時）仍看得到底線）、
+- 繪圖：`chart`（SVG `viewBox 0 0 59 100`、`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線；半透明面積上再畫一條線，0 的位置在 y=99，全為 0 的序列仍看得到底線）、
   `mirror`（上下對稱條狀圖：中線以上為上傳／讀取（桃紅）、以下為下載／寫入（藍），上下各自依近期最大值縮放，0 畫成中線上的短條；以 HTML flex 排 120 根長條（間隔 1 px、外側端點 2 px 圓角：上半部圓在頂端、下半部圓在底端），高度以 `data-h` 經 CSSOM 設定，不用 SVG 以免圓角被拉伸變形；用於 `flow` 與網路頁）、`bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時反向繪製，讓前一段的圓頭疊在下一段上）。
 - 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`、`dev`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。

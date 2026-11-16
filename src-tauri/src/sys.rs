@@ -50,8 +50,6 @@ struct Mem {
     cached: u64,
     swap_total: u64,
     swap_used: u64,
-    /// /proc/pressure/memory `some avg10` (%).
-    pressure: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -120,6 +118,8 @@ pub struct SystemInfo {
     home: String,
     os_id: String,
     logo: Option<String>,
+    /// Installed RAM from SMBIOS, e.g. "16 GB DDR3 1600"; None when udev has no memory devices (VMs).
+    mem_spec: Option<String>,
 }
 
 pub fn system_info() -> SystemInfo {
@@ -161,7 +161,51 @@ pub fn system_info() -> SystemInfo {
         home: std::env::var("HOME").unwrap_or_else(|_| "/".into()),
         os_id: field("ID"),
         logo: distro_logo(&field("LOGO")),
+        mem_spec: parse_mem_spec(&read("/run/udev/data/+dmi:id")),
     }
+}
+
+/// systemd-udev's world-readable copy of SMBIOS type 17 (`E:MEMORY_DEVICE_<n>_<KEY>=<v>`; the raw DMI
+/// tables are root-only) → "<total> GB <type> <speed>". Speed is the slowest configured speed (what mixed
+/// modules actually run at), else the slowest rated one.
+fn parse_mem_spec(text: &str) -> Option<String> {
+    let (mut size, mut kind) = (0u64, None);
+    let (mut conf, mut rated) = (None::<u64>, None::<u64>);
+    let min = |slot: &mut Option<u64>, v: &str| {
+        if let Ok(mts) = v.parse::<u64>() {
+            *slot = Some(slot.map_or(mts, |s| s.min(mts)));
+        }
+    };
+    for (k, v) in text
+        .lines()
+        .filter_map(|l| l.strip_prefix("E:MEMORY_DEVICE_")?.split_once('='))
+    {
+        let key = k.split_once('_').map_or(k, |(_, key)| key);
+        match key {
+            "SIZE" => size += v.parse::<u64>().unwrap_or(0),
+            "TYPE" if kind.is_none() && v != "Unknown" => kind = Some(v),
+            "CONFIGURED_SPEED_MTS" => min(&mut conf, v),
+            "SPEED_MTS" => min(&mut rated, v),
+            _ => {}
+        }
+    }
+    if size == 0 {
+        return None;
+    }
+    let speed = conf.or(rated); // older SMBIOS has no configured speed
+    let gb = size as f64 / (1u64 << 30) as f64;
+    let mut out = if gb.fract() == 0.0 {
+        format!("{gb:.0} GB")
+    } else {
+        format!("{gb:.1} GB")
+    };
+    for part in [kind.map(str::to_string), speed.map(|s| s.to_string())]
+        .into_iter()
+        .flatten()
+    {
+        out += &format!(" {part}");
+    }
+    Some(out)
 }
 
 /// os-release `LOGO` (an icon name) → data: URL. The page's CSP only allows 'self' and data: images,
@@ -334,16 +378,6 @@ fn ipv4_addrs() -> HashMap<String, String> {
     out
 }
 
-/// `some avg10=1.23 ...` → 1.23
-fn parse_pressure(text: &str) -> Option<f64> {
-    text.lines()
-        .find(|l| l.starts_with("some"))?
-        .split_whitespace()
-        .find_map(|f| f.strip_prefix("avg10="))?
-        .parse()
-        .ok()
-}
-
 /// `cpu`/`cpuN` lines of /proc/stat → (total, idle) jiffies; first entry is the aggregate.
 fn parse_stat(text: &str) -> Vec<(u64, u64)> {
     text.lines()
@@ -387,7 +421,6 @@ fn parse_meminfo(text: &str) -> Mem {
         cached: g("Buffers") + g("Cached") + g("SReclaimable"),
         swap_total: g("SwapTotal"),
         swap_used: g("SwapTotal").saturating_sub(g("SwapFree")),
-        pressure: None,
     }
 }
 
@@ -682,10 +715,7 @@ impl Monitor {
                     .then(|| freqs.iter().sum::<f64>() / freqs.len() as f64),
                 temp,
             },
-            mem: Mem {
-                pressure: parse_pressure(&read("/proc/pressure/memory")),
-                ..parse_meminfo(&read("/proc/meminfo"))
-            },
+            mem: parse_meminfo(&read("/proc/meminfo")),
             gpus: self.gpus.sample(),
             disks,
             mounts,
@@ -766,11 +796,16 @@ mod tests {
                 cached: 256000,
                 swap_total: 512000,
                 swap_used: 102400,
-                pressure: None,
             }
         );
-        let p = "some avg10=1.50 avg60=0.20 avg300=0.00 total=1\nfull avg10=0.10 avg60=0.00 avg300=0.00 total=1\n";
-        assert_eq!(parse_pressure(p), Some(1.5));
+        let udev = "E:MEMORY_ARRAY_MAX_CAPACITY=34359738368\nE:MEMORY_DEVICE_0_SIZE=4294967296\nE:MEMORY_DEVICE_0_TYPE=DDR3\nE:MEMORY_DEVICE_0_SPEED_MTS=1600\nE:MEMORY_DEVICE_0_CONFIGURED_SPEED_MTS=1600\nE:MEMORY_DEVICE_1_SIZE=12884901888\nE:MEMORY_DEVICE_1_TYPE=DDR3\nE:MEMORY_DEVICE_1_SPEED_MTS=1600\nE:MEMORY_DEVICE_1_CONFIGURED_SPEED_MTS=1333\n";
+        assert_eq!(parse_mem_spec(udev).as_deref(), Some("16 GB DDR3 1333"));
+        assert_eq!(
+            parse_mem_spec("E:MEMORY_DEVICE_0_SIZE=1610612736\nE:MEMORY_DEVICE_0_SPEED_MTS=2400\n")
+                .as_deref(),
+            Some("1.5 GB 2400")
+        );
+        assert_eq!(parse_mem_spec("E:MEMORY_ARRAY_LOCATION=x\n"), None);
     }
 
     #[test]

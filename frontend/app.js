@@ -71,18 +71,18 @@ function bar(segs, thick) {
   return `<svg class="bar${thick ? ' thick' : ''}" viewBox="0 0 100 12" preserveAspectRatio="none"><rect class="track" width="100" height="12"/>${rects}</svg>`;
 }
 
-// series: [{ data, cls, solid }]; max fixed (percent) or auto from data. Line on top of a translucent or (solid) opaque area.
+// series: [{ data, cls }]; max fixed (percent) or auto from data. Line on top of a translucent area.
 function chart(series, max, tall) {
   series = series.map((s) => ({ ...s, data: (s.data ?? []).slice(-N) }));
   max = max ?? Math.max(1, ...series.flatMap((s) => (s.data ?? []).filter((v) => v != null))) * 1.15;
   const y = (v) => (99 - (Math.min(v, max) / max) * 96).toFixed(1); // 0 sits just above the edge so its line stays visible
-  const paths = series.map(({ data = [], cls, solid }) => {
+  const paths = series.map(({ data = [], cls }) => {
     const off = N - data.length;
     const runs = [[]];
     data.forEach((v, i) => (v == null ? runs.push([]) : runs.at(-1).push([off + i, y(v)])));
     return runs.filter((r) => r.length).map((r) => {
       const line = r.map(([x, yy], i) => `${i ? 'L' : 'M'}${x} ${yy}`).join('');
-      const area = `<path class="${solid ? 'solid' : 'area'} ${cls}" d="${line}L${r.at(-1)[0]} 100L${r[0][0]} 100Z"/>`;
+      const area = `<path class="area ${cls}" d="${line}L${r.at(-1)[0]} 100L${r[0][0]} 100Z"/>`;
       return `${area}<path class="line ${cls}" d="${line}"/>`; // the line keeps an all-zero series visible
     }).join('');
   });
@@ -135,7 +135,6 @@ const topProcs = (key, n) => [...procs].filter((p) => p[key] != null).sort((a, b
 
 function record(s) {
   push('cpu', s.cpu.usage);
-  push('pressure', s.mem.pressure);
   s.gpus.forEach((g, i) => push(`gpu${i}`, g.usage));
   push('diskR', sum(s.disks.map((d) => d.readBps)));
   push('diskW', sum(s.disks.map((d) => d.writeBps)));
@@ -173,12 +172,11 @@ function cpuCard(s) {
 
 function memCard(s) {
   const m = s.mem, parts = memParts(m);
-  const peak = Math.max(10, ...(hist.pressure ?? []).filter((v) => v != null));
   const rows = topProcs('mem', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
+  const spec = `<i class="spacer"></i><span class="spec">${esc(info?.memSpec ?? bytes(m.total))}</span>`;
   return card('記憶體', `${bar(parts.map(([cls, , v]) => [ratio(v, m.total), cls]), true)}
-    <div class="sect">${legend([...parts.map(([cls, k, v]) => [cls, k, bytes(v)]), ['c-gray', '交換', `${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`]])}</div>
-    <div class="sect">${cap('壓力', m.pressure == null ? '--' : `${m.pressure.toFixed(1)}%`)}${chart([{ data: hist.pressure, cls: 'c-orange', solid: true }], peak)}</div>
-    <div class="sect"><table><tr><th>名稱</th><th class="num">記憶體</th></tr>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
+    <div class="sect">${legend([...parts.map(([cls, k, v]) => [cls, k, bytes(v)]), ['c-gray', 'SWAP', `${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`]])}</div>
+    <div class="sect"><table><tr><th>名稱</th><th class="num">記憶體</th></tr>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
 }
 
 function addrBlock(n) {

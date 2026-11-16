@@ -17,7 +17,6 @@
   --gray: #9a9aa0;
   --magenta: #c84fe0;
   --cyan: #14b8b0;
-  --orange: #d9772b;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -38,7 +37,6 @@
   --gray: #8e8e93;
   --magenta: #d65ef0;
   --cyan: #2fd6c8;
-  --orange: #e8893f;
   color-scheme: dark;
 }
 
@@ -127,6 +125,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .stack { display: grid; gap: 22px; }
 .card h2 { margin: 0 0 18px; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
 .card h2 .spacer { flex: 1; }
+.card h2 .spec { font-size: 13px; font-weight: 500; color: var(--muted); }
 .empty { color: var(--muted); text-align: center; padding: 6px 0; }
 .more { display: inline-block; margin-top: 14px; color: var(--text); font-size: 14px; cursor: pointer; }
 .more:hover { color: var(--blue); }
@@ -157,10 +156,10 @@ h3.sub .arrow:first-of-type { margin-left: 4px; }
 
 /* legends */
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 10px 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .legend div { display: flex; flex-direction: column; gap: 2px; }
 .legend span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.legend b { font-weight: 500; padding-left: 14px; }
+.legend b { font-weight: 500; padding-left: 14px; white-space: nowrap; }
 
 /* summary */
 .summary { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 24px; }
@@ -179,7 +178,6 @@ h3.sub .arrow:first-of-type { margin-left: 4px; }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .chart .line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .chart .area { stroke: none; opacity: .22; }
-.chart .solid { stroke: none; opacity: .65; }
 .mirror { display: grid; grid-template-rows: 1fr 1fr; height: 72px; }
 .mirror.tall { height: 120px; }
 .mirror .half { display: flex; gap: 1px; align-items: flex-start; }
@@ -204,7 +202,6 @@ h3.sub .arrow:first-of-type { margin-left: 4px; }
 .c-gray { stroke: var(--gray); fill: var(--gray); background: var(--gray); }
 .c-magenta { stroke: var(--magenta); fill: var(--magenta); background: var(--magenta); }
 .c-cyan { stroke: var(--cyan); fill: var(--cyan); background: var(--cyan); }
-.c-orange { stroke: var(--orange); fill: var(--orange); background: var(--orange); }
 
 /* rows and tables */
 table { width: 100%; border-collapse: collapse; }
