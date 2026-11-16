@@ -11,6 +11,11 @@ let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
 let dashNic = null; // network card ‹ › choice (interface name); null → primaryNet
+// Network card totals restart from a saved baseline per interface; kernel counters reset on reboot, so a
+// baseline above the current counter is stale and ignored.
+let netBase = {};
+try { netBase = JSON.parse(store('rw-netbase') || '{}'); } catch { /* corrupt → none */ }
+const sinceBase = (n, k) => { const b = netBase[n.name]?.[k] ?? 0; return n[k] >= b ? n[k] - b : n[k]; };
 const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '', dev: '' };
 let prefs = { ...DEFAULTS };
 
@@ -48,7 +53,7 @@ const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
-  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right',
+  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', reset: 'fa-solid fa-rotate-left',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -195,7 +200,8 @@ function netCard(s) {
   if (!n) return card('網路', '<div class="empty">沒有實體網路介面</div>');
   const i = s.net.indexOf(n), step = (d) => s.net[i + d]?.name;
   const arrow = (d, t) => `<button class="arrow" data-nic="${esc(step(d) ?? '')}"${step(d) ? '' : ' disabled'}>${t}</button>`;
-  return card('網路', `<h3 class="sub">${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}<span class="muted sm">累計 ↑ ${bytes(n.txTotal)} · ↓ ${bytes(n.rxTotal)}</span><i class="spacer"></i>${arrow(-1, '‹')}${arrow(1, '›')}</h3>
+  return card('網路', `<h3 class="sub">${icon(n.name.startsWith('wl') ? 'wifi' : 'eth')}${esc(n.name)}${arrow(-1, '‹')}${arrow(1, '›')}<i class="spacer"></i>
+      <span class="muted sm">累計 ↑ ${bytes(sinceBase(n, 'txTotal'))} · ↓ ${bytes(sinceBase(n, 'rxTotal'))}</span><button class="arrow reset" data-netreset="${esc(n.name)}" title="重設累計">${icon('reset')}</button></h3>
     ${flow(['上傳', `tx:${n.name}`], ['下載', `rx:${n.name}`])}`);
 }
 
@@ -423,6 +429,12 @@ $('#content').addEventListener('click', (e) => {
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');
   if (flip) { sumDisk += +flip.dataset.disk; return render(); }
+  const nr = t.closest('[data-netreset]');
+  if (nr) {
+    const n = snap?.net.find((x) => x.name === nr.dataset.netreset);
+    if (n) { netBase[n.name] = { rxTotal: n.rxTotal, txTotal: n.txTotal }; store('rw-netbase', JSON.stringify(netBase)); }
+    return render();
+  }
   const nic = t.closest('[data-nic]');
   if (nic) { dashNic = nic.dataset.nic; return render(); }
   const th = t.closest('th[data-sort]');
