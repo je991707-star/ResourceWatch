@@ -1,5 +1,6 @@
 mod du;
 mod gpu;
+mod icons;
 mod sys;
 
 use std::sync::Mutex;
@@ -36,6 +37,23 @@ async fn scan_dir(path: String, cache: DirCache<'_>) -> Result<du::Scan, String>
         .map_err(|e| e.to_string())??;
     *lock(&cache) = c;
     Ok(scan)
+}
+
+/// Process names → app icon data: URLs (None: no match). The first call builds the icon index, so it
+/// runs on a blocking thread.
+#[tauri::command]
+async fn app_icons(names: Vec<String>) -> std::collections::HashMap<String, Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        names
+            .into_iter()
+            .map(|n| {
+                let icon = icons::lookup(&n);
+                (n, icon)
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -130,6 +148,7 @@ fn main() {
             system_info,
             scan_dir,
             dir_children,
+            app_icons,
             open_devtools,
             set_dev_mode
         ])

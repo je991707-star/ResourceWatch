@@ -3,12 +3,12 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。修改任何程式時，請把變更寫入對應章節。
 
 Rust + Tauri 2 單一程式：後端只負責讀 `/proc`、`/sys`（以及資料夾掃描）並回傳 JSON；前端（無打包工具、無 npm 依賴的 HTML／CSS／JS）輪詢、保存歷史、繪圖。
-沒有常駐背景執行緒、沒有設定檔、不啟動外部程序、不連網路。缺值一律為 JSON `null`，前端顯示 `--`。
+沒有常駐背景執行緒、沒有設定檔、不連網路；外部程序只有啟動時讀桌面環境版本的一次 `<shell> --version`。缺值一律為 JSON `null`，前端顯示 `--`。
 
 ```text
 frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
                ── 儀表板／應用程式頁每 2 秒 invoke("processes") │
-               ── 啟動時 invoke("system_info")                 ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
+               ── 啟動時 invoke("system_info")；新程序名 invoke("app_icons") ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
                ── 儲存頁 invoke("scan_dir") / ("dir_children") │                         ├─ Gpus（gpu.rs：NVML／DRM sysfs）
                ── 「選擇資料夾…」invoke("plugin:dialog|open")   ─┘                         └─ Mutex<du::Cache>（du.rs：資料夾大小）
 ```
@@ -43,7 +43,8 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | --- | --- | --- |
 | `snapshot` | `Snapshot` | 一次取樣；速率類欄位第一次呼叫為 `null` |
 | `processes` | `Proc[]` | 掃描所有程序；第一次呼叫 `cpu` 為 `null` |
-| `system_info` | `SystemInfo` | 不變的資料（主機、機型、CPU、家目錄、發行版 logo） |
+| `system_info` | `SystemInfo` | 不變的資料（主機、發行版、桌面環境、CPU、記憶體規格、家目錄、發行版 logo） |
+| `app_icons(names)` | `{ 名稱: data URL 或 null }` | 程序名稱 → 應用圖示（`icons.rs`）；第一次呼叫要建立索引，所以在 `spawn_blocking` 執行緒執行 |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
 | `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時攔截 inspector 的 `attach` 訊號並回傳 `true` 取消嵌入 App，改由 `inspector_window` 把檢查器的 view 放進自建的 GTK 視窗「ResourceWatch 檢查器」；已開啟時只把視窗帶到前面，關閉視窗會一併關閉檢查器，反之亦然；`tauri` 啟用 `devtools` feature，release 版也可用） |
@@ -100,6 +101,14 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - `children(dir)` → `Entry { name, path, size, dir }[]`，大到小、同大小依名稱；資料夾大小取自快取（不在快取內為 0），檔案即時讀 metadata。
 - 單元測試在暫存目錄建立樹（含符號連結）驗證大小、排序、項目數與路徑驗證。
 
+### src/icons.rs
+
+程序名稱（kernel comm，最多 15 字）→ 應用圖示的 data URL（頁面 CSP 只允許 data: 圖片）。
+
+- 索引在第一次 `lookup` 時建立一次（`OnceLock`），依序走 XDG 資料目錄：`~/.local/share`、使用者 flatpak exports、`XDG_DATA_DIRS`（沒有時 `/usr/local/share:/usr/share`）、`/var/lib/flatpak/exports/share`；同一個鍵先找到的優先（使用者的 .desktop 蓋過系統的）。
+- `.desktop`：只讀 `[Desktop Entry]` 區段的 `Exec`／`Icon`／`StartupWMClass`（`desktop_keys`）。比對鍵（小寫）：檔名、檔名最後一段（`dev.lizardbyte.app.Sunshine` → `sunshine`）、`StartupWMClass`、`Exec` 的程式名（`exec_program`：略過 `env` 與其 `VAR=值`／選項；`systemctl`、`flatpak`、`sh`、`gio` 等啟動器不當鍵，以免所有同名程序都配到別人的圖示）。超過 15 字的鍵另存截斷版，對應被截斷的 comm。
+- 圖示檔：各資料目錄的 `icons/{hicolor,breeze,Adwaita}`（深度 3）與 `pixmaps`，只收 svg／png，以檔名為鍵。`Icon` 為絕對路徑時直接讀；`-symbolic` 單色圖示先找同名彩色版。多個候選時 SVG 優先，否則取至少 32 px 中最小的 PNG，都沒有時取最大的（`best`）。檔案超過 512 KB 不用。
+
 ### src/gpu.rs
 
 - NVIDIA：`libnvidia-ml.so.1` 以 `libloading` 載入、`nvmlInit_v2` 只呼叫一次；每次取樣依索引取 handle，讀名稱、使用率、記憶體（v1 `used`）、溫度、編碼／解碼使用率（`nvmlDeviceGetEncoder/DecoderUtilization`，舊驅動沒有這兩個符號時為 `null`），任一呼叫失敗該欄為 `null`。函式指標與 `Library` 同生命週期（`_lib` 欄位）。
@@ -124,6 +133,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   深色為中性灰：主區 `#262627`、側欄 `#2f2f31`、卡片 `#353537`（圓角 16、無邊框、無透明、無模糊）。
 - 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／CPU 曲線藍、上傳／讀取桃紅、下載／寫入藍、可用綠、CPU 環洋紅、顯示卡環青、SWAP 灰。
 - 卡片內間距：卡片內距 20／22（上／其他）、標題下 18、分區（`.sect` 分隔線）上下各 18、區塊之間 16（圖表後的 `.foot`、`.addr` 與速率、GPU 各列）、同一區塊的行距 10（`.kv`、`.legend`、環下數值；標籤與數值間 2）、小標題 `.cap`（無底線）下 8、表格儲存格 6；卡片之間 24；卡片內一般表格首尾欄不留左右內距，與卡片文字對齊（`.zebra`、`.files` 除外）。
+- 斑馬紋 `.zebra`：只替資料列上色（`tbody` 的奇數列，標題列放在 `<thead>`），所以有無標題列的清單都從第一列資料開始深色；標題儲存格左右內距與資料列同為 10。程序圖示 `.app-ic` 18 px，接在名稱前。
 - 版面：側欄 220 px（收合 68 px，只留圖示）；收合鈕展開時靠左（左移 3 px 對齊選單圖示），收合時置中；儀表板用 CSS 多欄（`columns: 3 330px`）做瀑布流，卡片 `break-inside: avoid`；其他頁用 `.stack`（直向）或 `.grid`。
 - 儲存頁：`.levels` 左欄資料夾名稱、右欄色塊條 `.strip`；色塊顏色 `.s0`–`.s9` 依大小（100 MB 綠 → 50 GB 以上紅），選取的色塊有黃色內框。右側 `.files` 清單。
 
@@ -131,7 +141,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
 
 - 每秒 `snapshot` → `record` 把 CPU、各 GPU、各磁碟讀寫（`r:`／`w:` + 裝置名）、各網卡上下行存入 120 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
   儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
-- 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5，應用程式頁最多 300 列、點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
+- 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5（每列前有應用圖示：`loadIcons` 只對還沒查過的名稱呼叫 `app_icons`，結果存在 `appIcons`，查詢中或找不到時用通用圖示 `fa-window-maximize`；兩個清單都是斑馬紋），應用程式頁最多 300 列、點欄位標題排序（CPU／記憶體預設降冪，缺值永遠排最後）。
 - 頁面（`PAGES`）：
   - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈第一張顯示卡使用率，環下標註記憶體總量／處理器／顯示卡（圓環上方留 20px、與下方數值相隔 32px）；記憶體組成、CPU 型號（去掉 `@ 頻率`）／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
     處理器（標題下一列為晶片圖示與完整 CPU 型號，過長截斷；各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（標題右側為 `memSpec`，讀不到時為系統可用總量；堆疊條、組成與 SWAP（數值不換行）、前 5 程序）、網路（頂端一列：網卡圖示（`wl*` 用 Wi-Fi，其餘乙太網路）與名稱、‹ › 切換鈕（`pick.nic` 記住所選介面名稱，未選時用 `primaryNet`，即設定中的儀表板網路卡；改設定時清除）。網路、顯示卡、磁碟 I/O 的 ‹ › 都由 `flipper(kind, keys, i)` 產生，點擊時把相鄰項的鍵存進 `pick[kind]`（`nic`／`gpu` 索引／`io` 裝置名），靠右為累計流量與重設鈕。重設時把該介面當下的 `rxTotal`／`txTotal` 存成起點（`localStorage` `rw-netbase`），累計顯示與起點的差；計數器小於起點（重開機歸零）時起點視為失效、顯示原值；其下 `flow`：兩欄大字速率（數字左側為顏色圓點，下方依序為標籤與近 120 筆峰值）、對稱條狀圖）、

@@ -53,7 +53,7 @@ const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
-  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', reset: 'fa-solid fa-rotate-left',
+  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -132,6 +132,20 @@ function memParts(m) {
 }
 const primaryNet = (s) => s.net.find((n) => n.name === prefs.nic) ?? s.net.find((n) => n.gateway) ?? s.net.find((n) => n.up) ?? s.net[0];
 const diskName = (d) => (d.model || d.name).replace(/_/g, ' '); // NVMe models use _ for spaces
+// Process name → icon data: URL; null while loading or when no app matches (generic glyph then).
+const appIcons = {};
+const appIcon = (name) => (appIcons[name] ? `<img class="app-ic" src="${esc(appIcons[name])}" alt="">` : icon('app', 'app-ic'));
+async function loadIcons(names) {
+  const missing = [...new Set(names)].filter((n) => !(n in appIcons));
+  if (!missing.length) return;
+  missing.forEach((n) => { appIcons[n] = null; });
+  try {
+    Object.assign(appIcons, await invoke('app_icons', { names: missing }));
+    if (page === 'dash') render();
+  } catch (e) {
+    console.error(e);
+  }
+}
 const topProcs = (key, n) => [...procs].filter((p) => p[key] != null).sort((a, b) => b[key] - a[key]).slice(0, n);
 
 function record(s) {
@@ -165,19 +179,19 @@ function summaryCard(s) {
 
 function cpuCard(s) {
   const cores = `<div class="cores">${s.cpu.cores.map((v) => `<i data-h="${Math.max(v ?? 0, 3).toFixed(1)}"></i>`).join('')}</div>`;
-  const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
+  const rows = topProcs('cpu', 5).map((p) => `<tr><td class="grow">${appIcon(p.name)}${esc(p.name)}</td><td class="num">${p.cpu.toFixed(1)}%</td></tr>`).join('');
   return card('處理器', `<h3 class="sub">${icon('gpu')}<span class="ell" title="${esc(info?.cpuModel || '')}">${esc(info?.cpuModel || '--')}</span></h3>
     <div class="cpu-row"><div>${cap('核心', '')}${cores}</div><div>${cap(pct(s.cpu.usage), `${temp(s.cpu.temp)} · ${s.cpu.freqMhz ? (s.cpu.freqMhz / 1000).toFixed(2) + ' GHz' : '--'}`)}${chart([{ data: hist.cpu, cls: 'c-blue' }], 100)}</div></div>
-    <div class="sect"><table>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
+    <div class="sect"><table class="zebra">${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`);
 }
 
 function memCard(s) {
   const m = s.mem, parts = memParts(m);
-  const rows = topProcs('mem', 5).map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
+  const rows = topProcs('mem', 5).map((p) => `<tr><td class="grow">${appIcon(p.name)}${esc(p.name)}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
   const spec = `<i class="spacer"></i><span class="spec">${esc(info?.memSpec ?? bytes(m.total))}</span>`;
   return card('記憶體', `${bar(parts.map(([cls, , v]) => [ratio(v, m.total), cls]), true)}
     <div class="sect">${legend([...parts.map(([cls, k, v]) => [cls, k, bytes(v)]), ['c-gray', 'SWAP', `${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`]])}</div>
-    <div class="sect"><table><tr><th>名稱</th><th class="num">記憶體</th></tr>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
+    <div class="sect"><table class="zebra"><thead><tr><th>名稱</th><th class="num">記憶體</th></tr></thead>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
 }
 
 function addrBlock(n) {
@@ -252,7 +266,7 @@ const PAGES = {
     }).slice(0, 300);
     const th = (key, t, cls = '') => `<th class="${cls}" data-sort="${key}">${t}${sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : ''}</th>`;
     const rows = list.map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.pid}</td><td class="num">${p.cpu == null ? '--' : p.cpu.toFixed(1) + '%'}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
-    return card(`共 ${procs.length} 個程序`, `<table class="zebra"><tr>${th('name', '名稱')}${th('pid', 'PID', 'num')}${th('cpu', 'CPU', 'num')}${th('mem', '記憶體', 'num')}</tr>${rows}</table>`);
+    return card(`共 ${procs.length} 個程序`, `<table class="zebra"><thead><tr>${th('name', '名稱')}${th('pid', 'PID', 'num')}${th('cpu', 'CPU', 'num')}${th('mem', '記憶體', 'num')}</tr></thead>${rows}</table>`);
   }],
 
   storage: ['儲存', () => storagePage()],
@@ -317,7 +331,7 @@ function storagePage() {
   const scale = `<div class="scale"><div>${SIZE_STEPS.concat(0).map((_, i) => `<i class="s${i}"></i>`).join('')}</div><p><span>100 MB</span><span>1 GB</span><span>50 GB</span></p></div>`;
   return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}<div class="du">
     <section class="card"><div class="levels">${rows}</div>${scale}</section>
-    <section class="card"><table class="zebra files"><tr><th>名稱</th><th class="num">大小</th></tr>${files || '<tr><td class="muted">空資料夾</td></tr>'}</table></section></div>`;
+    <section class="card"><table class="zebra files"><thead><tr><th>名稱</th><th class="num">大小</th></tr></thead>${files || '<tr><td class="muted">空資料夾</td></tr>'}</table></section></div>`;
 }
 
 async function duOpen(path, name, depth) {
@@ -480,6 +494,7 @@ async function pollProcs() {
   if ((page !== 'dash' && page !== 'apps') || document.hidden || paused) return;
   try {
     procs = await invoke('processes');
+    loadIcons([...topProcs('cpu', 5), ...topProcs('mem', 5)].map((p) => p.name));
     if (page === 'apps') render();
   } catch (e) {
     console.error(e);
