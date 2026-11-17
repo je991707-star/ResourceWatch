@@ -92,7 +92,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
   優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
-- 感測器：`/sys/class/hwmon/*` 的檔案經 `hwmon_kind` 分類：`tempN_input`（m°C）、`fanN_input`（RPM）、`inN_input`（mV → V）、`powerN_input`／`powerN_average`（µW → W，兩者都有時只取 `_input`），其他檔案略過；每個晶片內依溫度、風扇、電壓、功耗排序。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
+- 感測器：`/sys/class/hwmon/*` 的檔案經 `hwmon_kind` 分類：`tempN_input`（m°C）、`fanN_input`（RPM）、`inN_input`（mV → V）、`powerN_input`／`powerN_average`（µW → W，兩者都有時只取 `_input`），其他檔案略過；每個晶片內依溫度、風扇、電壓、功耗排序。溫度 ≤ -100 °C 略過（it87 在沒接熱敏電阻的接腳回報 -128 °C）。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
   `nvme`／`drivetemp` → `<hwmon>/device/model`（`_` 換空格，沒有時為「硬碟」）；`acpitz` → 主機板（ACPI）；`it8*`／`nct*` → 主機板；`amdgpu`／`radeon`／`nouveau`／`i915`／`xe` → 顯示卡；其他沿用 chip 名稱。`chip` 保留給 CPU 溫度判斷。
   NVIDIA 的溫度不在 hwmon：`nvml_sensors` 把 NVML 顯示卡（`Gpu.nvml`）的溫度（「核心」）、風扇 %（`percent`）、功耗（`power`，W）以 chip `nvidia`、device 為顯示卡型號附加在最後；讀不到的項目略過。
 

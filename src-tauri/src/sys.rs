@@ -588,6 +588,10 @@ fn sensors() -> Vec<Sensor> {
             let Some(raw) = read_num(dir.join(f)) else {
                 continue;
             };
+            // it87 reports -128 °C for a header with no thermistor attached
+            if kind == "temp" && raw / scale <= -100.0 {
+                continue;
+            }
             let label = read(dir.join(format!("{prefix}_label"))).trim().to_string();
             let limit = |s: &str| read_num(dir.join(format!("{prefix}_{s}"))).map(|v| v / 1000.0);
             // shortcut: crit outside 0–150 °C is treated as bogus (nvme reports 65261 °C), widen if a real chip needs it
