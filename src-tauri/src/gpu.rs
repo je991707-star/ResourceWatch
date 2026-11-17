@@ -9,14 +9,22 @@ use std::fs;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Gpu {
-    name: String,
+    pub(crate) name: String,
     usage: Option<f64>,
     mem_used: Option<u64>,
     mem_total: Option<u64>,
-    temp: Option<f64>,
+    pub(crate) temp: Option<f64>,
     /// NVENC / NVDEC utilization (%); `null` for non-NVIDIA GPUs.
     encoder: Option<f64>,
     decoder: Option<f64>,
+    /// Read through NVML (its temperature is not in hwmon, so sys.rs adds it to the sensors).
+    #[serde(skip)]
+    pub(crate) nvml: bool,
+    /// Fan speed (%) and board power (W); NVML only, for the sensors list.
+    #[serde(skip)]
+    pub(crate) fan: Option<f64>,
+    #[serde(skip)]
+    pub(crate) power: Option<f64>,
 }
 
 type Handle = *mut c_void;
@@ -46,6 +54,9 @@ struct Nvml {
     // (handle, utilization %, sampling period µs); optional so an old driver still loads.
     encoder: Option<unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int>,
     decoder: Option<unsafe extern "C" fn(Handle, *mut c_uint, *mut c_uint) -> c_int>,
+    // (handle, fan %) and (handle, milliwatts); fail with NOT_SUPPORTED on many laptops.
+    fan: Option<unsafe extern "C" fn(Handle, *mut c_uint) -> c_int>,
+    power: Option<unsafe extern "C" fn(Handle, *mut c_uint) -> c_int>,
     // Keeps the function pointers above valid.
     _lib: Library,
 }
@@ -74,6 +85,8 @@ impl Nvml {
                     .get(b"nvmlDeviceGetDecoderUtilization\0")
                     .ok()
                     .map(|f| *f),
+                fan: lib.get(b"nvmlDeviceGetFanSpeed\0").ok().map(|f| *f),
+                power: lib.get(b"nvmlDeviceGetPowerUsage\0").ok().map(|f| *f),
                 _lib: lib,
             })
         }
@@ -106,6 +119,10 @@ impl Nvml {
                         let (mut u, mut period) = (0, 0);
                         (f?(h, &mut u, &mut period) == 0).then_some(u as f64)
                     };
+                    let one = |f: Option<unsafe extern "C" fn(Handle, *mut c_uint) -> c_int>| {
+                        let mut v = 0;
+                        (f?(h, &mut v) == 0).then_some(v as f64)
+                    };
                     Some(Gpu {
                         name,
                         usage: ((self.util)(h, &mut u) == 0).then_some(u.gpu as f64),
@@ -114,6 +131,9 @@ impl Nvml {
                         temp: ((self.temp)(h, 0, &mut t) == 0).then_some(t as f64),
                         encoder: codec(self.encoder),
                         decoder: codec(self.decoder),
+                        nvml: true,
+                        fan: one(self.fan),
+                        power: one(self.power).map(|mw| mw / 1000.0),
                     })
                 })
                 .collect()
@@ -172,6 +192,9 @@ impl Gpus {
                 temp,
                 encoder: None,
                 decoder: None,
+                nvml: false,
+                fan: None,
+                power: None,
             }
         }));
         out

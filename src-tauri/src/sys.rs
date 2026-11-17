@@ -617,6 +617,26 @@ fn sensor_device(chip: &str, model: &str) -> String {
     }
 }
 
+/// NVIDIA temperature, fan % and power from NVML (not exposed through hwmon); chip "nvidia".
+fn nvml_sensors(gpus: &[Gpu]) -> Vec<Sensor> {
+    gpus.iter()
+        .filter(|g| g.nvml)
+        .flat_map(|g| {
+            [("核心", "temp", g.temp), ("風扇", "percent", g.fan), ("功耗", "power", g.power)]
+                .into_iter()
+                .filter_map(|(label, kind, v)| {
+                    Some(Sensor {
+                        chip: "nvidia".into(),
+                        device: g.name.clone(),
+                        label: label.into(),
+                        kind,
+                        value: v?,
+                    })
+                })
+        })
+        .collect()
+}
+
 pub struct Monitor {
     at: Option<Instant>,
     cpu: Vec<(u64, u64)>,
@@ -669,7 +689,7 @@ impl Monitor {
                     .ok()
             })
             .collect();
-        let sensors = sensors();
+        let mut sensors = sensors();
         let temp = sensors
             .iter()
             .find(|s| {
@@ -680,6 +700,8 @@ impl Monitor {
                     )
             })
             .map(|s| s.value);
+        let gpus = self.gpus.sample();
+        sensors.extend(nvml_sensors(&gpus));
 
         let ds = parse_diskstats(&read("/proc/diskstats"));
         let mut disks: Vec<Disk> = ds
@@ -761,7 +783,7 @@ impl Monitor {
                 temp,
             },
             mem: parse_meminfo(&read("/proc/meminfo")),
-            gpus: self.gpus.sample(),
+            gpus,
             disks,
             mounts,
             net,

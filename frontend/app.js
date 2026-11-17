@@ -255,8 +255,9 @@ const SENSOR_LABEL = [
 const sensorLabel = (l) => { const r = SENSOR_LABEL.find(([re]) => re.test(l)); return r ? l.replace(r[0], r[1]) : l; };
 // chip → card icon: CPU chip, disk, video card, else mainboard
 const sensorIcon = (chip) => (/^(coretemp|k10temp|zenpower|cpu_thermal)$/.test(chip) ? 'gpu'
-  : /^(nvme|drivetemp)$/.test(chip) ? 'storage' : /^(amdgpu|radeon|nouveau|i915|xe)$/.test(chip) ? 'display' : 'board');
-const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} rpm`);
+  : /^(nvme|drivetemp)$/.test(chip) ? 'storage' : /^(amdgpu|radeon|nouveau|i915|xe|nvidia)$/.test(chip) ? 'display' : 'board');
+const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : x.kind === 'percent' ? `${x.value.toFixed(0)}%`
+  : x.kind === 'power' ? `${x.value.toFixed(1)} W` : `${x.value.toFixed(0)} rpm`);
 
 function ioCard(s) {
   const d = s.disks.find((x) => x.name === pick.io) ?? s.disks[0];
