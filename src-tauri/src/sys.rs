@@ -573,6 +573,7 @@ fn sensors() -> Vec<Sensor> {
     for dir in dirs {
         let chip = read(dir.join("name")).trim().to_string();
         let device = sensor_device(&chip, read(dir.join("device/model")).trim());
+        let ite = chip.starts_with("it8");
         let files: Vec<String> = fs::read_dir(&dir)
             .into_iter()
             .flatten()
@@ -601,16 +602,21 @@ fn sensors() -> Vec<Sensor> {
                 .then(|| limit("crit").or_else(|| limit("max")))
                 .flatten()
                 .filter(|c| *c > 0.0 && *c <= 150.0);
+            let named = if !label.is_empty() {
+                Some((label, 1.0))
+            } else if ite {
+                let t = read_num(dir.join(format!("{prefix}_type"))).map(|t| t as u32);
+                ite_label(gigabyte(), prefix, t).map(|(l, m)| (l.to_string(), m))
+            } else {
+                None
+            };
+            let (label, mult) = named.unwrap_or_else(|| (prefix.to_string(), 1.0));
             out.push(Sensor {
                 chip: chip.clone(),
                 device: device.clone(),
-                label: if label.is_empty() {
-                    prefix.to_string()
-                } else {
-                    label
-                },
+                label,
                 kind,
-                value: raw / scale,
+                value: raw / scale * mult,
                 crit,
             });
         }
@@ -633,6 +639,38 @@ fn hwmon_kind(file: &str) -> Option<(&str, &'static str, f64)> {
         _ => return None,
     };
     Some((prefix, k, scale))
+}
+
+fn gigabyte() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| read("/sys/class/dmi/id/board_vendor").to_lowercase().contains("gigabyte"))
+}
+
+/// Name and divider multiplier for an unlabeled ITE (it87) input. Temperatures go by `tempN_type`
+/// (any board); voltages and fan1 follow Gigabyte's wiring, whose in1–in3 rails read exactly
+/// 3.3 / 12 / 5 V after the dividers.
+/// shortcut: in4+ and fan2+ differ per Gigabyte board generation and stay unnamed; add a per-board table if needed
+fn ite_label(gigabyte: bool, prefix: &str, temp_type: Option<u32>) -> Option<(&'static str, f64)> {
+    if prefix.starts_with("temp") {
+        return match temp_type? {
+            6 => Some(("CPU（PECI）", 1.0)),
+            5 => Some(("CPU（AMD TSI）", 1.0)),
+            4 => Some(("主機板", 1.0)),
+            3 => Some(("主機板（二極體）", 1.0)),
+            _ => None,
+        };
+    }
+    if !gigabyte {
+        return None;
+    }
+    match prefix {
+        "in0" => Some(("CPU Vcore", 1.0)),
+        "in1" => Some(("+3.3V", 1.65)),
+        "in2" => Some(("+12V", 6.0)),
+        "in3" => Some(("+5V", 2.5)),
+        "fan1" => Some(("CPU 風扇", 1.0)),
+        _ => None,
+    }
 }
 
 /// Display name of the device behind a hwmon chip; `model` is `<hwmon>/device/model` (disks) or empty.
@@ -923,6 +961,18 @@ impl Monitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ite_labels() {
+        assert_eq!(ite_label(true, "in2", None), Some(("+12V", 6.0)));
+        assert_eq!(ite_label(true, "in1", None), Some(("+3.3V", 1.65)));
+        assert_eq!(ite_label(false, "in2", None), None); // dividers are Gigabyte-only
+        assert_eq!(ite_label(true, "in5", None), None);
+        assert_eq!(ite_label(false, "temp3", Some(6)), Some(("CPU（PECI）", 1.0)));
+        assert_eq!(ite_label(false, "temp1", Some(4)), Some(("主機板", 1.0)));
+        assert_eq!(ite_label(true, "temp4", None), None);
+        assert_eq!(ite_label(true, "fan1", None), Some(("CPU 風扇", 1.0)));
+    }
 
     #[test]
     fn energy_wrap() {

@@ -250,6 +250,21 @@ async function elevate(act) {
   render();
 }
 
+// sensors page card body: named readings in sections per kind; unnamed ones (temp3, in5…) and 0 rpm fans
+// (usually empty headers) fold into "其他讀數", whose open state survives the per-tick re-render
+const KIND_NAME = { temp: '溫度', fan: '風扇', percent: '風扇', volt: '電壓', power: '功耗' };
+const rawOpen = new Set();
+const unnamed = (x) => /^(temp|in|power)\d+$/.test(x.label) || (x.kind === 'fan' && x.value === 0);
+function sensorBody(dev, list) {
+  const table = (xs) => `<table class="zebra">${xs.map((x) => `<tr><td class="grow">${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>`;
+  const named = list.filter((x) => !unnamed(x));
+  const main = named.length ? named : list; // nothing named (ACPI zones): show them all
+  const rest = named.length ? list.filter(unnamed) : [];
+  const kinds = [...new Set(main.map((x) => KIND_NAME[x.kind]))];
+  const body = kinds.length > 1 ? kinds.map((k) => cap(k, '') + table(main.filter((x) => KIND_NAME[x.kind] === k))).join('') : table(main);
+  return body + (rest.length ? `<details class="raw"${rawOpen.has(dev) ? ' open' : ''}><summary data-raw="${esc(dev)}">其他讀數（${rest.length}）</summary>${table(rest)}</details>` : '');
+}
+
 // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
 function sensorGroups(s) {
   const devs = new Map();
@@ -348,8 +363,7 @@ const PAGES = {
     const hint = hints.map(([act, text, label]) => `<p class="hint">${text}<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button></p>`).join('')
       + (elev.err ? `<p class="hint err">${esc(elev.err)}</p>` : '');
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;
-    return `${hint}<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
-      `<tr><td class="grow">${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>`)).join('')}</div>`;
+    return `${hint}<div class="masonry">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, sensorBody(dev, list))).join('')}</div>`;
   }],
 };
 
@@ -491,6 +505,8 @@ $('#content').addEventListener('click', (e) => {
   const link = t.closest('[data-goto]');
   if (link) return go(link.dataset.goto);
   if (t.closest('[data-devtools]')) return invoke('open_devtools');
+  const raw = t.closest('summary[data-raw]');
+  if (raw) { e.preventDefault(); const d = raw.dataset.raw; if (!rawOpen.delete(d)) rawOpen.add(d); return render(); }
   const el = t.closest('[data-elevate]');
   if (el) return elev.busy || elevate(el.dataset.elevate);
   const pref = t.closest('[data-pref]');
