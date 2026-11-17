@@ -34,7 +34,7 @@
 
 驗收：
 - [x] ✅ `cargo test` 通過（stat、cgroup 分類、io、diskstats 活動時間）
-- [ ] `processes` 回傳新欄位；自己的程序有 `disk`，讀不到的為 `null`
+- [x] ✅ `processes` 回傳新欄位；自己的程序有 `disk`，讀不到的為 `null`
 
 ### Phase 2：前端分區、群組與新欄位
 - `icons.rs` 讀 `.desktop` 的 `Name`，`app_icons` 回傳 `{ icon, name }`。
@@ -42,9 +42,9 @@
 - 欄位：名稱、狀態、CPU、記憶體、磁碟、GPU、GPU 引擎；標題上方顯示整機 %。
 
 驗收：
-- [ ] VS Code、Steam 等出現在「應用程式」且可展開
-- [ ] Plasma 服務在「背景處理程序」，系統服務與核心執行緒在「系統處理程序」
-- [ ] 排序、展開在每 2 秒重繪後維持；儀表板前 5 清單正常
+- [x] ✅ VS Code、Steam 等出現在「應用程式」且可展開
+- [x] ✅ Plasma 服務在「背景處理程序」，系統服務與核心執行緒在「系統處理程序」
+- [x] ✅ 排序、展開在每 2 秒重繪後維持；儀表板前 5 清單正常
 
 ### Phase 3：GPU 欄位
 - NVML 每程序使用率（可選符號，缺少時略過）。

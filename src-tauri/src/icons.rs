@@ -1,22 +1,38 @@
-//! Process name → application icon as a data: URL (the page's CSP only allows data: images from
+//! Process name / desktop id → application name and icon as a data: URL (the page's CSP only allows data: images from
 //! outside the app), via installed .desktop files and the hicolor/Breeze/Adwaita icon themes.
 
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 struct Index {
-    /// lowercase match key (desktop id, its last dotted part, StartupWMClass, Exec program) → Icon value
-    apps: HashMap<String, String>,
+    /// lowercase match key (desktop id, its last dotted part, StartupWMClass, Exec program) → (Icon value, Name)
+    apps: HashMap<String, (String, Option<String>)>,
     /// icon file stem → candidate files (svg/png)
     files: HashMap<String, Vec<PathBuf>>,
 }
 
-/// Icon for a process name (kernel comm, ≤ 15 chars); None when no desktop entry or icon file matches.
-pub fn lookup(name: &str) -> Option<String> {
+#[derive(Serialize)]
+pub struct App {
+    /// data: URL; `None` when no icon file matches.
+    icon: Option<String>,
+    /// .desktop `Name` (zh_TW first).
+    name: Option<String>,
+}
+
+/// Desktop entry for a process name (kernel comm, ≤ 15 chars) or desktop id; None when none matches.
+pub fn lookup(name: &str) -> Option<App> {
+    let (icon, name) = index().apps.get(&name.to_lowercase())?;
+    Some(App {
+        icon: icon_url(icon),
+        name: name.clone(),
+    })
+}
+
+fn icon_url(icon: &str) -> Option<String> {
     let idx = index();
-    let icon = idx.apps.get(&name.to_lowercase())?;
     let path = if icon.starts_with('/') {
         PathBuf::from(icon)
     } else {
@@ -52,11 +68,11 @@ fn index() -> &'static Index {
                     continue;
                 };
                 if p.extension().is_some_and(|x| x == "desktop") {
-                    if let Some((keys, icon)) =
+                    if let Some((keys, icon, name)) =
                         desktop_keys(stem, &fs::read_to_string(&p).unwrap_or_default())
                     {
                         for k in keys {
-                            idx.apps.entry(k).or_insert_with(|| icon.clone());
+                            idx.apps.entry(k).or_insert_with(|| (icon.clone(), name.clone()));
                         }
                     }
                 }
@@ -131,10 +147,11 @@ fn best(paths: &[PathBuf]) -> Option<PathBuf> {
         .cloned()
 }
 
-/// `[Desktop Entry]` of one .desktop file → (lowercase match keys, Icon). Keys are also stored cut to
-/// 15 chars, because a process name is the kernel's truncated comm.
-fn desktop_keys(stem: &str, text: &str) -> Option<(Vec<String>, String)> {
+/// `[Desktop Entry]` of one .desktop file → (lowercase match keys, Icon, Name). Keys are also stored
+/// cut to 15 chars, because a process name is the kernel's truncated comm.
+fn desktop_keys(stem: &str, text: &str) -> Option<(Vec<String>, String, Option<String>)> {
     let (mut entry, mut exec, mut icon, mut wm) = (false, None, None, None);
+    let (mut name, mut zh, mut zh_tw) = (None, None, None);
     for l in text.lines().map(str::trim) {
         if l.starts_with('[') {
             entry = l == "[Desktop Entry]";
@@ -143,12 +160,16 @@ fn desktop_keys(stem: &str, text: &str) -> Option<(Vec<String>, String)> {
                 "Exec" => &mut exec,
                 "Icon" => &mut icon,
                 "StartupWMClass" => &mut wm,
+                "Name" => &mut name,
+                "Name[zh]" => &mut zh,
+                "Name[zh_TW]" => &mut zh_tw,
                 _ => continue,
             };
             slot.get_or_insert(v.trim());
         }
     }
     let icon = icon.filter(|i| !i.is_empty())?.to_string();
+    let name = zh_tw.or(zh).or(name).filter(|n| !n.is_empty()).map(str::to_string);
     let mut keys = vec![stem.to_string()];
     keys.extend(stem.rsplit('.').next().map(str::to_string));
     keys.extend(wm.map(str::to_string));
@@ -161,7 +182,7 @@ fn desktop_keys(stem: &str, text: &str) -> Option<(Vec<String>, String)> {
         }
         out.push(k);
     }
-    Some((out, icon))
+    Some((out, icon, name))
 }
 
 /// Program an Exec line runs, skipping `env` with its VAR=value/options. Launchers that start
@@ -204,15 +225,16 @@ mod tests {
 
     #[test]
     fn desktop_entries() {
-        let code = "[Desktop Entry]\nName=VS Code\nExec=/usr/share/code/code --unity-launch %F\nIcon=vscode\nStartupWMClass=Code\n[Desktop Action new]\nExec=other\n";
-        let (keys, icon) = desktop_keys("code", code).unwrap();
-        assert_eq!(icon, "vscode");
+        let code = "[Desktop Entry]\nName=VS Code\nName[zh_TW]=程式碼\nExec=/usr/share/code/code --unity-launch %F\nIcon=vscode\nStartupWMClass=Code\n[Desktop Action new]\nName=New\nExec=other\n";
+        let (keys, icon, name) = desktop_keys("code", code).unwrap();
+        assert_eq!((icon.as_str(), name.as_deref()), ("vscode", Some("程式碼")));
         assert!(keys.contains(&"code".to_string()) && !keys.contains(&"other".to_string()));
         let sun = "[Desktop Entry]\nExec=/usr/bin/env systemctl start --u app-sunshine\nIcon=dev.lizardbyte.app.Sunshine\n";
-        let (keys, _) = desktop_keys("dev.lizardbyte.app.Sunshine", sun).unwrap();
+        let (keys, _, name) = desktop_keys("dev.lizardbyte.app.Sunshine", sun).unwrap();
+        assert_eq!(name, None);
         assert!(keys.contains(&"sunshine".to_string()) && !keys.contains(&"systemctl".to_string()));
         let long = "[Desktop Entry]\nExec=steamwebhelper-launcher\nIcon=steam\n";
-        let (keys, _) = desktop_keys("x", long).unwrap();
+        let (keys, _, _) = desktop_keys("x", long).unwrap();
         assert!(keys.contains(&"steamwebhelper-".to_string())); // 15-char comm
         assert_eq!(desktop_keys("x", "[Desktop Entry]\nExec=a\n"), None);
         assert_eq!(

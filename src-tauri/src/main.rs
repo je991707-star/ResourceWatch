@@ -39,10 +39,10 @@ async fn scan_dir(path: String, cache: DirCache<'_>) -> Result<du::Scan, String>
     Ok(scan)
 }
 
-/// Process names → app icon data: URLs (None: no match). The first call builds the icon index, so it
+/// Process names / desktop ids → { icon data: URL, .desktop name } (None: no match). The first call builds the icon index, so it
 /// runs on a blocking thread.
 #[tauri::command]
-async fn app_icons(names: Vec<String>) -> std::collections::HashMap<String, Option<String>> {
+async fn app_icons(names: Vec<String>) -> std::collections::HashMap<String, Option<icons::App>> {
     tauri::async_runtime::spawn_blocking(move || {
         names
             .into_iter()

@@ -54,7 +54,7 @@ const ICON = {
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
-  display: 'fa-solid fa-display', board: 'fa-solid fa-server',
+  display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -133,16 +133,17 @@ function memParts(m) {
 }
 const primaryNet = (s) => s.net.find((n) => n.name === prefs.nic) ?? s.net.find((n) => n.gateway) ?? s.net.find((n) => n.up) ?? s.net[0];
 const diskName = (d) => (d.model || d.name).replace(/_/g, ' '); // NVMe models use _ for spaces
-// Process name → icon data: URL; null while loading or when no app matches (generic glyph then).
+// Process name / desktop id → { icon: data: URL | null, name: .desktop Name | null }; null while loading
+// or when no app matches (generic glyph then).
 const appIcons = {};
-const appIcon = (name) => (appIcons[name] ? `<img class="app-ic" src="${esc(appIcons[name])}" alt="">` : icon('app', 'app-ic'));
+const appIcon = (name) => (appIcons[name]?.icon ? `<img class="app-ic" src="${esc(appIcons[name].icon)}" alt="">` : icon('app', 'app-ic'));
 async function loadIcons(names) {
   const missing = [...new Set(names)].filter((n) => !(n in appIcons));
   if (!missing.length) return;
   missing.forEach((n) => { appIcons[n] = null; });
   try {
     Object.assign(appIcons, await invoke('app_icons', { names: missing }));
-    if (page === 'dash') render();
+    if (page === 'dash' || page === 'apps') render();
   } catch (e) {
     console.error(e);
   }
@@ -318,21 +319,73 @@ function ioCard(s) {
     ${flow(['讀取', `r:${d.name}`], ['寫入', `w:${d.name}`])}`);
 }
 
+// ── apps page: sections by cgroup kind, one expandable group per cgroup unit ──
+const appOpen = new Set(); // expanded group keys; survives the 2 s re-render
+const APP_SECTIONS = [['app', '應用程式'], ['bg', '背景處理程序'], ['sys', '系統處理程序']];
+const stopped = (p) => p.state === 'T' || p.state === 't';
+// Sum over the group; null when no member has a value (other users' disk I/O is unreadable).
+const sumOf = (list, k) => (list.some((p) => p[k] != null) ? list.reduce((a, p) => a + (p[k] ?? 0), 0) : null);
+function procGroups(kind) {
+  const by = new Map();
+  for (const p of procs) {
+    if (p.kind !== kind) continue;
+    const key = p.unit ?? `pid:${p.pid}`;
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(p);
+  }
+  return [...by].map(([key, list]) => {
+    const head = list.reduce((a, p) => (p.pid < a.pid ? p : a));
+    const ic = head.app ?? head.name;
+    const top = list.reduce((a, p) => ((p.gpu ?? -1) > (a.gpu ?? -1) ? p : a));
+    const gpu = sumOf(list, 'gpu');
+    return {
+      key, list, ic, pid: head.pid,
+      name: key === 'kernel' ? '核心執行緒' : appIcons[head.app]?.name ?? head.name,
+      cpu: sumOf(list, 'cpu'), mem: sumOf(list, 'mem'), disk: sumOf(list, 'disk'),
+      gpu: gpu == null ? null : Math.min(gpu, 100), gpuEngine: top.gpuEngine,
+      // a group is paused / low-priority only when every member is
+      state: list.length === 1 ? head.state : list.every(stopped) ? 'T' : 'S',
+      nice: Math.min(...list.map((p) => p.nice)),
+    };
+  });
+}
+function bySort(a, b) {
+  const k = sort.key, x = a[k], y = b[k];
+  if (x == null || y == null) return (x == null) - (y == null) || a.pid - b.pid; // missing values always last
+  return (typeof x === 'string' ? x.localeCompare(y) : x - y) * (sort.desc ? -1 : 1) || a.pid - b.pid;
+}
+const procStatus = (p) => `${stopped(p) ? '已暫停' : p.state === 'Z' ? '殭屍' : ''}${p.nice > 0 ? `<span title="低優先權（nice ${p.nice}）">${icon('leaf', 'leaf')}</span>` : ''}`;
+const mbs = (b) => (b == null ? '--' : `${(b / 1048576).toFixed(1)} MB/秒`);
+const procCells = (p) => `<td>${procStatus(p)}</td><td class="num">${p.cpu == null ? '--' : p.cpu.toFixed(1) + '%'}</td><td class="num">${bytes(p.mem)}</td>
+  <td class="num">${mbs(p.disk)}</td><td class="num">${p.gpu == null ? '--' : p.gpu.toFixed(1) + '%'}</td><td>${esc(p.gpuEngine ?? '')}</td>`;
+function appsPage() {
+  const s = snap;
+  const total = {
+    cpu: s?.cpu.usage, mem: s && ratio(s.mem.used, s.mem.total),
+    disk: s?.disks.some((d) => d.busy != null) ? Math.max(...s.disks.map((d) => d.busy ?? 0)) : null,
+    gpu: s?.gpus.some((g) => g.usage != null) ? Math.max(...s.gpus.map((g) => g.usage ?? 0)) : null,
+  };
+  const th = (key, t, cls = '') => `<th class="${cls}"${key ? ` data-sort="${key}"` : ''}>${key in total ? `<b>${pct(total[key])}</b>` : ''}${t}${sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : ''}</th>`;
+  const head = `<thead><tr>${th('name', '名稱', 'grow')}${th('', '狀態')}${th('cpu', 'CPU', 'num')}${th('mem', '記憶體', 'num')}${th('disk', '磁碟', 'num')}${th('gpu', 'GPU', 'num')}${th('', 'GPU 引擎')}</tr></thead>`;
+  const body = APP_SECTIONS.map(([kind, title]) => {
+    const groups = procGroups(kind).sort(bySort);
+    if (!groups.length) return '';
+    const rows = groups.map((g) => {
+      const many = g.list.length > 1, open = many && appOpen.has(g.key);
+      const name = `${many ? `<span class="tw">${icon(open ? 'open' : 'closed')}</span>` : '<span class="tw"></span>'}${appIcon(g.ic)}${esc(g.name)}${many ? ` (${g.list.length})` : ''}`;
+      const kids = open ? g.list.sort(bySort).map((p) => `<tr class="kid" title="PID ${p.pid}"><td class="grow">${appIcon(p.name)}${esc(p.name)}</td>${procCells(p)}</tr>`).join('') : '';
+      return `<tr${many ? ` data-group="${esc(g.key)}"` : ''} title="${many ? esc(g.key) : `PID ${g.pid}`}"><td class="grow">${name}</td>${procCells(g)}</tr>${kids}`;
+    }).join('');
+    return `<tbody class="sec"><tr><td colspan="7">${title} (${groups.length})</td></tr></tbody><tbody>${rows}</tbody>`;
+  }).join('');
+  return card(`共 ${procs.length} 個程序`, `<table class="zebra apps">${head}${body || '<tbody><tr><td class="muted">讀取程序中…</td></tr></tbody>'}</table>`);
+}
+
 // ── pages ──
 const PAGES = {
   dash: ['儀表板', (s) => `<div class="masonry">${[summaryCard(s), cpuCard(s), memCard(s), netCard(s), disksCard(s), gpuCard(s), ioCard(s), sensorsCard(s)].join('')}</div>`],
 
-  apps: ['應用程式', () => {
-    const k = sort.key, dir = sort.desc ? -1 : 1;
-    const list = [...procs].sort((a, b) => {
-      const x = a[k], y = b[k];
-      if (x == null || y == null) return (x == null) - (y == null); // missing CPU% always last
-      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir || a.pid - b.pid;
-    }).slice(0, 300);
-    const th = (key, t, cls = '') => `<th class="${cls}" data-sort="${key}">${t}${sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : ''}</th>`;
-    const rows = list.map((p) => `<tr><td class="grow">${esc(p.name)}</td><td class="num">${p.pid}</td><td class="num">${p.cpu == null ? '--' : p.cpu.toFixed(1) + '%'}</td><td class="num">${bytes(p.mem)}</td></tr>`).join('');
-    return card(`共 ${procs.length} 個程序`, `<table class="zebra"><thead><tr>${th('name', '名稱')}${th('pid', 'PID', 'num')}${th('cpu', 'CPU', 'num')}${th('mem', '記憶體', 'num')}</tr></thead>${rows}</table>`);
-  }],
+  apps: ['應用程式', () => appsPage()],
 
   storage: ['儲存', () => storagePage()],
 
@@ -539,10 +592,12 @@ $('#content').addEventListener('click', (e) => {
   }
   const pk = t.closest('[data-pick]');
   if (pk) { pick[pk.dataset.pick] = pk.dataset.val; return render(); }
+  const grp = t.closest('[data-group]');
+  if (grp) { const k = grp.dataset.group; if (!appOpen.delete(k)) appOpen.add(k); return render(); }
   const th = t.closest('th[data-sort]');
   if (!th) return;
   const key = th.dataset.sort;
-  sort = sort.key === key ? { key, desc: !sort.desc } : { key, desc: key === 'cpu' || key === 'mem' };
+  sort = sort.key === key ? { key, desc: !sort.desc } : { key, desc: key !== 'name' };
   render();
 });
 
@@ -577,7 +632,7 @@ async function pollProcs() {
   if ((page !== 'dash' && page !== 'apps') || document.hidden || paused) return;
   try {
     procs = await invoke('processes');
-    loadIcons([...topProcs('cpu', 5), ...topProcs('mem', 5)].map((p) => p.name));
+    loadIcons(page === 'apps' ? procs.flatMap((p) => (p.app ? [p.app, p.name] : [p.name])) : [...topProcs('cpu', 5), ...topProcs('mem', 5)].map((p) => p.name));
     if (page === 'apps') render();
   } catch (e) {
     console.error(e);
