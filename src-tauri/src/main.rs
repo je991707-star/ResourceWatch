@@ -56,6 +56,53 @@ async fn app_icons(names: Vec<String>) -> std::collections::HashMap<String, Opti
     .unwrap_or_default()
 }
 
+/// The fixed root command for an `elevate` action; nothing from the frontend reaches the command line.
+/// Effects last until reboot. RAPL counters are opened to the caller's primary group only (PKEXEC_UID is
+/// set by pkexec), not to every user, because of the PLATYPUS power side channel (CVE-2020-8694).
+fn elevate_script(action: &str) -> Option<&'static str> {
+    match action {
+        "rapl" => Some(
+            "g=$(id -gn \"$PKEXEC_UID\") && chgrp \"$g\" /sys/class/powercap/intel-rapl:*/energy_uj \
+             && chmod 0440 /sys/class/powercap/intel-rapl:*/energy_uj",
+        ),
+        "modules" => Some(
+            "r=0; modprobe drivetemp || r=1; modprobe it87 ignore_resource_conflict=1 || r=1; exit $r",
+        ),
+        _ => None,
+    }
+}
+
+/// Runs one `elevate_script` as root through pkexec (polkit shows the password dialog); blocks a worker
+/// thread while the dialog is open.
+#[tauri::command]
+async fn elevate(action: String) -> Result<(), String> {
+    let script = elevate_script(&action).ok_or("不支援的動作")?;
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("pkexec")
+            .args(["/bin/sh", "-c", script])
+            .status()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("無法執行 pkexec：{e}"))?;
+    match status.code() {
+        Some(0) => Ok(()),
+        Some(126 | 127) => Err("已取消或授權失敗".into()),
+        c => Err(format!("指令執行失敗（結束碼 {}）", c.map_or("--".into(), |c| c.to_string()))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn elevate_whitelist() {
+        assert!(super::elevate_script("rapl").is_some());
+        assert!(super::elevate_script("modules").is_some());
+        assert!(super::elevate_script("rm -rf /").is_none());
+        assert!(super::elevate_script("").is_none());
+    }
+}
+
 #[tauri::command]
 fn dir_children(path: String, cache: DirCache) -> Vec<du::Entry> {
     lock(&cache).children(&path)
@@ -147,6 +194,7 @@ fn main() {
             processes,
             system_info,
             scan_dir,
+            elevate,
             dir_children,
             app_icons,
             open_devtools,

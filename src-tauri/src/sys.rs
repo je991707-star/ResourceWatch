@@ -28,6 +28,8 @@ pub struct Snapshot {
     mounts: Vec<Mount>,
     net: Vec<Net>,
     sensors: Vec<Sensor>,
+    /// A RAPL zone exists but its `energy_uj` is root-only (the frontend offers `elevate("rapl")`).
+    rapl_locked: bool,
     uptime: Option<f64>,
 }
 
@@ -637,7 +639,7 @@ fn hwmon_kind(file: &str) -> Option<(&str, &'static str, f64)> {
 fn sensor_device(chip: &str, model: &str) -> String {
     static CPU: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     match chip {
-        "coretemp" | "k10temp" | "zenpower" | "cpu_thermal" => {
+        "coretemp" | "k10temp" | "zenpower" | "cpu_thermal" | "intel-rapl" => {
             let cpu = CPU.get_or_init(|| parse_cpuinfo(&read("/proc/cpuinfo")).0);
             if cpu.is_empty() { "處理器" } else { cpu }.to_string()
         }
@@ -679,6 +681,17 @@ pub struct Monitor {
     procs_at: Option<Instant>,
     procs: HashMap<u32, u64>,
     gpus: Gpus,
+    /// RAPL zone dir name → last `energy_uj`.
+    rapl: HashMap<String, u64>,
+}
+
+/// RAPL energy counter delta; the counter wraps to 0 after `range` µJ.
+fn energy_delta(prev: u64, cur: u64, range: u64) -> u64 {
+    if cur >= prev {
+        cur - prev
+    } else {
+        (cur + range).saturating_sub(prev)
+    }
 }
 
 impl Monitor {
@@ -691,6 +704,7 @@ impl Monitor {
             procs_at: None,
             procs: HashMap::new(),
             gpus: Gpus::new(),
+            rapl: HashMap::new(),
         }
     }
 
@@ -736,6 +750,41 @@ impl Monitor {
             .map(|s| s.value);
         let gpus = self.gpus.sample();
         sensors.extend(nvml_sensors(&gpus));
+
+        // CPU power (W) from RAPL energy counters; root-only unless `elevate("rapl")` opened them this boot
+        let mut zones: Vec<_> = fs::read_dir("/sys/class/powercap")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.starts_with("intel-rapl:"))
+            .collect();
+        zones.sort();
+        let mut rapl = HashMap::new();
+        let mut rapl_locked = false;
+        for z in zones {
+            let dir = Path::new("/sys/class/powercap").join(&z);
+            let Ok(raw) = fs::read_to_string(dir.join("energy_uj")) else {
+                rapl_locked = true;
+                continue;
+            };
+            let Ok(e) = raw.trim().parse::<u64>() else {
+                continue;
+            };
+            if let (Some(&p), Some(s)) = (self.rapl.get(&z), secs) {
+                let range = read_num(dir.join("max_energy_range_uj")).unwrap_or(0.0) as u64;
+                sensors.push(Sensor {
+                    chip: "intel-rapl".into(),
+                    device: sensor_device("intel-rapl", ""),
+                    label: read(dir.join("name")).trim().to_string(),
+                    kind: "power",
+                    value: energy_delta(p, e, range) as f64 / 1e6 / s,
+                    crit: None,
+                });
+            }
+            rapl.insert(z, e);
+        }
+        self.rapl = rapl;
 
         let ds = parse_diskstats(&read("/proc/diskstats"));
         let mut disks: Vec<Disk> = ds
@@ -822,6 +871,7 @@ impl Monitor {
             mounts,
             net,
             sensors,
+            rapl_locked,
             uptime: read("/proc/uptime")
                 .split_whitespace()
                 .next()
@@ -873,6 +923,13 @@ impl Monitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn energy_wrap() {
+        assert_eq!(energy_delta(100, 250, 1000), 150);
+        assert_eq!(energy_delta(900, 50, 1000), 150);
+        assert_eq!(energy_delta(900, 50, 0), 0); // unknown range: no negative / overflow
+    }
 
     #[test]
     fn hwmon_kinds() {

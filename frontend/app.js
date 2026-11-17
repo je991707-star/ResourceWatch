@@ -240,6 +240,16 @@ function gpuCard(s) {
       <div class="sect">${cap('使用率', '')}${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}</div>`);
 }
 
+// root actions via pkexec (backend `elevate`): the one running, and the last error
+const elev = { busy: null, err: null };
+async function elevate(act) {
+  Object.assign(elev, { busy: act, err: null });
+  render();
+  try { await invoke('elevate', { action: act }); } catch (e) { elev.err = String(e); }
+  elev.busy = null;
+  render();
+}
+
 // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
 function sensorGroups(s) {
   const devs = new Map();
@@ -263,10 +273,11 @@ const SENSOR_LABEL = [
   [/^T(ctl|die)$/, '處理器'], [/^Tccd(\d+)$/, 'CCD $1'], [/^Composite$/, '整體'], [/^Sensor (\d+)$/, '感測點 $1'],
   [/^edge$/, '核心'], [/^junction$/, '熱點'], [/^mem$/, '顯示記憶體'],
   [/^temp(\d+)$/, '溫度 $1'], [/^fan(\d+)$/, '風扇 $1'], [/^in(\d+)$/, '電壓 $1'], [/^power(\d+)$/, '功耗 $1'],
+  [/^package-(\d+)$/, '封裝功耗'], [/^core$/, '核心功耗'], [/^dram$/, '記憶體功耗'], [/^uncore$/, '內顯功耗'],
 ];
 const sensorLabel = (l) => { const r = SENSOR_LABEL.find(([re]) => re.test(l)); return r ? l.replace(r[0], r[1]) : l; };
 // chip → card icon: CPU chip, disk, video card, else mainboard
-const sensorIcon = (chip) => (/^(coretemp|k10temp|zenpower|cpu_thermal)$/.test(chip) ? 'gpu'
+const sensorIcon = (chip) => (/^(coretemp|k10temp|zenpower|cpu_thermal|intel-rapl)$/.test(chip) ? 'gpu'
   : /^(nvme|drivetemp)$/.test(chip) ? 'storage' : /^(amdgpu|radeon|nouveau|i915|xe|nvidia)$/.test(chip) ? 'display' : 'board');
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : x.kind === 'percent' ? `${x.value.toFixed(0)}%`
   : x.kind === 'power' ? `${x.value.toFixed(1)} W` : x.kind === 'volt' ? `${x.value.toFixed(2)} V` : `${x.value.toFixed(0)} rpm`);
@@ -330,7 +341,12 @@ const PAGES = {
     const has = (re) => s.sensors.some((x) => re.test(x.chip));
     const missing = [!has(/^(it8|nct)/) && '主機板風扇與電壓（it87／nct6775）',
       !has(/^drivetemp$/) && s.disks.some((d) => d.name.startsWith('sd')) && 'SATA 硬碟溫度（drivetemp）'].filter(Boolean);
-    const hint = missing.length ? `<p class="hint">讀不到${missing.join('、')}：需要載入核心模組，步驟見 docs/Sensors_Improvement.md 的 Phase 4。</p>` : '';
+    const hints = [
+      missing.length && ['modules', `讀不到${missing.join('、')}：需要載入核心模組（只在這次開機有效；開機自動載入見 docs/Sensors_Improvement.md 的 Phase 4）。`, '載入感測器模組'],
+      s.raplLocked && ['rapl', '讀不到 CPU 功耗：需要管理員權限開放讀取（只在這次開機有效）。', '開放讀取'],
+    ].filter(Boolean);
+    const hint = hints.map(([act, text, label]) => `<p class="hint">${text}<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button></p>`).join('')
+      + (elev.err ? `<p class="hint err">${esc(elev.err)}</p>` : '');
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;
     return `${hint}<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
       `<tr><td class="grow">${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>`)).join('')}</div>`;
@@ -475,6 +491,8 @@ $('#content').addEventListener('click', (e) => {
   const link = t.closest('[data-goto]');
   if (link) return go(link.dataset.goto);
   if (t.closest('[data-devtools]')) return invoke('open_devtools');
+  const el = t.closest('[data-elevate]');
+  if (el) return elev.busy || elevate(el.dataset.elevate);
   const pref = t.closest('[data-pref]');
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');

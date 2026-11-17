@@ -107,8 +107,8 @@ App 本身不以 root 執行；按鈕透過 `pkexec`（polkit，KDE 會跳出密
 
 - **後端指令 `elevate(action)`**（`main.rs`，在 `spawn_blocking` 執行，等待輸入密碼時視窗不會卡住）：
   - `action` 只接受 `"rapl"`、`"modules"`，其他值回傳錯誤；前端傳不了任何字串進指令。
-  - `rapl`：`pkexec sh -c 'chgrp wheel /sys/class/powercap/intel-rapl:*/energy_uj && chmod 0440 /sys/class/powercap/intel-rapl:*/energy_uj'`——只開放給 `wheel` 群組（管理員），不是所有使用者。
-  - `modules`：`pkexec sh -c 'modprobe drivetemp; modprobe it87 ignore_resource_conflict=1'`。
+  - `rapl`：`pkexec sh -c` 把 `/sys/class/powercap/intel-rapl:*/energy_uj` 改為呼叫者的主要群組（`id -gn "$PKEXEC_UID"`，本機為 `h97m`）可讀、權限 `0440`——只有自己的帳號讀得到，不是所有使用者，也不依賴各發行版不同的管理員群組名稱（`wheel`／`sudo`）。
+  - `modules`：`pkexec sh -c` 依序 `modprobe drivetemp`、`modprobe it87 ignore_resource_conflict=1`，兩個都會嘗試，任一失敗即回傳失敗。
   - 使用者取消或密碼錯誤（`pkexec` 結束碼 126／127）回傳中文錯誤訊息；成功回傳 `null`。
 - **讀取 CPU 功耗**（`sys.rs`）：
   - `Monitor` 保存各 RAPL 區域上次的 `energy_uj` 與時間，功耗＝差值／經過秒數（µJ → W）；計數器歸零（目前值小於上次）時加上 `max_energy_range_uj`；第一次取樣沒有前值，不輸出。
@@ -145,7 +145,7 @@ App 本身不以 root 執行；按鈕透過 `pkexec`（polkit，KDE 會跳出密
 - **Phase 6** ☐
   - 按「開放讀取」跳出 KDE 密碼視窗；取消時提示列顯示錯誤，權限不變
   - 授權後感測器頁 CPU 卡片出現封裝／核心／記憶體功耗（W），閒置時數值合理（約數瓦到十幾瓦）
-  - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root wheel`
+  - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root h97m`
   - 重開機後權限恢復、按鈕再次出現
   - 卸載模組（`sudo modprobe -r it87 drivetemp`）後按「載入感測器模組」：授權後主機板與硬碟卡片出現、提示消失，且沒有寫入任何 `/etc` 檔案
   - `elevate` 傳入其他值時回傳錯誤，不執行 `pkexec`
