@@ -62,6 +62,8 @@ struct Disk {
     size: u64,
     read_bps: Option<f64>,
     write_bps: Option<f64>,
+    /// Active time % (io_ticks delta / elapsed), like Windows' disk %.
+    busy: Option<f64>,
     /// Sum over the filesystems mounted from this disk; `None` when nothing is mounted.
     used: Option<u64>,
     total: Option<u64>,
@@ -103,11 +105,23 @@ struct Sensor {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Proc {
     pid: u32,
     name: String,
     cpu: Option<f64>,
     mem: u64,
+    /// `stat` state letter (R, S, D, T, Z, …).
+    state: char,
+    nice: i32,
+    /// "app" (user app scope), "bg" (other user units), "sys" (system, other users, kernel threads).
+    kind: &'static str,
+    /// cgroup unit (last path component); "kernel" for kernel threads.
+    unit: Option<String>,
+    /// Desktop id parsed from an app unit, for the .desktop name and icon.
+    app: Option<String>,
+    /// read_bytes + write_bytes per second from /proc/[pid]/io; `None` when unreadable or first call.
+    disk: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -454,14 +468,18 @@ fn parse_meminfo(text: &str) -> Mem {
     }
 }
 
-/// /proc/diskstats → name → (sectors read, sectors written).
-fn parse_diskstats(text: &str) -> HashMap<String, (u64, u64)> {
+/// /proc/diskstats → name → (sectors read, sectors written, io_ticks ms).
+fn parse_diskstats(text: &str) -> HashMap<String, (u64, u64, u64)> {
     text.lines()
         .filter_map(|l| {
             let f: Vec<&str> = l.split_whitespace().collect();
             Some((
                 f.get(2)?.to_string(),
-                (f.get(5)?.parse().ok()?, f.get(9)?.parse().ok()?),
+                (
+                    f.get(5)?.parse().ok()?,
+                    f.get(9)?.parse().ok()?,
+                    f.get(12)?.parse().ok()?,
+                ),
             ))
         })
         .collect()
@@ -553,12 +571,75 @@ fn statvfs(path: &str) -> Option<(u64, u64)> {
     ))
 }
 
-/// /proc/[pid]/stat → (comm, utime+stime ticks, rss pages). comm may contain spaces and ')'.
-fn parse_proc_stat(text: &str) -> Option<(String, u64, u64)> {
+#[derive(Debug, PartialEq)]
+struct ProcStat {
+    name: String,
+    state: char,
+    ppid: u32,
+    /// utime + stime
+    ticks: u64,
+    nice: i32,
+    rss: u64,
+}
+
+/// /proc/[pid]/stat; comm may contain spaces and ')'.
+fn parse_proc_stat(text: &str) -> Option<ProcStat> {
     let name = text.get(text.find('(')? + 1..text.rfind(')')?)?.to_string();
     let f: Vec<&str> = text[text.rfind(')')? + 1..].split_whitespace().collect();
-    let ticks = f.get(11)?.parse::<u64>().ok()? + f.get(12)?.parse::<u64>().ok()?;
-    Some((name, ticks, f.get(21)?.parse().ok()?))
+    Some(ProcStat {
+        name,
+        state: f.first()?.chars().next()?,
+        ppid: f.get(1)?.parse().ok()?,
+        ticks: f.get(11)?.parse::<u64>().ok()? + f.get(12)?.parse::<u64>().ok()?,
+        nice: f.get(16)?.parse().ok()?,
+        rss: f.get(21)?.parse().ok()?,
+    })
+}
+
+/// /proc/[pid]/io → read_bytes + write_bytes (only readable for our own processes).
+fn parse_proc_io(text: &str) -> Option<u64> {
+    let get = |k: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(k))
+            .and_then(|v| v.trim().parse::<u64>().ok())
+    };
+    Some(get("read_bytes:")? + get("write_bytes:")?)
+}
+
+/// /proc/[pid]/cgroup (v2 line `0::<path>`) → (kind, unit); `uid` is ours (other users are "sys").
+fn classify(cgroup: &str, uid: u32) -> (&'static str, Option<String>) {
+    let Some(path) = cgroup.lines().find_map(|l| l.strip_prefix("0::")) else {
+        return ("sys", None);
+    };
+    let mut parts = path.rsplit('/').filter(|p| !p.is_empty());
+    let unit = parts.next().map(str::to_string);
+    let parent = parts.next().unwrap_or("");
+    let kind = if !path.contains(&format!("/user-{uid}.slice/")) {
+        "sys"
+    } else if parent == "app.slice" && unit.as_deref().is_some_and(|u| u.starts_with("app-")) {
+        "app"
+    } else {
+        "bg"
+    };
+    (kind, unit)
+}
+
+/// systemd app unit → desktop id: `app[-<launcher>]-<id>-<n>.scope` / `app[-<launcher>]-<id>[@<x>].service`.
+fn app_id(unit: &str) -> Option<String> {
+    let rest = unit.strip_prefix("app-")?;
+    let id = if let Some(r) = rest.strip_suffix(".scope") {
+        r.rsplit_once('-')?.0
+    } else {
+        let r = rest.strip_suffix(".service")?;
+        r.split('@').next()?
+    };
+    let id = id.replace("\\x2d", "-");
+    // Launcher prefix only when what follows is a reverse-DNS id.
+    let id = ["flatpak-", "gnome-", "kde-"]
+        .iter()
+        .find_map(|l| id.strip_prefix(l).filter(|r| r.contains('.')))
+        .map_or(id.clone(), str::to_string);
+    (!id.is_empty()).then_some(id)
 }
 
 fn sensors() -> Vec<Sensor> {
@@ -714,10 +795,11 @@ fn nvml_sensors(gpus: &[Gpu]) -> Vec<Sensor> {
 pub struct Monitor {
     at: Option<Instant>,
     cpu: Vec<(u64, u64)>,
-    disk: HashMap<String, (u64, u64)>,
+    disk: HashMap<String, (u64, u64, u64)>,
     net: HashMap<String, (u64, u64)>,
     procs_at: Option<Instant>,
-    procs: HashMap<u32, u64>,
+    /// pid → (cpu ticks, disk bytes)
+    procs: HashMap<u32, (u64, Option<u64>)>,
     gpus: Gpus,
     /// RAPL zone dir name → last `energy_uj`.
     rapl: HashMap<String, u64>,
@@ -828,7 +910,7 @@ impl Monitor {
         let mut disks: Vec<Disk> = ds
             .iter()
             .filter(|(n, _)| Path::new(&format!("/sys/block/{n}/device")).exists())
-            .map(|(n, &(r, w))| {
+            .map(|(n, &(r, w, t))| {
                 let prev = self.disk.get(n);
                 Disk {
                     name: n.clone(),
@@ -838,6 +920,7 @@ impl Monitor {
                     size: read_num(format!("/sys/block/{n}/size")).unwrap_or(0.0) as u64 * 512,
                     read_bps: rate(prev.map(|p| &p.0), r).map(|v| v * 512.0),
                     write_bps: rate(prev.map(|p| &p.1), w).map(|v| v * 512.0),
+                    busy: rate(prev.map(|p| &p.2), t).map(|v| (v / 10.0).min(100.0)),
                     used: None,
                     total: None,
                     mounts: Vec::new(),
@@ -933,6 +1016,8 @@ impl Monitor {
             )
         };
         let threads = self.cpu.len().saturating_sub(1).max(1) as f64;
+        // SAFETY: getuid has no preconditions.
+        let uid = unsafe { libc::getuid() };
         let mut seen = HashMap::new();
         let list = fs::read_dir("/proc")
             .into_iter()
@@ -940,16 +1025,34 @@ impl Monitor {
             .flatten()
             .filter_map(|e| {
                 let pid: u32 = e.file_name().to_str()?.parse().ok()?;
-                let (name, ticks, rss) = parse_proc_stat(&read(e.path().join("stat")))?;
-                seen.insert(pid, ticks);
-                let cpu = self.procs.get(&pid).zip(secs).map(|(&p, s)| {
-                    (ticks.saturating_sub(p) as f64 / tck / s / threads * 100.0).min(100.0)
+                let st = parse_proc_stat(&read(e.path().join("stat")))?;
+                let io = parse_proc_io(&read(e.path().join("io")));
+                let prev = self.procs.get(&pid);
+                seen.insert(pid, (st.ticks, io));
+                let cpu = prev.zip(secs).map(|(p, s)| {
+                    (st.ticks.saturating_sub(p.0) as f64 / tck / s / threads * 100.0).min(100.0)
                 });
+                let disk = io
+                    .zip(prev.and_then(|p| p.1))
+                    .zip(secs)
+                    .map(|((c, p), s)| c.saturating_sub(p) as f64 / s);
+                let (kind, unit) = if pid == 2 || st.ppid == 2 {
+                    ("sys", Some("kernel".to_string()))
+                } else {
+                    classify(&read(e.path().join("cgroup")), uid)
+                };
+                let app = (kind == "app").then(|| unit.as_deref().and_then(app_id)).flatten();
                 Some(Proc {
                     pid,
-                    name,
+                    name: st.name,
                     cpu,
-                    mem: rss * page,
+                    mem: st.rss * page,
+                    state: st.state,
+                    nice: st.nice,
+                    kind,
+                    unit,
+                    app,
+                    disk,
                 })
             })
             .collect();
@@ -1099,8 +1202,8 @@ mod tests {
 
     #[test]
     fn diskstats_and_net() {
-        let d = parse_diskstats(" 259 0 nvme0n1 10 0 2048 5 20 0 4096 9 0 0 0\n");
-        assert_eq!(d["nvme0n1"], (2048, 4096));
+        let d = parse_diskstats(" 259 0 nvme0n1 10 0 2048 5 20 0 4096 9 0 77 0\n");
+        assert_eq!(d["nvme0n1"], (2048, 4096, 77));
         let n = parse_net_dev("h1\nh2\n  eth0: 100 1 0 0 0 0 0 0 200 2 0 0 0 0 0 0\n");
         assert_eq!(n["eth0"], (100, 200));
     }
@@ -1127,7 +1230,49 @@ mod tests {
     #[test]
     fn proc_stat() {
         let line = "42 (a (b) c) S 1 1 1 0 -1 0 0 0 0 0 7 3 0 0 20 0 1 0 100 4096 25 0";
-        assert_eq!(parse_proc_stat(line), Some(("a (b) c".into(), 10, 25)));
+        let st = parse_proc_stat(line).unwrap();
+        assert_eq!(
+            (st.name.as_str(), st.state, st.ppid, st.ticks, st.nice, st.rss),
+            ("a (b) c", 'S', 1, 10, 0, 25)
+        );
         assert_eq!(parse_proc_stat("garbage"), None);
+    }
+
+    #[test]
+    fn proc_io() {
+        let t = "rchar: 9\nwchar: 9\nread_bytes: 4096\nwrite_bytes: 8192\ncancelled_write_bytes: 0\n";
+        assert_eq!(parse_proc_io(t), Some(12288));
+        assert_eq!(parse_proc_io(""), None);
+    }
+
+    #[test]
+    fn cgroup_kind() {
+        let u = "0::/user.slice/user-1000.slice/user@1000.service/";
+        let c = |s: &str| classify(&format!("{u}{s}\n"), 1000);
+        assert_eq!(c("app.slice/app-code-4440.scope"), ("app", Some("app-code-4440.scope".into())));
+        assert_eq!(c("app.slice/ntfs-nag.service").0, "bg");
+        assert_eq!(c("session.slice/plasma-kwin_wayland.service").0, "bg");
+        assert_eq!(classify("0::/user.slice/user-1000.slice/session-3.scope", 1000).0, "bg");
+        assert_eq!(classify("0::/system.slice/sshd.service", 1000).0, "sys");
+        assert_eq!(classify(&format!("{u}app.slice/app-x-1.scope"), 1001).0, "sys");
+        assert_eq!(classify("0::/", 1000), ("sys", None));
+        assert_eq!(classify("", 1000), ("sys", None));
+    }
+
+    #[test]
+    fn app_ids() {
+        assert_eq!(app_id("app-code-4440.scope").as_deref(), Some("code"));
+        assert_eq!(app_id("app-steam@autostart.service").as_deref(), Some("steam"));
+        assert_eq!(app_id("app-code@e9d30105.service").as_deref(), Some("code"));
+        assert_eq!(
+            app_id("app-flatpak-org.fcitx.Fcitx5-3782739276.scope").as_deref(),
+            Some("org.fcitx.Fcitx5")
+        );
+        assert_eq!(
+            app_id("app-gnome-org.gnome.Terminal-123.scope").as_deref(),
+            Some("org.gnome.Terminal")
+        );
+        assert_eq!(app_id("app-google\\x2dchrome-55.scope").as_deref(), Some("google-chrome"));
+        assert_eq!(app_id("ntfs-nag.service"), None);
     }
 }

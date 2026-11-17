@@ -57,8 +57,8 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### src/sys.rs
 
-解析器都吃字串、有單元測試（`stat`、`meminfo`、`cpuinfo`（含 CPU 名稱整理）、記憶體規格（udev）、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`、base64）。
-`Monitor` 保存上次的 CPU jiffies、磁碟扇區、網路位元組、各程序 ticks 與取樣時間，速率＝差值／實際經過秒數。
+解析器都吃字串、有單元測試（`stat`、`meminfo`、`cpuinfo`（含 CPU 名稱整理）、記憶體規格（udev）、`net/route`、`diskstats`、`net/dev`、`mountinfo`、`[pid]/stat`、`[pid]/io`、cgroup 分類與 desktop id、base64）。
+`Monitor` 保存上次的 CPU jiffies、磁碟扇區與 io_ticks、網路位元組、各程序 ticks 與磁碟位元組、取樣時間，速率＝差值／實際經過秒數。
 
 JSON（camelCase）：
 
@@ -68,7 +68,8 @@ Snapshot {
   mem:     { total, used, available, free, cached, swapTotal, swapUsed }
            // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable
   gpus:    [{ name, usage, memUsed, memTotal, temp, encoder, decoder }] // encoder/decoder：NVENC／NVDEC 使用率 %，非 NVIDIA 為 null
-  disks:   [{ name, model, size, readBps, writeBps, used, total, mounts }]
+  disks:   [{ name, model, size, readBps, writeBps, busy, used, total, mounts }]
+           // busy：活動時間 %（diskstats io_ticks 差值／經過時間，上限 100）
            // 只列有 /sys/block/<n>/device、容量 > 0、不是光碟機（sr*）的實體磁碟；used/total/mounts 為掛載在這顆硬碟上的檔案系統加總（沒有掛載時 used/total 為 null）
   mounts:  [{ mount, device, total, used }]                     // bytes
   net:     [{ name, up, mac, ip, gateway, rxTotal, txTotal, rxBps, txBps }]
@@ -77,7 +78,9 @@ Snapshot {
   sensors: [{ chip, device, label, kind: "temp"|"fan"|"percent"|"volt"|"power", value, crit }] // °C、RPM、%、V、W；crit 為臨界溫度 °C（沒有時 null）；沒有 label 時用 temp1 等；device 為裝置顯示名稱（sensor_device）
   uptime                                                         // 秒
 }
-Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
+Proc       { pid, name, cpu, mem, state, nice, kind, unit, app, disk }
+           // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）；state 為 stat 狀態字母（R/S/D/T/Z…）
+           // kind："app"|"bg"|"sys"；unit 為 cgroup 最後一段（核心執行緒為 "kernel"）；app 為 desktop id；disk 為 read_bytes+write_bytes 每秒（讀不到或第一次為 null）
 SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home, osId, logo, memSpec }
 ```
 
@@ -94,6 +97,9 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
   優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
+- 程序分類（`classify`）：`/proc/<pid>/cgroup` 的 `0::` 路徑，最後一段為 unit。路徑不在 `/user-<自己 uid>.slice/` 下 → `sys`（系統服務、其他使用者）；在其下且上一層為 `app.slice`、unit 以 `app-` 開頭 → `app`；其他（session.slice、background.slice、`session-N.scope`、app.slice 內非 `app-` 的服務）→ `bg`。pid 2 與 ppid 為 2 的核心執行緒為 `sys`、unit `kernel`。
+  `app_id`：`app[-<launcher>]-<id>-<n>.scope` 去掉最後一段、`app-<id>[@<x>].service` 去掉 `@` 之後，`\x2d` 還原為 `-`，後面是反向網域名稱時去掉 `flatpak-`／`gnome-`／`kde-` 啟動器前綴（`app-flatpak-org.fcitx.Fcitx5-3782739276.scope` → `org.fcitx.Fcitx5`）。
+- 程序磁碟（`parse_proc_io`）：`/proc/<pid>/io` 的 `read_bytes + write_bytes`，只讀得到自己的程序，其他為 `null`。
 - 感測器：`/sys/class/hwmon/*` 的檔案經 `hwmon_kind` 分類：`tempN_input`（m°C）、`fanN_input`（RPM）、`inN_input`（mV → V）、`powerN_input`／`powerN_average`（µW → W，兩者都有時只取 `_input`），其他檔案略過；每個晶片內依溫度、風扇、電壓、功耗排序。溫度 ≤ -100 °C 略過（it87 在沒接熱敏電阻的接腳回報 -128 °C）。
   ITE 晶片（`it8*`）沒有 `_label` 的項目經 `ite_label` 命名：溫度依 `tempN_type`（6 → CPU（PECI）、5 → CPU（AMD TSI）、4 → 主機板、3 → 主機板（二極體））；主機板廠商（`/sys/class/dmi/id/board_vendor`，`OnceLock`）為 Gigabyte 時，`in0` → CPU Vcore、`in1`／`in2`／`in3` → +3.3V／+12V／+5V 並乘上分壓倍數 1.65／6／2.5、`fan1` → CPU 風扇；其餘（`in4` 以後、`fan2` 以後）各代主機板接法不同，維持原名。
   CPU 功耗：`/sys/class/powercap/intel-rapl:*`（`Monitor.rapl` 保存各區域上次的 `energy_uj`），功耗＝差值／經過秒數（µJ → W），計數器歸零時以 `energy_delta` 加上 `max_energy_range_uj`；第一次取樣不輸出。以 chip `intel-rapl`、device 為 CPU 型號、label 為區域名稱（`package-0`／`core`／`dram`／`uncore`）、kind `power` 加入 sensors；`energy_uj` 讀不到時 `raplLocked` 為 `true`。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
