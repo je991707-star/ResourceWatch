@@ -56,10 +56,10 @@
 - [x] ✅ 播放影片或串流時，對應程序出現 `GPU 0 - Video Decode` 等引擎（本機實測：sunshine 串流時為 `GPU 0 - Video Encode` 40%）
 
 ### Phase 4：收尾
-- `Readme_Architecture.md` 各章節更新、`mockInvoke` 假資料補上新欄位、release 編譯無誤。
+- `Readme_Architecture.md` 各章節更新、release 編譯無誤（repo 內沒有 `mockInvoke` 假資料檔，不需更新）。
 
 驗收：
-- [ ] 文件與程式一致，編譯無錯誤
+- [x] ✅ 文件與程式一致，編譯無錯誤
 
 ## 4. 已知限制
 
