@@ -296,6 +296,7 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .files td .i { width: 18px; font-size: 14px; color: var(--muted); margin-right: 8px; display: inline-block; }
 .files tr.dir td .i { color: var(--blue); }
 .err { color: var(--red); margin-bottom: 12px; }
+.hot { color: var(--red); font-weight: 700; }
 
 /* gpu meters + settings */
 .gpu-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 20px; align-items: center; }

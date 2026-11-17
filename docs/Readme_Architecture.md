@@ -72,7 +72,7 @@ Snapshot {
   mounts:  [{ mount, device, total, used }]                     // bytes
   net:     [{ name, up, mac, ip, gateway, rxTotal, txTotal, rxBps, txBps }]
            // 只列有 /sys/class/net/<n>/device 的實體介面；up = operstate "up"；ip 為第一個 IPv4；gateway 為該介面的預設路由
-  sensors: [{ chip, device, label, kind: "temp"|"fan"|"percent"|"power", value }] // °C、RPM、%、W；沒有 label 時用 temp1 等；device 為裝置顯示名稱（sensor_device）
+  sensors: [{ chip, device, label, kind: "temp"|"fan"|"percent"|"volt"|"power", value, crit }] // °C、RPM、%、V、W；crit 為臨界溫度 °C（沒有時 null）；沒有 label 時用 temp1 等；device 為裝置顯示名稱（sensor_device）
   uptime                                                         // 秒
 }
 Proc       { pid, name, cpu, mem }      // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）
@@ -92,7 +92,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
   優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
-- 感測器：`/sys/class/hwmon/*` 的 `temp*_input`／`fan*_input`。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
+- 感測器：`/sys/class/hwmon/*` 的檔案經 `hwmon_kind` 分類：`tempN_input`（m°C）、`fanN_input`（RPM）、`inN_input`（mV → V）、`powerN_input`／`powerN_average`（µW → W，兩者都有時只取 `_input`），其他檔案略過；每個晶片內依溫度、風扇、電壓、功耗排序。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
   `nvme`／`drivetemp` → `<hwmon>/device/model`（`_` 換空格，沒有時為「硬碟」）；`acpitz` → 主機板（ACPI）；`it8*`／`nct*` → 主機板；`amdgpu`／`radeon`／`nouveau`／`i915`／`xe` → 顯示卡；其他沿用 chip 名稱。`chip` 保留給 CPU 溫度判斷。
   NVIDIA 的溫度不在 hwmon：`nvml_sensors` 把 NVML 顯示卡（`Gpu.nvml`）的溫度（「核心」）、風扇 %（`percent`）、功耗（`power`，W）以 chip `nvidia`、device 為顯示卡型號附加在最後；讀不到的項目略過。
 
@@ -157,7 +157,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題右側綠／紅點為連線狀態；連線中的顯示位址、大字速率與累計、上傳在上／下載在下的大條狀圖。
   - 感測器：依 `device` 分組，卡片標題為類型圖示（`sensorIcon`：處理器晶片、硬碟、顯示卡（含 `nvidia`）`fa-display`、其他為主機板 `fa-server`）與裝置名稱（過長截斷）；
-    項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、W 取一位小數）。同型號的兩顆硬碟會併在同一張卡。
+    項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」。同型號的兩顆硬碟會併在同一張卡。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（處理器、顯示卡；SVG `viewBox 0 0 59 100`、背景三條線：頂端（上限）長虛線、中間（一半）短虛線、底部（0）實線；`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線；半透明面積上再畫一條線，0 的位置在 y=99，全為 0 的序列仍看得到底線）、

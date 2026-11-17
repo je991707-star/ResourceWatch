@@ -96,6 +96,8 @@ struct Sensor {
     label: String,
     kind: &'static str,
     value: f64,
+    /// Critical temperature (°C) from `tempN_crit`, else `tempN_max`; `null` when absent or implausible.
+    crit: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -569,21 +571,30 @@ fn sensors() -> Vec<Sensor> {
     for dir in dirs {
         let chip = read(dir.join("name")).trim().to_string();
         let device = sensor_device(&chip, read(dir.join("device/model")).trim());
-        let mut files: Vec<String> = fs::read_dir(&dir)
+        let files: Vec<String> = fs::read_dir(&dir)
             .into_iter()
             .flatten()
             .flatten()
             .filter_map(|e| e.file_name().into_string().ok())
-            .filter(|n| n.ends_with("_input") && (n.starts_with("temp") || n.starts_with("fan")))
             .collect();
-        files.sort_by_key(|n| (n.starts_with("fan"), n.len(), n.clone()));
-        for f in files {
-            let Some(raw) = read_num(dir.join(&f)) else {
+        let mut found: Vec<_> = files
+            .iter()
+            .filter_map(|f| hwmon_kind(f).map(|(p, k, s)| (f, p, k, s)))
+            // amdgpu has power1_average without power1_input; prefer _input when both exist
+            .filter(|(f, p, _, _)| !f.ends_with("_average") || !files.contains(&format!("{p}_input")))
+            .collect();
+        found.sort_by_key(|&(_, p, k, _)| (["temp", "fan", "volt", "power"].iter().position(|&x| x == k), p.len(), p));
+        for (f, prefix, kind, scale) in found {
+            let Some(raw) = read_num(dir.join(f)) else {
                 continue;
             };
-            let prefix = f.trim_end_matches("_input");
             let label = read(dir.join(format!("{prefix}_label"))).trim().to_string();
-            let temp = prefix.starts_with("temp");
+            let limit = |s: &str| read_num(dir.join(format!("{prefix}_{s}"))).map(|v| v / 1000.0);
+            // shortcut: crit outside 0–150 °C is treated as bogus (nvme reports 65261 °C), widen if a real chip needs it
+            let crit = (kind == "temp")
+                .then(|| limit("crit").or_else(|| limit("max")))
+                .flatten()
+                .filter(|c| *c > 0.0 && *c <= 150.0);
             out.push(Sensor {
                 chip: chip.clone(),
                 device: device.clone(),
@@ -592,12 +603,30 @@ fn sensors() -> Vec<Sensor> {
                 } else {
                     label
                 },
-                kind: if temp { "temp" } else { "fan" },
-                value: if temp { raw / 1000.0 } else { raw },
+                kind,
+                value: raw / scale,
+                crit,
             });
         }
     }
     out
+}
+
+/// hwmon file name → (prefix, kind, divisor to °C / RPM / V / W); `None` for files we don't show.
+fn hwmon_kind(file: &str) -> Option<(&str, &'static str, f64)> {
+    let (prefix, suffix) = file.rsplit_once('_')?;
+    let kind = prefix.trim_end_matches(|c: char| c.is_ascii_digit());
+    if kind.len() == prefix.len() {
+        return None;
+    }
+    let (k, scale) = match (kind, suffix) {
+        ("temp", "input") => ("temp", 1000.0),
+        ("fan", "input") => ("fan", 1.0),
+        ("in", "input") => ("volt", 1000.0),
+        ("power", "input" | "average") => ("power", 1_000_000.0),
+        _ => return None,
+    };
+    Some((prefix, k, scale))
 }
 
 /// Display name of the device behind a hwmon chip; `model` is `<hwmon>/device/model` (disks) or empty.
@@ -631,6 +660,7 @@ fn nvml_sensors(gpus: &[Gpu]) -> Vec<Sensor> {
                         label: label.into(),
                         kind,
                         value: v?,
+                        crit: None,
                     })
                 })
         })
@@ -839,6 +869,18 @@ impl Monitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hwmon_kinds() {
+        assert_eq!(hwmon_kind("temp1_input"), Some(("temp1", "temp", 1000.0)));
+        assert_eq!(hwmon_kind("fan2_input"), Some(("fan2", "fan", 1.0)));
+        assert_eq!(hwmon_kind("in0_input"), Some(("in0", "volt", 1000.0)));
+        assert_eq!(hwmon_kind("power1_average"), Some(("power1", "power", 1_000_000.0)));
+        assert_eq!(hwmon_kind("temp1_crit"), None);
+        assert_eq!(hwmon_kind("temp_input"), None);
+        assert_eq!(hwmon_kind("name"), None);
+        assert_eq!(hwmon_kind("curr1_input"), None);
+    }
 
     #[test]
     fn sensor_device_names() {

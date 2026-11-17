@@ -243,21 +243,23 @@ function gpuCard(s) {
 function sensorsCard(s) {
   const list = s.sensors.slice(0, 8);
   if (!list.length) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
-  return card('感測器', `<table>${list.map((x) => `<tr><td class="grow">${esc(x.device)} · ${esc(sensorLabel(x.label))}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>${s.sensors.length > 8 ? more('sensors', '顯示更多…') : ''}`);
+  return card('感測器', `<table>${list.map((x) => `<tr><td class="grow">${esc(x.device)} · ${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>${s.sensors.length > 8 ? more('sensors', '顯示更多…') : ''}`);
 }
 // hwmon label → readable name; unknown labels pass through
 const SENSOR_LABEL = [
   [/^Package id 0$/, '處理器封裝'], [/^Package id (\d+)$/, '處理器封裝 $1'], [/^Core (\d+)$/, '核心 $1'],
   [/^T(ctl|die)$/, '處理器'], [/^Tccd(\d+)$/, 'CCD $1'], [/^Composite$/, '整體'], [/^Sensor (\d+)$/, '感測點 $1'],
   [/^edge$/, '核心'], [/^junction$/, '熱點'], [/^mem$/, '顯示記憶體'],
-  [/^temp(\d+)$/, '溫度 $1'], [/^fan(\d+)$/, '風扇 $1'], [/^in(\d+)$/, '電壓 $1'],
+  [/^temp(\d+)$/, '溫度 $1'], [/^fan(\d+)$/, '風扇 $1'], [/^in(\d+)$/, '電壓 $1'], [/^power(\d+)$/, '功耗 $1'],
 ];
 const sensorLabel = (l) => { const r = SENSOR_LABEL.find(([re]) => re.test(l)); return r ? l.replace(r[0], r[1]) : l; };
 // chip → card icon: CPU chip, disk, video card, else mainboard
 const sensorIcon = (chip) => (/^(coretemp|k10temp|zenpower|cpu_thermal)$/.test(chip) ? 'gpu'
   : /^(nvme|drivetemp)$/.test(chip) ? 'storage' : /^(amdgpu|radeon|nouveau|i915|xe|nvidia)$/.test(chip) ? 'display' : 'board');
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : x.kind === 'percent' ? `${x.value.toFixed(0)}%`
-  : x.kind === 'power' ? `${x.value.toFixed(1)} W` : `${x.value.toFixed(0)} rpm`);
+  : x.kind === 'power' ? `${x.value.toFixed(1)} W` : x.kind === 'volt' ? `${x.value.toFixed(2)} V` : `${x.value.toFixed(0)} rpm`);
+// value cell; red at or above the chip's critical temperature
+const sensorTd = (x) => `<td class="num${x.crit != null && x.value >= x.crit ? ' hot' : ''}"${x.crit != null ? ` title="臨界 ${temp(x.crit)}"` : ''}>${fmtSensor(x)}</td>`;
 
 function ioCard(s) {
   const d = s.disks.find((x) => x.name === pick.io) ?? s.disks[0];
@@ -316,7 +318,7 @@ const PAGES = {
     s.sensors.forEach((x) => devs.set(x.device, [...(devs.get(x.device) ?? []), x]));
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
     return `<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
-      `<tr><td class="grow">${esc(sensorLabel(x.label))}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>`)).join('')}</div>`;
+      `<tr><td class="grow">${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>`)).join('')}</div>`;
   }],
 };
 
