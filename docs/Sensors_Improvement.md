@@ -61,7 +61,7 @@
 
 每個 Phase 共同條件：`cargo test` 通過（新增 label／單位換算測試）、`cargo tauri build` 無錯誤、`Readme_Architecture.md` 對應章節已更新、已 commit。
 
-- **Phase 1** ☐
+- **Phase 1** ✅
   - `coretemp · Package id 0` 顯示為「〈CPU 型號〉· 處理器封裝」，各核心為「核心 0–3」
   - `acpitz · temp1` 顯示為「主機板（ACPI）· 溫度 1」
   - nvme 卡片標題為硬碟型號，項目為「整體」「感測點 1」

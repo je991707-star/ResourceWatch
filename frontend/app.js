@@ -54,6 +54,7 @@ const ICON = {
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
+  display: 'fa-solid fa-display', board: 'fa-solid fa-server',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -242,8 +243,19 @@ function gpuCard(s) {
 function sensorsCard(s) {
   const list = s.sensors.slice(0, 8);
   if (!list.length) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
-  return card('感測器', `<table>${list.map((x) => `<tr><td class="grow">${esc(x.chip)} · ${esc(x.label)}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>${s.sensors.length > 8 ? more('sensors', '顯示更多…') : ''}`);
+  return card('感測器', `<table>${list.map((x) => `<tr><td class="grow">${esc(x.device)} · ${esc(sensorLabel(x.label))}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>${s.sensors.length > 8 ? more('sensors', '顯示更多…') : ''}`);
 }
+// hwmon label → readable name; unknown labels pass through
+const SENSOR_LABEL = [
+  [/^Package id 0$/, '處理器封裝'], [/^Package id (\d+)$/, '處理器封裝 $1'], [/^Core (\d+)$/, '核心 $1'],
+  [/^T(ctl|die)$/, '處理器'], [/^Tccd(\d+)$/, 'CCD $1'], [/^Composite$/, '整體'], [/^Sensor (\d+)$/, '感測點 $1'],
+  [/^edge$/, '核心'], [/^junction$/, '熱點'], [/^mem$/, '顯示記憶體'],
+  [/^temp(\d+)$/, '溫度 $1'], [/^fan(\d+)$/, '風扇 $1'], [/^in(\d+)$/, '電壓 $1'],
+];
+const sensorLabel = (l) => { const r = SENSOR_LABEL.find(([re]) => re.test(l)); return r ? l.replace(r[0], r[1]) : l; };
+// chip → card icon: CPU chip, disk, video card, else mainboard
+const sensorIcon = (chip) => (/^(coretemp|k10temp|zenpower|cpu_thermal)$/.test(chip) ? 'gpu'
+  : /^(nvme|drivetemp)$/.test(chip) ? 'storage' : /^(amdgpu|radeon|nouveau|i915|xe)$/.test(chip) ? 'display' : 'board');
 const fmtSensor = (x) => (x.kind === 'temp' ? temp(x.value) : `${x.value.toFixed(0)} rpm`);
 
 function ioCard(s) {
@@ -298,11 +310,12 @@ const PAGES = {
   }],
 
   sensors: ['感測器', (s) => {
-    const chips = new Map();
-    s.sensors.forEach((x) => chips.set(x.chip, [...(chips.get(x.chip) ?? []), x]));
-    if (!chips.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
-    return `<div class="grid">${[...chips].map(([chip, list]) => card(esc(chip), `<table class="zebra">${list.map((x) =>
-      `<tr><td class="grow">${esc(x.label)}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>`)).join('')}</div>`;
+    // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
+    const devs = new Map();
+    s.sensors.forEach((x) => devs.set(x.device, [...(devs.get(x.device) ?? []), x]));
+    if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
+    return `<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
+      `<tr><td class="grow">${esc(sensorLabel(x.label))}</td><td class="num">${fmtSensor(x)}</td></tr>`).join('')}</table>`)).join('')}</div>`;
   }],
 };
 

@@ -92,6 +92,7 @@ struct Net {
 #[derive(Serialize)]
 struct Sensor {
     chip: String,
+    device: String,
     label: String,
     kind: &'static str,
     value: f64,
@@ -567,6 +568,7 @@ fn sensors() -> Vec<Sensor> {
     let mut out = Vec::new();
     for dir in dirs {
         let chip = read(dir.join("name")).trim().to_string();
+        let device = sensor_device(&chip, read(dir.join("device/model")).trim());
         let mut files: Vec<String> = fs::read_dir(&dir)
             .into_iter()
             .flatten()
@@ -584,6 +586,7 @@ fn sensors() -> Vec<Sensor> {
             let temp = prefix.starts_with("temp");
             out.push(Sensor {
                 chip: chip.clone(),
+                device: device.clone(),
                 label: if label.is_empty() {
                     prefix.to_string()
                 } else {
@@ -595,6 +598,23 @@ fn sensors() -> Vec<Sensor> {
         }
     }
     out
+}
+
+/// Display name of the device behind a hwmon chip; `model` is `<hwmon>/device/model` (disks) or empty.
+fn sensor_device(chip: &str, model: &str) -> String {
+    static CPU: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    match chip {
+        "coretemp" | "k10temp" | "zenpower" | "cpu_thermal" => {
+            let cpu = CPU.get_or_init(|| parse_cpuinfo(&read("/proc/cpuinfo")).0);
+            if cpu.is_empty() { "處理器" } else { cpu }.to_string()
+        }
+        "nvme" | "drivetemp" if !model.is_empty() => model.replace('_', " "),
+        "nvme" | "drivetemp" => "硬碟".into(),
+        "acpitz" => "主機板（ACPI）".into(),
+        "amdgpu" | "radeon" | "nouveau" | "i915" | "xe" => "顯示卡".into(),
+        c if c.starts_with("it8") || c.starts_with("nct") => "主機板".into(),
+        c => c.into(),
+    }
 }
 
 pub struct Monitor {
@@ -797,6 +817,18 @@ impl Monitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sensor_device_names() {
+        assert_eq!(sensor_device("nvme", "Micron_2400_MTFDKBA512QFM"), "Micron 2400 MTFDKBA512QFM");
+        assert_eq!(sensor_device("drivetemp", ""), "硬碟");
+        assert_eq!(sensor_device("acpitz", ""), "主機板（ACPI）");
+        assert_eq!(sensor_device("it8620", ""), "主機板");
+        assert_eq!(sensor_device("nct6798", ""), "主機板");
+        assert_eq!(sensor_device("amdgpu", ""), "顯示卡");
+        assert_eq!(sensor_device("asus_ec", ""), "asus_ec");
+        assert!(!sensor_device("coretemp", "").is_empty());
+    }
 
     #[test]
     fn stat_usage() {
