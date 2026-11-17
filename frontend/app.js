@@ -240,10 +240,22 @@ function gpuCard(s) {
       <div class="sect">${cap('使用率', '')}${chart([{ data: hist[`gpu${i}`], cls: 'c-blue' }], 100)}</div>`);
 }
 
+// shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
+function sensorGroups(s) {
+  const devs = new Map();
+  s.sensors.forEach((x) => devs.set(x.device, [...(devs.get(x.device) ?? []), x]));
+  return devs;
+}
+
+// one row per device: its first temperature (package / Composite / GPU core; the backend lists temps first), else its first reading
 function sensorsCard(s) {
-  const list = s.sensors.slice(0, 8);
-  if (!list.length) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
-  return card('感測器', `<table>${list.map((x) => `<tr><td class="grow">${esc(x.device)} · ${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>${s.sensors.length > 8 ? more('sensors', '顯示更多…') : ''}`);
+  const devs = [...sensorGroups(s)];
+  if (!devs.length) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
+  const rows = devs.slice(0, 8).map(([dev, list]) => {
+    const x = list.find((y) => y.kind === 'temp') ?? list[0];
+    return `<tr title="${esc(sensorLabel(x.label))}"><td class="grow">${icon(sensorIcon(x.chip))} ${esc(dev)}</td>${sensorTd(x)}</tr>`;
+  });
+  return card('感測器', `<table>${rows.join('')}</table>${s.sensors.length > rows.length ? more('sensors', '顯示更多…') : ''}`);
 }
 // hwmon label → readable name; unknown labels pass through
 const SENSOR_LABEL = [
@@ -313,9 +325,7 @@ const PAGES = {
   }],
 
   sensors: ['感測器', (s) => {
-    // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
-    const devs = new Map();
-    s.sensors.forEach((x) => devs.set(x.device, [...(devs.get(x.device) ?? []), x]));
+    const devs = sensorGroups(s);
     // hint for sensors that need a kernel module the user has to load (root)
     const has = (re) => s.sensors.some((x) => re.test(x.chip));
     const missing = [!has(/^(it8|nct)/) && '主機板風扇與電壓（it87／nct6775）',
