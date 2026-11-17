@@ -120,6 +120,8 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* ── cards ── */
 .masonry { columns: 3 330px; column-gap: 24px; }
 .masonry > .card { break-inside: avoid; margin-bottom: 24px; display: inline-block; width: 100%; }
+.cols { display: flex; gap: 24px; align-items: flex-start; }
+.col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 /* spacing scale inside cards: 22 card padding · 18 title/section · 16 between blocks · 10 rows · 8 caption */
 .card { background: var(--card); border-radius: 16px; padding: 20px 22px 22px; box-shadow: var(--shadow); min-width: 0; }
 .stack { display: grid; gap: 22px; }

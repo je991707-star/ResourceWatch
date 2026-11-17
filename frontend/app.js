@@ -265,6 +265,18 @@ function sensorBody(dev, list) {
   return body + (rest.length ? `<details class="raw"${rawOpen.has(dev) ? ' open' : ''}><summary data-raw="${esc(dev)}">其他讀數（${rest.length}）</summary>${table(rest)}</details>` : '');
 }
 
+// Columns split by card count (6 → 3:3 or 2:2:2), unlike CSS columns which balance by height. Column count
+// follows .masonry: up to 3 columns of at least 330 px with 24 px gaps, from #content's inner width.
+function evenCols(cards) {
+  const c = $('#content'), cs = getComputedStyle(c);
+  const w = c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const n = Math.max(1, Math.min(3, Math.floor((w + 24) / (330 + 24)), cards.length));
+  const base = Math.floor(cards.length / n), extra = cards.length % n;
+  let at = 0;
+  const cols = Array.from({ length: n }, (_, k) => cards.slice(at, at += base + (k < extra ? 1 : 0)));
+  return `<div class="cols">${cols.map((col) => `<div class="col">${col.join('')}</div>`).join('')}</div>`;
+}
+
 // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
 function sensorGroups(s) {
   const devs = new Map();
@@ -361,7 +373,13 @@ const PAGES = {
       `<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button>`).join('')}</p>` : '')
       + (elev.err ? `<p class="hint err">${esc(elev.err)}</p>` : '');
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;
-    return `${hint}<div class="masonry">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, sensorBody(dev, list))).join('')}</div>`;
+    const cards = (xs) => xs.map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, sensorBody(dev, list)));
+    // all disks share one "磁碟" card (a section per disk) so they stay together inside the masonry
+    const isDisk = ([, list]) => sensorIcon(list[0].chip) === 'storage';
+    const all = [...devs], disks = all.filter(isDisk);
+    const diskCard = disks.length ? card(`${icon('storage')}磁碟`, disks.map(([dev, list], i) =>
+      `<div${i ? ' class="sect"' : ''}><h3 class="sub">${icon('storage')}<span class="ell" title="${esc(dev)}">${esc(dev)}</span></h3>${sensorBody(dev, list)}</div>`).join('')) : '';
+    return hint + evenCols([...cards(all.filter((d) => !isDisk(d))), ...(diskCard ? [diskCard] : [])]);
   }],
 };
 
@@ -475,6 +493,8 @@ function setPref(key, val) {
   applyPrefs();
   render();
 }
+// evenCols picks the column count from the width, so the sensors page re-lays out on resize
+addEventListener('resize', () => { if (page === 'sensors') render(); });
 const media = matchMedia('(prefers-color-scheme: dark)');
 function applyPrefs() {
   document.documentElement.dataset.theme = prefs.theme === 'system' ? (media.matches ? 'dark' : 'light') : prefs.theme;
