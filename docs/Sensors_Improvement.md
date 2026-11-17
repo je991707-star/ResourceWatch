@@ -143,10 +143,10 @@ App 本身不以 root 執行；按鈕透過 `pkexec`（polkit，KDE 會跳出密
 - **Phase 5** ✅
   - 儀表板感測器卡片一個裝置一列，不再被核心溫度佔滿
 - **Phase 6** ☐
-  - 按「開放讀取」跳出 KDE 密碼視窗；取消時提示列顯示錯誤，權限不變
-  - 授權後感測器頁 CPU 卡片出現封裝／核心／記憶體功耗（W），閒置時數值合理（約數瓦到十幾瓦）
-  - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root h97m`
+  - 按「開放讀取」跳出 KDE 密碼視窗；取消時提示列顯示錯誤，權限不變 ✅
+  - 授權後感測器頁 CPU 卡片出現封裝／核心／記憶體功耗（W），閒置時數值合理（約數瓦到十幾瓦） ✅
+  - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root h97m` ✅
   - 重開機後權限恢復、按鈕再次出現
   - 卸載模組（`sudo modprobe -r it87 drivetemp`）後按「載入感測器模組」：授權後主機板與硬碟卡片出現、提示消失，且沒有寫入任何 `/etc` 檔案
-  - `elevate` 傳入其他值時回傳錯誤，不執行 `pkexec`
+  - `elevate` 傳入其他值時回傳錯誤，不執行 `pkexec` ✅
 
