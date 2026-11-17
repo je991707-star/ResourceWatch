@@ -26,6 +26,9 @@
    - NVIDIA 溫度走 NVML，不在 hwmon → 感測器頁沒有顯示卡（只出現在 GPU 卡片）。
    - 後端忽略 hwmon 的 `in*`（電壓）、`power*`（瓦數），也不讀 `temp*_crit`／`_max` 臨界值。
 3. **儀表板卡片**只取前 8 筆原始資料，常被同一顆 CPU 的各核心佔滿。
+4. **需要 root 才能取得的感測器**：
+   - CPU 功耗（RAPL：`/sys/class/powercap/intel-rapl:*/energy_uj`，封裝／核心／DRAM）權限為 `-r--------`，一般使用者讀不到（核心為防範 PLATYPUS 側通道攻擊 CVE-2020-8694 而限制）。
+   - Phase 4 的模組載入要使用者自己開終端機打 `sudo modprobe`。
 
 ## 3. 改善方案（分 Phase）
 
@@ -99,7 +102,25 @@ sudo modprobe -r it87 drivetemp
 ### Phase 5：儀表板精簡
 - 儀表板感測器卡片每個裝置只取一筆代表值（封裝／Composite／GPU 溫度／第一個風扇），取代前 8 筆。
 
-**不做**：歷史曲線、警報通知、自動載入模組、PCI ID 資料庫。
+### Phase 6：按鈕取得 root 權限（僅限這次開機）
+App 本身不以 root 執行；按鈕透過 `pkexec`（polkit，KDE 會跳出密碼視窗）執行一段**寫死在程式裡的固定指令**，只做一次，之後 App 仍以一般使用者讀取。所有變更都只在這次開機有效，不寫任何 `/etc` 檔案；永久設定仍依 Phase 4 操作步驟 2 手動進行。
+
+- **後端指令 `elevate(action)`**（`main.rs`，在 `spawn_blocking` 執行，等待輸入密碼時視窗不會卡住）：
+  - `action` 只接受 `"rapl"`、`"modules"`，其他值回傳錯誤；前端傳不了任何字串進指令。
+  - `rapl`：`pkexec sh -c 'chgrp wheel /sys/class/powercap/intel-rapl:*/energy_uj && chmod 0440 /sys/class/powercap/intel-rapl:*/energy_uj'`——只開放給 `wheel` 群組（管理員），不是所有使用者。
+  - `modules`：`pkexec sh -c 'modprobe drivetemp; modprobe it87 ignore_resource_conflict=1'`。
+  - 使用者取消或密碼錯誤（`pkexec` 結束碼 126／127）回傳中文錯誤訊息；成功回傳 `null`。
+- **讀取 CPU 功耗**（`sys.rs`）：
+  - `Monitor` 保存各 RAPL 區域上次的 `energy_uj` 與時間，功耗＝差值／經過秒數（µJ → W）；計數器歸零（目前值小於上次）時加上 `max_energy_range_uj`；第一次取樣沒有前值，不輸出。
+  - 以 `Sensor { chip: "intel-rapl", device: CPU 型號, kind: "power" }` 加入 sensors，與 coretemp 同一張卡片；label 對照：`package-N` → 封裝功耗、`core` → 核心功耗、`dram` → 記憶體功耗、`uncore` → 內顯功耗。
+  - `Snapshot` 新增 `raplLocked`：有 RAPL 區域但 `energy_uj` 讀不到時為 `true`。
+- **前端**（感測器頁頁首提示列）：
+  - `raplLocked` 時顯示「讀不到 CPU 功耗」＋按鈕「開放讀取」→ `elevate("rapl")`。
+  - 缺主機板晶片或 SATA 硬碟溫度時（Phase 4 的提示）多一個按鈕「載入感測器模組」→ `elevate("modules")`。
+  - 執行中按鈕停用並顯示「等待授權…」；失敗時在提示列顯示錯誤訊息；成功後下一次快照自然出現新數值、提示消失。
+- 架構文檔「外部程序」一段要補上：使用者按下按鈕時才會執行 `pkexec`。
+
+**不做**：歷史曲線、警報通知、開機自動載入模組或自動提權、PCI ID 資料庫、永久權限設定。
 
 ## 4. 驗收條件（分 Phase）
 
@@ -121,4 +142,11 @@ sudo modprobe -r it87 drivetemp
   - 未載入時感測器頁顯示提示 ✅
 - **Phase 5** ✅
   - 儀表板感測器卡片一個裝置一列，不再被核心溫度佔滿
+- **Phase 6** ☐
+  - 按「開放讀取」跳出 KDE 密碼視窗；取消時提示列顯示錯誤，權限不變
+  - 授權後感測器頁 CPU 卡片出現封裝／核心／記憶體功耗（W），閒置時數值合理（約數瓦到十幾瓦）
+  - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root wheel`
+  - 重開機後權限恢復、按鈕再次出現
+  - 卸載模組（`sudo modprobe -r it87 drivetemp`）後按「載入感測器模組」：授權後主機板與硬碟卡片出現、提示消失，且沒有寫入任何 `/etc` 檔案
+  - `elevate` 傳入其他值時回傳錯誤，不執行 `pkexec`
 
