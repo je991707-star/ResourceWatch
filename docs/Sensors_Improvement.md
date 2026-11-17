@@ -147,6 +147,6 @@ App 本身不以 root 執行；按鈕透過 `pkexec`（polkit，KDE 會跳出密
   - 授權後感測器頁 CPU 卡片出現封裝／核心／記憶體功耗（W），閒置時數值合理（約數瓦到十幾瓦） ✅
   - `ls -l /sys/class/powercap/intel-rapl:0/energy_uj` 顯示 `-r--r----- root h97m` ✅
   - 重開機後權限恢復、按鈕再次出現
-  - 卸載模組（`sudo modprobe -r it87 drivetemp`）後按「載入感測器模組」：授權後主機板與硬碟卡片出現、提示消失，且沒有寫入任何 `/etc` 檔案
+  - 卸載模組（`sudo modprobe -r it87 drivetemp`）後按「載入感測器模組」：授權後主機板與硬碟卡片出現、提示消失，且沒有寫入任何 `/etc` 檔案 ✅
   - `elevate` 傳入其他值時回傳錯誤，不執行 `pkexec` ✅
 
