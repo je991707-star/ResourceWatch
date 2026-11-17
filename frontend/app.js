@@ -316,8 +316,13 @@ const PAGES = {
     // shortcut: groups by display name, so two identical disk models share a card; key by hwmon path if that matters
     const devs = new Map();
     s.sensors.forEach((x) => devs.set(x.device, [...(devs.get(x.device) ?? []), x]));
-    if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>');
-    return `<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
+    // hint for sensors that need a kernel module the user has to load (root)
+    const has = (re) => s.sensors.some((x) => re.test(x.chip));
+    const missing = [!has(/^(it8|nct)/) && '主機板風扇與電壓（it87／nct6775）',
+      !has(/^drivetemp$/) && s.disks.some((d) => d.name.startsWith('sd')) && 'SATA 硬碟溫度（drivetemp）'].filter(Boolean);
+    const hint = missing.length ? `<p class="hint">讀不到${missing.join('、')}：需要載入核心模組，步驟見 docs/Sensors_Improvement.md 的 Phase 4。</p>` : '';
+    if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;
+    return `${hint}<div class="grid">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, `<table class="zebra">${list.map((x) =>
       `<tr><td class="grow">${esc(sensorLabel(x.label))}</td>${sensorTd(x)}</tr>`).join('')}</table>`)).join('')}</div>`;
   }],
 };

@@ -52,6 +52,50 @@
   - H97M-D3H 的 ITE 晶片常需 `options it87 ignore_resource_conflict=1`（或 kernel 參數 `acpi_enforce_resources=lax`），附風險說明與 `sudo modprobe` 驗證指令、`rpm-ostree kargs` 寫法。
 - 感測器頁在偵測不到主機板晶片時顯示一行提示。
 
+#### 操作步驟（本機：Gigabyte H97M-D3H，ITE Super I/O）
+
+App 不會自己載入模組（需要 root）。以下指令需要 `sudo`，請自行執行。
+
+**1. 先試載（立即生效，重開機後就沒了）**
+
+```bash
+sudo modprobe drivetemp                              # SATA 硬碟溫度（sda TOSHIBA DT01ABA2；sdc 是讀卡機，不會有溫度）
+sudo modprobe it87 ignore_resource_conflict=1        # 主機板：風扇、電壓、主機板溫度
+cat /sys/class/hwmon/*/name                          # 應多出 drivetemp 與 it86xx/it87xx
+sudo dmesg | grep -iE 'it87|drivetemp' | tail
+```
+
+- `it87` 載入失敗、dmesg 出現 `ACPI resource conflict`：確認有帶 `ignore_resource_conflict=1`。
+- dmesg 顯示找不到晶片（`Found ... not supported` 或沒有任何訊息）：這塊主機板的晶片不受此驅動支援，停在這一步，不要用 `force_id` 硬套。
+- 重開 ResourceWatch，感測器頁應出現「主機板」與硬碟型號卡片。
+
+**2. 確認沒問題後，設定為開機自動載入**
+
+```bash
+printf 'drivetemp\nit87\n' | sudo tee /etc/modules-load.d/sensors.conf
+echo 'options it87 ignore_resource_conflict=1' | sudo tee /etc/modprobe.d/it87.conf
+```
+
+Bazzite 的 `/etc` 會在系統更新時保留，不需要 `rpm-ostree` 重新部署。
+
+**3. 只有模組參數無效時才用的備案：kernel 參數**
+
+```bash
+rpm-ostree kargs --append=acpi_enforce_resources=lax   # 需要重開機；影響所有驅動，範圍比模組參數大
+rpm-ostree kargs --delete=acpi_enforce_resources=lax   # 還原
+```
+
+**風險**
+- `ignore_resource_conflict`：BIOS（ACPI）與驅動會同時存取晶片。只讀取通常沒問題，少數主機板可能偶爾讀到錯誤數值；App 只讀不寫，不會改風扇設定（不要手動寫 `pwm*` 檔案）。
+- `drivetemp`：App 每次更新都會讀溫度，傳統硬碟進入待機後可能因此被喚醒或無法待機；介意的話只載入 `it87`。
+
+**還原**
+
+```bash
+sudo rm /etc/modules-load.d/sensors.conf /etc/modprobe.d/it87.conf
+sudo modprobe -r it87 drivetemp
+```
+
 ### Phase 5：儀表板精簡
 - 儀表板感測器卡片每個裝置只取一筆代表值（封裝／Composite／GPU 溫度／第一個風扇），取代前 8 筆。
 
@@ -74,7 +118,7 @@
   - 有 `crit` 的溫度超過時標紅；°F 設定下換算正確
 - **Phase 4** ☐
   - 依文檔載入模組後重開：sda／sdc 出現溫度、主機板出現風扇與電壓，且名稱為可讀名稱
-  - 未載入時感測器頁顯示提示
+  - 未載入時感測器頁顯示提示 ✅
 - **Phase 5** ☐
   - 儀表板感測器卡片一個裝置一列，不再被核心溫度佔滿
 
