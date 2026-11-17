@@ -354,13 +354,11 @@ const PAGES = {
     const devs = sensorGroups(s);
     // hint for sensors that need a kernel module the user has to load (root)
     const has = (re) => s.sensors.some((x) => re.test(x.chip));
-    const missing = [!has(/^(it8|nct)/) && '主機板風扇與電壓（it87／nct6775）',
-      !has(/^drivetemp$/) && s.disks.some((d) => d.name.startsWith('sd')) && 'SATA 硬碟溫度（drivetemp）'].filter(Boolean);
-    const hints = [
-      missing.length && ['modules', `讀不到${missing.join('、')}：需要載入核心模組（只在這次開機有效；開機自動載入見 docs/Sensors_Improvement.md 的 Phase 4）。`, '載入感測器模組'],
-      s.raplLocked && ['rapl', '讀不到 CPU 功耗：需要管理員權限開放讀取（只在這次開機有效）。', '開放讀取'],
-    ].filter(Boolean);
-    const hint = hints.map(([act, text, label]) => `<p class="hint">${text}<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button></p>`).join('')
+    // no mainboard chip (it87/nct6775), or SATA disks without drivetemp
+    const needModules = !has(/^(it8|nct)/) || (!has(/^drivetemp$/) && s.disks.some((d) => d.name.startsWith('sd')));
+    const btns = [needModules && ['modules', '更多感測器'], s.raplLocked && ['rapl', 'CPU功耗']].filter(Boolean);
+    const hint = (btns.length ? `<p class="hint">載入需要管理員權限的感測器${btns.map(([act, label]) =>
+      `<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button>`).join('')}</p>` : '')
       + (elev.err ? `<p class="hint err">${esc(elev.err)}</p>` : '');
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;
     return `${hint}<div class="masonry">${[...devs].map(([dev, list]) => card(`${icon(sensorIcon(list[0].chip))}<span class="ell" title="${esc(dev)}">${esc(dev)}</span>`, sensorBody(dev, list))).join('')}</div>`;
