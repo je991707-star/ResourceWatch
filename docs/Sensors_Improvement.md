@@ -4,7 +4,7 @@
 
 ## 1. 目前環境
 
-- 硬體：Gigabyte H97M-D3H（Intel 4 核，ITE Super I/O）、NVIDIA 顯示卡（專有驅動，NVML）、nvme0n1 + SATA sda／sdc。
+- 硬體：Gigabyte H97M-D3H（Intel 4 核，ITE Super I/O）、NVIDIA 顯示卡（專有驅動，NVML）、nvme0n1、SATA 傳統硬碟 sda（TOSHIBA DT01ABA2）、讀卡機 sdc。
 - 系統：Bazzite（Fedora 45，kernel 6.18），不可變系統，`/etc` 可寫。
 - 目前讀得到的 hwmon（`/sys/class/hwmon`）：
 
@@ -22,7 +22,7 @@
 1. **看不懂**：直接顯示核心原始名稱，例如 `coretemp · Package id 0`、`acpitz · temp1`、`nvme · Composite`；不知道是哪個裝置、哪個位置。
 2. **數量少，原因：**
    - 主機板 Super I/O 驅動（it87）沒載入 → 沒有風扇、電壓、主機板溫度。
-   - SATA 硬碟溫度需要 `drivetemp` → sda／sdc 沒有溫度。
+   - SATA 硬碟溫度需要 `drivetemp` → sda 沒有溫度。
    - NVIDIA 溫度走 NVML，不在 hwmon → 感測器頁沒有顯示卡（只出現在 GPU 卡片）。
    - 後端忽略 hwmon 的 `in*`（電壓）、`power*`（瓦數），也不讀 `temp*_crit`／`_max` 臨界值。
 3. **儀表板卡片**只取前 8 筆原始資料，常被同一顆 CPU 的各核心佔滿。
@@ -117,7 +117,7 @@ sudo modprobe -r it87 drivetemp
   - 有 `in*`／`power*` 的晶片顯示 V／W，單位正確
   - 有 `crit` 的溫度超過時標紅；°F 設定下換算正確
 - **Phase 4** ☐
-  - 依文檔載入模組後重開：sda／sdc 出現溫度、主機板出現風扇與電壓，且名稱為可讀名稱
+  - 依文檔載入模組後重開：sda 出現溫度（sdc 為讀卡機，不會有）、主機板出現風扇與電壓，且名稱為可讀名稱
   - 未載入時感測器頁顯示提示 ✅
 - **Phase 5** ☐
   - 儀表板感測器卡片一個裝置一列，不再被核心溫度佔滿
