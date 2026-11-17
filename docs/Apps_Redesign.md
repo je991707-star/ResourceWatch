@@ -52,8 +52,8 @@
 - `Proc` 新增 `gpu`、`gpuEngine`；群組 GPU 取加總（上限 100），引擎取使用率最高的子程序。
 
 驗收：
-- [ ] `cargo test` 通過（fdinfo 解析）
-- [ ] 播放影片或串流時，對應程序出現 `GPU 0 - Video Decode` 等引擎
+- [x] ✅ `cargo test` 通過（fdinfo 解析）
+- [x] ✅ 播放影片或串流時，對應程序出現 `GPU 0 - Video Decode` 等引擎（本機實測：sunshine 串流時為 `GPU 0 - Video Encode` 40%）
 
 ### Phase 4：收尾
 - `Readme_Architecture.md` 各章節更新、`mockInvoke` 假資料補上新欄位、release 編譯無誤。

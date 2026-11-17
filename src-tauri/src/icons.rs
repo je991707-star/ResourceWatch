@@ -72,7 +72,9 @@ fn index() -> &'static Index {
                         desktop_keys(stem, &fs::read_to_string(&p).unwrap_or_default())
                     {
                         for k in keys {
-                            idx.apps.entry(k).or_insert_with(|| (icon.clone(), name.clone()));
+                            idx.apps
+                                .entry(k)
+                                .or_insert_with(|| (icon.clone(), name.clone()));
                         }
                     }
                 }
@@ -169,7 +171,11 @@ fn desktop_keys(stem: &str, text: &str) -> Option<(Vec<String>, String, Option<S
         }
     }
     let icon = icon.filter(|i| !i.is_empty())?.to_string();
-    let name = zh_tw.or(zh).or(name).filter(|n| !n.is_empty()).map(str::to_string);
+    let name = zh_tw
+        .or(zh)
+        .or(name)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string);
     let mut keys = vec![stem.to_string()];
     keys.extend(stem.rsplit('.').next().map(str::to_string));
     keys.extend(wm.map(str::to_string));

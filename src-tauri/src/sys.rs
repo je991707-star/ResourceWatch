@@ -122,6 +122,10 @@ pub struct Proc {
     app: Option<String>,
     /// read_bytes + write_bytes per second from /proc/[pid]/io; `None` when unreadable or first call.
     disk: Option<f64>,
+    /// GPU % of the busiest engine; `None` when unknown (other users' processes without NVML).
+    gpu: Option<f64>,
+    /// "GPU <index> - <engine>" while the process uses a GPU.
+    gpu_engine: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -665,9 +669,19 @@ fn sensors() -> Vec<Sensor> {
             .iter()
             .filter_map(|f| hwmon_kind(f).map(|(p, k, s)| (f, p, k, s)))
             // amdgpu has power1_average without power1_input; prefer _input when both exist
-            .filter(|(f, p, _, _)| !f.ends_with("_average") || !files.contains(&format!("{p}_input")))
+            .filter(|(f, p, _, _)| {
+                !f.ends_with("_average") || !files.contains(&format!("{p}_input"))
+            })
             .collect();
-        found.sort_by_key(|&(_, p, k, _)| (["temp", "fan", "volt", "power"].iter().position(|&x| x == k), p.len(), p));
+        found.sort_by_key(|&(_, p, k, _)| {
+            (
+                ["temp", "fan", "volt", "power"]
+                    .iter()
+                    .position(|&x| x == k),
+                p.len(),
+                p,
+            )
+        });
         for (f, prefix, kind, scale) in found {
             let Some(raw) = read_num(dir.join(f)) else {
                 continue;
@@ -724,7 +738,11 @@ fn hwmon_kind(file: &str) -> Option<(&str, &'static str, f64)> {
 
 fn gigabyte() -> bool {
     static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *G.get_or_init(|| read("/sys/class/dmi/id/board_vendor").to_lowercase().contains("gigabyte"))
+    *G.get_or_init(|| {
+        read("/sys/class/dmi/id/board_vendor")
+            .to_lowercase()
+            .contains("gigabyte")
+    })
 }
 
 /// Name and divider multiplier for an unlabeled ITE (it87) input. Temperatures go by `tempN_type`
@@ -776,18 +794,22 @@ fn nvml_sensors(gpus: &[Gpu]) -> Vec<Sensor> {
     gpus.iter()
         .filter(|g| g.nvml)
         .flat_map(|g| {
-            [("核心", "temp", g.temp), ("風扇", "percent", g.fan), ("功耗", "power", g.power)]
-                .into_iter()
-                .filter_map(|(label, kind, v)| {
-                    Some(Sensor {
-                        chip: "nvidia".into(),
-                        device: g.name.clone(),
-                        label: label.into(),
-                        kind,
-                        value: v?,
-                        crit: None,
-                    })
+            [
+                ("核心", "temp", g.temp),
+                ("風扇", "percent", g.fan),
+                ("功耗", "power", g.power),
+            ]
+            .into_iter()
+            .filter_map(|(label, kind, v)| {
+                Some(Sensor {
+                    chip: "nvidia".into(),
+                    device: g.name.clone(),
+                    label: label.into(),
+                    kind,
+                    value: v?,
+                    crit: None,
                 })
+            })
         })
         .collect()
 }
@@ -1019,7 +1041,7 @@ impl Monitor {
         // SAFETY: getuid has no preconditions.
         let uid = unsafe { libc::getuid() };
         let mut seen = HashMap::new();
-        let list = fs::read_dir("/proc")
+        let mut list: Vec<Proc> = fs::read_dir("/proc")
             .into_iter()
             .flatten()
             .flatten()
@@ -1041,7 +1063,9 @@ impl Monitor {
                 } else {
                     classify(&read(e.path().join("cgroup")), uid)
                 };
-                let app = (kind == "app").then(|| unit.as_deref().and_then(app_id)).flatten();
+                let app = (kind == "app")
+                    .then(|| unit.as_deref().and_then(app_id))
+                    .flatten();
                 Some(Proc {
                     pid,
                     name: st.name,
@@ -1053,10 +1077,27 @@ impl Monitor {
                     unit,
                     app,
                     disk,
+                    gpu: None,
+                    gpu_engine: None,
                 })
             })
             .collect();
         self.procs = seen;
+        // /proc/[pid]/io is readable exactly for the processes whose fdinfo we can read too
+        let own: Vec<u32> = (self.procs.iter())
+            .filter(|(_, v)| v.1.is_some())
+            .map(|(&p, _)| p)
+            .collect();
+        let (gpu, all) = self.gpus.proc_util(&own, secs);
+        for p in &mut list {
+            match gpu.get(&p.pid) {
+                Some((v, e)) => (p.gpu, p.gpu_engine) = (Some(*v), (*v > 0.0).then(|| e.clone())),
+                None if all || self.procs.get(&p.pid).is_some_and(|v| v.1.is_some()) => {
+                    p.gpu = Some(0.0)
+                }
+                None => {}
+            }
+        }
         list
     }
 }
@@ -1071,7 +1112,10 @@ mod tests {
         assert_eq!(ite_label(true, "in1", None), Some(("+3.3V", 1.65)));
         assert_eq!(ite_label(false, "in2", None), None); // dividers are Gigabyte-only
         assert_eq!(ite_label(true, "in5", None), None);
-        assert_eq!(ite_label(false, "temp3", Some(6)), Some(("CPU（PECI）", 1.0)));
+        assert_eq!(
+            ite_label(false, "temp3", Some(6)),
+            Some(("CPU（PECI）", 1.0))
+        );
         assert_eq!(ite_label(false, "temp1", Some(4)), Some(("主機板", 1.0)));
         assert_eq!(ite_label(true, "temp4", None), None);
         assert_eq!(ite_label(true, "fan1", None), Some(("CPU 風扇", 1.0)));
@@ -1089,7 +1133,10 @@ mod tests {
         assert_eq!(hwmon_kind("temp1_input"), Some(("temp1", "temp", 1000.0)));
         assert_eq!(hwmon_kind("fan2_input"), Some(("fan2", "fan", 1.0)));
         assert_eq!(hwmon_kind("in0_input"), Some(("in0", "volt", 1000.0)));
-        assert_eq!(hwmon_kind("power1_average"), Some(("power1", "power", 1_000_000.0)));
+        assert_eq!(
+            hwmon_kind("power1_average"),
+            Some(("power1", "power", 1_000_000.0))
+        );
         assert_eq!(hwmon_kind("temp1_crit"), None);
         assert_eq!(hwmon_kind("temp_input"), None);
         assert_eq!(hwmon_kind("name"), None);
@@ -1098,7 +1145,10 @@ mod tests {
 
     #[test]
     fn sensor_device_names() {
-        assert_eq!(sensor_device("nvme", "Micron_2400_MTFDKBA512QFM"), "Micron 2400 MTFDKBA512QFM");
+        assert_eq!(
+            sensor_device("nvme", "Micron_2400_MTFDKBA512QFM"),
+            "Micron 2400 MTFDKBA512QFM"
+        );
         assert_eq!(sensor_device("drivetemp", ""), "硬碟");
         assert_eq!(sensor_device("acpitz", ""), "主機板（ACPI）");
         assert_eq!(sensor_device("it8620", ""), "主機板");
@@ -1232,7 +1282,14 @@ mod tests {
         let line = "42 (a (b) c) S 1 1 1 0 -1 0 0 0 0 0 7 3 0 0 20 0 1 0 100 4096 25 0";
         let st = parse_proc_stat(line).unwrap();
         assert_eq!(
-            (st.name.as_str(), st.state, st.ppid, st.ticks, st.nice, st.rss),
+            (
+                st.name.as_str(),
+                st.state,
+                st.ppid,
+                st.ticks,
+                st.nice,
+                st.rss
+            ),
             ("a (b) c", 'S', 1, 10, 0, 25)
         );
         assert_eq!(parse_proc_stat("garbage"), None);
@@ -1240,7 +1297,8 @@ mod tests {
 
     #[test]
     fn proc_io() {
-        let t = "rchar: 9\nwchar: 9\nread_bytes: 4096\nwrite_bytes: 8192\ncancelled_write_bytes: 0\n";
+        let t =
+            "rchar: 9\nwchar: 9\nread_bytes: 4096\nwrite_bytes: 8192\ncancelled_write_bytes: 0\n";
         assert_eq!(parse_proc_io(t), Some(12288));
         assert_eq!(parse_proc_io(""), None);
     }
@@ -1249,12 +1307,21 @@ mod tests {
     fn cgroup_kind() {
         let u = "0::/user.slice/user-1000.slice/user@1000.service/";
         let c = |s: &str| classify(&format!("{u}{s}\n"), 1000);
-        assert_eq!(c("app.slice/app-code-4440.scope"), ("app", Some("app-code-4440.scope".into())));
+        assert_eq!(
+            c("app.slice/app-code-4440.scope"),
+            ("app", Some("app-code-4440.scope".into()))
+        );
         assert_eq!(c("app.slice/ntfs-nag.service").0, "bg");
         assert_eq!(c("session.slice/plasma-kwin_wayland.service").0, "bg");
-        assert_eq!(classify("0::/user.slice/user-1000.slice/session-3.scope", 1000).0, "bg");
+        assert_eq!(
+            classify("0::/user.slice/user-1000.slice/session-3.scope", 1000).0,
+            "bg"
+        );
         assert_eq!(classify("0::/system.slice/sshd.service", 1000).0, "sys");
-        assert_eq!(classify(&format!("{u}app.slice/app-x-1.scope"), 1001).0, "sys");
+        assert_eq!(
+            classify(&format!("{u}app.slice/app-x-1.scope"), 1001).0,
+            "sys"
+        );
         assert_eq!(classify("0::/", 1000), ("sys", None));
         assert_eq!(classify("", 1000), ("sys", None));
     }
@@ -1262,7 +1329,10 @@ mod tests {
     #[test]
     fn app_ids() {
         assert_eq!(app_id("app-code-4440.scope").as_deref(), Some("code"));
-        assert_eq!(app_id("app-steam@autostart.service").as_deref(), Some("steam"));
+        assert_eq!(
+            app_id("app-steam@autostart.service").as_deref(),
+            Some("steam")
+        );
         assert_eq!(app_id("app-code@e9d30105.service").as_deref(), Some("code"));
         assert_eq!(
             app_id("app-flatpak-org.fcitx.Fcitx5-3782739276.scope").as_deref(),
@@ -1272,7 +1342,10 @@ mod tests {
             app_id("app-gnome-org.gnome.Terminal-123.scope").as_deref(),
             Some("org.gnome.Terminal")
         );
-        assert_eq!(app_id("app-google\\x2dchrome-55.scope").as_deref(), Some("google-chrome"));
+        assert_eq!(
+            app_id("app-google\\x2dchrome-55.scope").as_deref(),
+            Some("google-chrome")
+        );
         assert_eq!(app_id("ntfs-nag.service"), None);
     }
 }

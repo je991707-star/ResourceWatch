@@ -78,9 +78,10 @@ Snapshot {
   sensors: [{ chip, device, label, kind: "temp"|"fan"|"percent"|"volt"|"power", value, crit }] // °C、RPM、%、V、W；crit 為臨界溫度 °C（沒有時 null）；沒有 label 時用 temp1 等；device 為裝置顯示名稱（sensor_device）
   uptime                                                         // 秒
 }
-Proc       { pid, name, cpu, mem, state, nice, kind, unit, app, disk }
+Proc       { pid, name, cpu, mem, state, nice, kind, unit, app, disk, gpu, gpuEngine }
            // cpu 以整機 100% 計；mem = rss × page size；name 為 kernel comm（最多 15 字）；state 為 stat 狀態字母（R/S/D/T/Z…）
            // kind："app"|"bg"|"sys"；unit 為 cgroup 最後一段（核心執行緒為 "kernel"）；app 為 desktop id；disk 為 read_bytes+write_bytes 每秒（讀不到或第一次為 null）
+           // gpu：最忙引擎的 %（gpu.rs `proc_util`；NVML 涵蓋所有程序，沒有資料即 0；只有 DRM 時別人的程序為 null）；gpuEngine："GPU <索引> - <引擎>"，使用率為 0 時 null
 SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home, osId, logo, memSpec }
 ```
 
@@ -99,7 +100,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
 - 程序分類（`classify`）：`/proc/<pid>/cgroup` 的 `0::` 路徑，最後一段為 unit。路徑不在 `/user-<自己 uid>.slice/` 下 → `sys`（系統服務、其他使用者）；在其下且上一層為 `app.slice`、unit 以 `app-` 開頭 → `app`；其他（session.slice、background.slice、`session-N.scope`、app.slice 內非 `app-` 的服務）→ `bg`。pid 2 與 ppid 為 2 的核心執行緒為 `sys`、unit `kernel`。
   `app_id`：`app[-<launcher>]-<id>-<n>.scope` 去掉最後一段、`app-<id>[@<x>].service` 去掉 `@` 之後，`\x2d` 還原為 `-`，後面是反向網域名稱時去掉 `flatpak-`／`gnome-`／`kde-` 啟動器前綴（`app-flatpak-org.fcitx.Fcitx5-3782739276.scope` → `org.fcitx.Fcitx5`）。
-- 程序磁碟（`parse_proc_io`）：`/proc/<pid>/io` 的 `read_bytes + write_bytes`，只讀得到自己的程序，其他為 `null`。
+- 程序磁碟（`parse_proc_io`）：`/proc/<pid>/io` 的 `read_bytes + write_bytes`，只讀得到自己的程序，其他為 `null`。io 讀得到的程序即為「自己的程序」，交給 `Gpus::proc_util` 讀 DRM fdinfo。
 - 感測器：`/sys/class/hwmon/*` 的檔案經 `hwmon_kind` 分類：`tempN_input`（m°C）、`fanN_input`（RPM）、`inN_input`（mV → V）、`powerN_input`／`powerN_average`（µW → W，兩者都有時只取 `_input`），其他檔案略過；每個晶片內依溫度、風扇、電壓、功耗排序。溫度 ≤ -100 °C 略過（it87 在沒接熱敏電阻的接腳回報 -128 °C）。
   ITE 晶片（`it8*`）沒有 `_label` 的項目經 `ite_label` 命名：溫度依 `tempN_type`（6 → CPU（PECI）、5 → CPU（AMD TSI）、4 → 主機板、3 → 主機板（二極體））；主機板廠商（`/sys/class/dmi/id/board_vendor`，`OnceLock`）為 Gigabyte 時，`in0` → CPU Vcore、`in1`／`in2`／`in3` → +3.3V／+12V／+5V 並乘上分壓倍數 1.65／6／2.5、`fan1` → CPU 風扇；其餘（`in4` 以後、`fan2` 以後）各代主機板接法不同，維持原名。
   CPU 功耗：`/sys/class/powercap/intel-rapl:*`（`Monitor.rapl` 保存各區域上次的 `energy_uj`），功耗＝差值／經過秒數（µJ → W），計數器歸零時以 `energy_delta` 加上 `max_energy_range_uj`；第一次取樣不輸出。以 chip `intel-rapl`、device 為 CPU 型號、label 為區域名稱（`package-0`／`core`／`dram`／`uncore`）、kind `power` 加入 sensors；`energy_uj` 讀不到時 `raplLocked` 為 `true`。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
@@ -126,6 +127,10 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 ### src/gpu.rs
 
 - NVIDIA：`libnvidia-ml.so.1` 以 `libloading` 載入、`nvmlInit_v2` 只呼叫一次；每次取樣依索引取 handle，讀名稱、使用率、記憶體（v1 `used`）、溫度、編碼／解碼使用率（`nvmlDeviceGetEncoder/DecoderUtilization`，舊驅動沒有這兩個符號時為 `null`），任一呼叫失敗該欄為 `null`。另讀風扇 %（`nvmlDeviceGetFanSpeed`）與功耗（`nvmlDeviceGetPowerUsage`，mW → W），兩個符號皆為可選，結果與 `nvml` 旗標只供感測器使用（`serde(skip)`，不在 GPU JSON 中）。函式指標與 `Library` 同生命週期（`_lib` 欄位）。
+- 每程序 GPU（`proc_util(own, secs)`，由 `processes` 呼叫）：
+  - NVML：可選符號 `nvmlDeviceGetProcessUtilization`，先以 null 緩衝區取筆數再讀；`lastSeenTimeStamp` 用上次讀到的最新時間戳（第一次為現在 − 3 秒，避免拿到驅動整個緩衝區），同一程序多筆樣本取平均，sm／enc／dec 取最大者為 `3D`／`Video Encode`／`Video Decode`，GPU 索引即 NVML 索引。有此符號時所有程序都涵蓋（回傳旗標 `true`）。
+  - DRM（AMD／Intel）：只掃自己的程序 `/proc/<pid>/fd` 中指向 `/dev/dri/` 的 fd，`parse_fdinfo` 讀 `drm-client-id`、`drm-pdev`、`drm-engine-<名稱>: <ns> ns`（略過 `capacity-`；xe 的 cycles 計數器與 NVIDIA 專有驅動沒有這些行，不支援）。同一個 (PCI 位址, client id, 引擎) 只算一次（fork 後多個程序共用），% ＝ ns 差值／經過時間，上一回的值存在 `drm_prev`；`drm-pdev` 對應 `drm` 清單中卡片的 PCI 位址（`device` 連結 canonicalize 後的名稱），索引接在 NVML 之後。引擎名稱經 `engine_label`：`gfx`／`render` → 3D、`compute` → Compute、`dec`／`video`／`jpeg` → Video Decode、`enc*` → Video Encode、`video-enhance` → Video Processing、`dma`／`copy` → Copy。
+  - 每個程序保留最忙的一筆（`put`）。單元測試涵蓋 fdinfo 解析與引擎名稱。
 - 其他：`/sys/class/drm/cardN/device`，vendor `0x1002` AMD、`0x8086` Intel、`0x10de`（只在 NVML 載入失敗時，例如 nouveau）；讀 `gpu_busy_percent`、`mem_info_vram_used/total`、`hwmon/*/temp1_input`。
   Intel 與 nouveau 通常沒有這些檔案，對應欄位為 `null`。名稱只有廠牌（不讀 PCI ID 資料庫）。
 
