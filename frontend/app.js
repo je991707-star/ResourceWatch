@@ -357,7 +357,7 @@ const PAGES = {
     // no mainboard chip (it87/nct6775), or SATA disks without drivetemp
     const needModules = !has(/^(it8|nct)/) || (!has(/^drivetemp$/) && s.disks.some((d) => d.name.startsWith('sd')));
     const btns = [needModules && ['modules', '更多感測器'], s.raplLocked && ['rapl', 'CPU功耗']].filter(Boolean);
-    const hint = (btns.length ? `<p class="hint">載入需要管理員權限的感測器${btns.map(([act, label]) =>
+    const hint = (btns.length ? `<p class="hint"><span>載入需要管理員權限的感測器</span>${btns.map(([act, label]) =>
       `<button class="btn" data-elevate="${act}"${elev.busy ? ' disabled' : ''}>${elev.busy === act ? '等待授權…' : label}</button>`).join('')}</p>` : '')
       + (elev.err ? `<p class="hint err">${esc(elev.err)}</p>` : '');
     if (!devs.size) return card('感測器', '<div class="empty">沒有可讀取的感測器</div>') + hint;

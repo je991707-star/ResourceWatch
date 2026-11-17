@@ -299,6 +299,7 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .hot { color: var(--red); font-weight: 700; }
 .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hint.err { color: var(--red); }
+.hint > span { flex-basis: 100%; } /* text on its own line above the buttons */
 .card .zebra + .cap { margin-top: 18px; }
 .raw summary { margin-top: 16px; cursor: pointer; font-size: 13px; color: var(--muted); }
 .raw[open] summary { margin-bottom: 8px; }
