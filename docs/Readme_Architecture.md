@@ -33,7 +33,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 - 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
-- 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.3.2，對應 tag `v0.3.2`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js，改版時一併更新。
+- 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.3.3，對應 tag `v0.3.3`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js，改版時一併更新。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
 - CSP：`script-src 'self'; style-src 'self' 'unsafe-inline'`——腳本只能來自 App 本身；`style-src` 允許內嵌樣式，是為了讓開發者模式的檢查器能新增 CSS（Style Attribute 與「+」新規則都是內嵌樣式）。程式碼本身仍不在 HTML 寫 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
 - capabilities：`core:default`＋`dialog:allow-open`，沒有 fs／shell／http 外掛。
@@ -163,7 +163,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
 - 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5（每列前有應用圖示：`loadIcons` 只對還沒查過的名稱呼叫 `app_icons`，結果 `{ icon, name }` 存在 `appIcons`，查詢中或找不到時用通用圖示 `fa-window-maximize`；兩個清單都是斑馬紋）；在應用程式頁時查詢所有程序名稱與 desktop id。
   應用程式頁（`appsPage`）：依 `Proc.kind` 分三區「應用程式／背景處理程序／系統處理程序」（`APP_SECTIONS`，區段標題括號內為群組數），每區以 `unit` 分組（`procGroups`；沒有 unit 的程序自成一組，`kernel` 顯示為「核心執行緒」）；群組名稱為 `app` 對應的 `.desktop` 名稱，沒有時為 PID 最小的程序名稱，圖示同理。群組數值為成員加總（`sumOf`，全部缺值時為 null；GPU 上限 100），GPU 引擎取 GPU 最高的成員；狀態：單一程序照原狀態，多個程序全部暫停才顯示「已暫停」，全部 nice > 0 才顯示葉子。超過一個程序的群組可點擊展開（`data-group`，展開的鍵存在 `appOpen`，每 2 秒重繪仍保留），子列依同一排序列出、滑鼠提示 PID。
-  欄位：名稱、狀態（`T`／`t` → 已暫停、`Z` → 殭屍、nice > 0 → 葉子）、CPU、記憶體、磁碟（MB/秒）、GPU、GPU 引擎；CPU／記憶體／磁碟／GPU 標題上方為整機 %（最近一次快照：CPU 使用率、記憶體 used/total、各硬碟 `busy` 最大值、各顯示卡使用率最大值）。點欄位標題排序，群組與子列都依同一鍵（名稱預設升冪，其他降冪，缺值永遠排最後）。
+  欄位：名稱、狀態（標題不顯示文字；`T`／`t` → 已暫停、`Z` → 殭屍、nice > 0 → 葉子）、CPU、記憶體、磁碟（MB/秒）、GPU、GPU 引擎；CPU／記憶體／磁碟／GPU 標題上方為整機 %（最近一次快照：CPU 使用率、記憶體 used/total、各硬碟 `busy` 最大值、各顯示卡使用率最大值）。點欄位標題排序，群組與子列都依同一鍵（名稱預設升冪，其他降冪，缺值永遠排最後）。
 - 頁面（`PAGES`）：
   - 儀表板：摘要（三層環形圖：外圈記憶體應用程式＋快取、中圈 CPU、內圈第一張顯示卡使用率，環下標註記憶體總量／處理器／顯示卡（圓環上方留 20px、與下方數值相隔 32px）；記憶體組成、CPU 型號（去掉 `@ 頻率`）／核心／執行緒、磁碟 ‹ › 翻頁，預設最大的檔案系統）、
     處理器（標題下一列為晶片圖示與完整 CPU 型號，過長截斷；各執行緒直條：flex 排列、3 px 間隔、上方圓角，高度以 `data-h` 在 `render` 後經 CSSOM 設定；使用率曲線；分隔線下前 5 程序）、記憶體（標題右側為 `memSpec`，讀不到時為系統可用總量；堆疊條、組成與 SWAP（數值不換行）、前 5 程序）、網路（頂端一列：網卡圖示（`wl*` 用 Wi-Fi，其餘乙太網路）與名稱、‹ › 切換鈕（`pick.nic` 記住所選介面名稱，未選時用 `primaryNet`，即設定中的儀表板網路卡；改設定時清除）。網路、顯示卡、磁碟 I/O 的 ‹ › 都由 `flipper(kind, keys, i)` 產生，點擊時把相鄰項的鍵存進 `pick[kind]`（`nic`／`gpu` 索引／`io` 裝置名），靠右為累計流量與重設鈕。重設時把該介面當下的 `rxTotal`／`txTotal` 存成起點（`localStorage` `rw-netbase`），累計顯示與起點的差；計數器小於起點（重開機歸零）時起點視為失效、顯示原值；其下 `flow`：兩欄大字速率（數字左側為顏色圓點，下方依序為標籤與近 120 筆峰值）、對稱條狀圖）、
