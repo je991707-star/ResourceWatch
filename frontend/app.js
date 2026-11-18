@@ -543,6 +543,8 @@ const sizeClass = (b) => `s${SIZE_STEPS.filter((t) => b >= t).length}`;
 function storagePage() {
   const head = `<div class="du-head">${icon('folder', 'folder')}<div class="path"><b>${esc(du.root?.path ?? '尚未選擇資料夾')}</b>
       <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}` : ''}</span></div>
+      <select class="btn" data-du="disk"${du.busy ? ' disabled' : ''}><option value="">選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts.map((m) =>
+        `<option value="${esc(m)}">${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
       <button class="btn" data-du="rescan"${du.busy || !du.root ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;
@@ -669,6 +671,9 @@ $('#pages').innerHTML = ['dash', 'apps', 'storage', 'net', 'sensors'].map((k) =>
   `<button class="nav-item${k === page ? ' active' : ''}" data-page="${k}" title="${PAGES[k][0]}">${icon(k)}<span class="label">${PAGES[k][0]}</span></button>`).join('');
 $('#pages').addEventListener('click', (e) => { const b = e.target.closest('[data-page]'); if (b) go(b.dataset.page); });
 
+$('#content').addEventListener('change', (e) => {
+  if (e.target.dataset.du === 'disk' && e.target.value) duScan(e.target.value);
+});
 $('#content').addEventListener('click', (e) => {
   const t = e.target;
   if (page === 'storage') return duClick(t);
