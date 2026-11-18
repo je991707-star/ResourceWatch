@@ -207,6 +207,21 @@ function nicDetails(n, dns) {
   ])}</div>`;
 }
 
+// Wi-Fi channel number from the center frequency (MHz).
+const wifiChannel = (f) => (f === 2484 ? 14 : f < 2500 ? (f - 2407) / 5 : f < 5925 ? (f - 5000) / 5 : (f - 5950) / 5);
+const wifiBand = (f) => (f < 2500 ? '2.4 GHz' : f < 5925 ? '5 GHz' : '6 GHz');
+
+function wifiDetails(w) {
+  const mb = (v) => (v == null ? '--' : `${v} Mb/s`);
+  return `<div class="sect">${kv([
+    ['SSID', w.ssid || '（隱藏）'], ['BSSID', w.bssid],
+    // NetworkManager's mapping: -100 dBm → 0%, -50 dBm → 100%
+    ['訊號', w.signal == null ? '--' : `${w.signal} dBm · ${Math.max(0, Math.min(100, 2 * (w.signal + 100)))}%`],
+    ['頻段', w.freq ? [wifiBand(w.freq), `頻道 ${wifiChannel(Math.round(w.freq))}`, w.width && `${w.width} MHz`].filter(Boolean).join(' · ') : '--'],
+    ['連線速率', `↓ ${mb(w.rxRate)}　↑ ${mb(w.txRate)}`], ['標準', w.generation ? `Wi-Fi ${w.generation}` : '--'],
+  ])}</div>`;
+}
+
 function addrBlock(n) {
   return `<div class="addr">
     <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
@@ -417,7 +432,7 @@ const PAGES = {
     if (!s.net.length) return card('網路', '<div class="empty">沒有實體網路介面</div>');
     return `<div class="stack">${s.net.map((n) => {
       const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
-      const link = n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
+      const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
       const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
       // share of link capacity; speed is Mb/s, rates are bytes/s
       const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
@@ -425,7 +440,7 @@ const PAGES = {
       return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n)}<div class="speeds"><div>
           <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
-        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${nicDetails(n, s.dns)}</section>`;
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n, s.dns)}</section>`;
     }).join('')}</div>`;
   }],
 

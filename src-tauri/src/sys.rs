@@ -106,6 +106,20 @@ struct Net {
     tx_errors: u64,
     rx_dropped: u64,
     tx_dropped: u64,
+    wifi: Option<Wifi>,
+}
+
+#[derive(Serialize, Default, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Wifi {
+    ssid: String,
+    bssid: String,
+    freq: Option<f64>,    // MHz
+    signal: Option<i32>,  // dBm
+    rx_rate: Option<f64>, // Mb/s
+    tx_rate: Option<f64>,
+    generation: Option<u8>, // Wi-Fi 4/5/6/7 from the HT/VHT/HE/EHT rate info
+    width: Option<u32>,     // channel width, MHz
 }
 
 #[derive(Serialize)]
@@ -436,6 +450,50 @@ fn parse_nic_model(udev: &str) -> Option<String> {
             None => model.to_string(),
         },
     )
+}
+
+/// `iw dev <n> link` → None when "Not connected.".
+fn parse_iw_link(text: &str) -> Option<Wifi> {
+    let bssid = text
+        .strip_prefix("Connected to ")?
+        .split_whitespace()
+        .next()?;
+    let mut w = Wifi {
+        bssid: bssid.to_string(),
+        ..Default::default()
+    };
+    let num = |v: &str| v.split_whitespace().next()?.parse::<f64>().ok();
+    for l in text.lines().map(str::trim) {
+        let Some((k, v)) = l.split_once(": ") else {
+            continue;
+        };
+        match k {
+            "SSID" => w.ssid = v.to_string(),
+            "freq" => w.freq = num(v),
+            "signal" => w.signal = num(v).map(|d| d as i32),
+            "tx bitrate" => w.tx_rate = num(v),
+            "rx bitrate" => {
+                w.rx_rate = num(v);
+                for t in v.split_whitespace() {
+                    let gen = match t.split('-').next() {
+                        Some("EHT") => 7,
+                        Some("HE") => 6,
+                        Some("VHT") => 5,
+                        Some("MCS") => 4, // HT rates print as "MCS 7"
+                        _ => 0,
+                    };
+                    if gen > 0 {
+                        w.generation.get_or_insert(gen);
+                    }
+                    if let Some(mhz) = t.strip_suffix("MHz") {
+                        w.width = mhz.parse().ok();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(w)
 }
 
 fn parse_nameservers(text: &str) -> Vec<String> {
@@ -1068,6 +1126,17 @@ impl Monitor {
                     tx_errors: f[10],
                     rx_dropped: f[3],
                     tx_dropped: f[11],
+                    // shortcut: spawns `iw` per tick, upgrade to nl80211 netlink if it shows up in profiles
+                    wifi: Path::new(&format!("/sys/class/net/{n}/wireless"))
+                        .exists()
+                        .then(|| {
+                            std::process::Command::new("iw")
+                                .args(["dev", n, "link"])
+                                .output()
+                                .ok()
+                        })
+                        .flatten()
+                        .and_then(|o| parse_iw_link(&String::from_utf8_lossy(&o.stdout))),
                 }
             })
             .collect();
@@ -1356,6 +1425,21 @@ mod tests {
         assert_eq!(d["nvme0n1"], (2048, 4096, 77));
         let n = parse_net_dev("h1\nh2\n  eth0: 100 1 0 0 0 0 0 0 200 2 0 0 0 0 0 0\n");
         assert_eq!((n["eth0"][0], n["eth0"][1], n["eth0"][8]), (100, 1, 200));
+        let iw = "Connected to aa:bb:cc:dd:ee:ff (on wlan0)\n\tSSID: Home Net\n\tfreq: 5180.0\n\tsignal: -52 dBm\n\trx bitrate: 1200.9 MBit/s 80MHz HE-MCS 11 HE-NSS 2 HE-GI 0\n\ttx bitrate: 864.8 MBit/s 80MHz HE-MCS 8\n";
+        assert_eq!(
+            parse_iw_link(iw),
+            Some(Wifi {
+                ssid: "Home Net".into(),
+                bssid: "aa:bb:cc:dd:ee:ff".into(),
+                freq: Some(5180.0),
+                signal: Some(-52),
+                rx_rate: Some(1200.9),
+                tx_rate: Some(864.8),
+                generation: Some(6),
+                width: Some(80),
+            })
+        );
+        assert_eq!(parse_iw_link("Not connected.\n"), None);
         assert_eq!(parse_nic_model("E:ID_VENDOR_FROM_DATABASE=Realtek Semiconductor Co., Ltd.\nE:ID_MODEL_FROM_DATABASE=RTL8111/8168 PCI Express Gigabit Ethernet Controller (Onboard Ethernet)\n").as_deref(), Some("Realtek RTL8111/8168 PCI Express Gigabit Ethernet Controller"));
         assert_eq!(
             parse_nameservers("# x\nnameserver 1.1.1.1\nsearch .\nnameserver ::1\n"),
