@@ -559,11 +559,9 @@ function storagePage() {
     const rest = lv.children.slice(shown.length).reduce((t, c) => t + c.size, 0);
     const blocks = shown.map((c, j) => `<div class="blk ${sizeClass(c.size)}${lv.sel === j ? ' sel' : ''}" data-grow="${c.size}" data-lvl="${i}" data-idx="${j}" title="${esc(c.name)} · ${bytes(c.size)}"><span>${esc(c.name)}</span></div>`).join('');
     let restBlk = rest > 0 ? `<div class="blk rest" data-grow="${rest}" title="其他 · ${bytes(rest)}"><span>其他</span></div>` : '';
-    if (i === 0 && mnt) { // whole strip = filesystem capacity
-      const hidden = mnt.used - du.root.size, free = mnt.total - mnt.used;
-      if (hidden > 0) restBlk += `<div class="blk rest" data-grow="${hidden}" title="系統／無法讀取 · ${bytes(hidden)}"><span>系統／無法讀取</span></div>`;
-      if (free > 0) restBlk += `<div class="blk free" data-grow="${free}" title="可用空間 · ${bytes(free)}"><span>可用 ${bytes(free)}</span></div>`;
-    }
+    // Free space stays out of the strip: it would squeeze the folders into a sliver.
+    const hidden = i === 0 && mnt ? mnt.used - du.root.size : 0;
+    if (hidden > 0) restBlk += `<div class="blk rest" data-grow="${hidden}" title="系統／無法讀取 · ${bytes(hidden)}"><span>系統／無法讀取</span></div>`;
     return `${i ? '<div class="down-arrow">▼</div><div></div>' : ''}<div class="lvl-name">${icon(i === 0 && dsk ? 'storage' : 'folder')}<span>${esc(lv.name)}</span>${i === 0 && mnt ? `<small class="muted">總容量 ${bytes(mnt.total)}</small>` : ''}</div>
       <div class="strip">${blocks}${restBlk || (blocks ? '' : '<div class="empty">空資料夾</div>')}</div>`;
   }).join('');
