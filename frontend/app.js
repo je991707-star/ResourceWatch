@@ -202,13 +202,19 @@ function memCard(s) {
 const lv = (title, items) => `<div>${cap(title, '')}<table class="lv">${items.map(([k, v, cls]) =>
   `<tr><th>${k}</th><td class="${cls ?? ''}" title="${esc(v)}">${esc(v)}</td></tr>`).join('')}</table></div>`;
 
-// Interface facts and rx/tx counters side by side; error/drop counters turn red once non-zero.
+// Cumulative rx/tx packet counters; errors (red) and drops (yellow) shown with their share of the packets
+// in that direction, since a bare count says nothing about whether it matters.
 function nicDetails(n) {
-  const c = (v, warn) => `<td class="num${warn && v ? ' bad' : ''}">${v.toLocaleString()}</td>`;
-  const row = (k, rx, tx, warn) => `<tr><th>${k}</th>${c(rx, warn)}${c(tx, warn)}</tr>`;
-  return `${lv('介面', [['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--']])}
-    <div>${cap('統計', '')}<table class="lv"><thead><tr><th></th><th class="num">接收</th><th class="num">傳送</th></tr></thead>
-      <tbody>${row('封包', n.rxPackets, n.txPackets)}${row('錯誤', n.rxErrors, n.txErrors, true)}${row('丟棄', n.rxDropped, n.txDropped, true)}</tbody></table></div>`;
+  const share = (v, total) => { const p = (v / Math.max(total, 1)) * 100; return p < 0.01 ? '<0.01%' : `${p.toFixed(2)}%`; };
+  const c = (v, total, cls) => (cls && !v ? '<td class="num muted">無</td>'
+    : `<td class="num ${cls ?? ''}">${v.toLocaleString()}${cls ? ` <span class="muted">(${share(v, total)})</span>` : ''}</td>`);
+  const row = (k, tip, rx, tx, cls) => `<tr><th><abbr title="${tip}">${k}</abbr></th>${c(rx, n.rxPackets, cls)}${c(tx, n.txPackets, cls)}</tr>`;
+  return `<div>${cap('封包統計（開機以來累計）', '')}<table class="lv"><thead><tr><th></th>
+      <th class="num"><span class="rx">↓</span> 接收</th><th class="num"><span class="tx">↑</span> 傳送</th></tr></thead><tbody>
+    ${row('封包', '成功收送的封包數', n.rxPackets, n.txPackets)}
+    ${row('錯誤', '因線路或硬體問題（如 CRC 錯誤）而損毀的封包；持續增加代表網路線、接頭或網卡可能有問題', n.rxErrors, n.txErrors, 'bad')}
+    ${row('丟棄', '已收到但被網卡或核心捨棄的封包，常見原因為不支援的協定或緩衝區已滿；少量通常不影響連線', n.rxDropped, n.txDropped, 'warn')}
+  </tbody></table></div>`;
 }
 
 // Wi-Fi channel number from the center frequency (MHz).
@@ -469,7 +475,8 @@ const PAGES = {
   net: ['網路', (s) => {
     if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
-      const title = `<span class="nic-title"><span>${esc(n.name)}</span>${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}</span>`;
+      const sub = [n.model, n.driver && `驅動程式 ${n.driver}`, n.mtu && `MTU ${n.mtu}`].filter(Boolean).join(' · ');
+      const title = `<span class="nic-title"><span>${esc(n.name)}</span>${sub ? `<span class="spec ell" title="${esc(sub)}">${esc(sub)}</span>` : ''}</span>`;
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gbps` : `${n.speed} Mbps`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
       const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
       // share of link capacity; speed is Mb/s, rates are bytes/s
