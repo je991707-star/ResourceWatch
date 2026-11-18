@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 const ITEMS: [&str; 6] = ["cpu", "mem", "gpu", "net", "disk", "temp"];
+/// What the panel can show, in panel order (no temperature there).
+const PANEL_ITEMS: [&str; 5] = ["cpu", "gpu", "mem", "net", "disk"];
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(default)]
@@ -17,6 +19,8 @@ pub struct Config {
     pub nic: Option<String>,
     /// The app icon/name card above the CPU card.
     pub app: bool,
+    /// Items shown when the widget sits in a panel, independent of the desktop cards; values from `PANEL_ITEMS`.
+    pub panel: Vec<String>,
     /// Card background opacity in percent, 60–100 (the settings slider covers 0–40% transparency; text and charts stay opaque).
     pub opacity: u32,
 }
@@ -30,6 +34,7 @@ impl Default for Config {
             nic: None,
             app: true,
             opacity: 100,
+            panel: PANEL_ITEMS.map(String::from).to_vec(),
         }
     }
 }
@@ -40,6 +45,8 @@ impl Config {
         let mut seen = Vec::new();
         self.items
             .retain(|i| ITEMS.contains(&i.as_str()) && !seen.contains(i) && { seen.push(i.clone()); true });
+        // the panel keeps its fixed order; only which items are on is configurable
+        self.panel = PANEL_ITEMS.iter().filter(|k| self.panel.iter().any(|p| p == *k)).map(|k| k.to_string()).collect();
         self.interval = self.interval.clamp(2, 60);
         self.opacity = self.opacity.clamp(60, 100);
         self
@@ -123,5 +130,7 @@ mod tests {
         assert_eq!(parse("{}").opacity, 100);
         assert_eq!(parse(r#"{"opacity":250}"#).opacity, 100);
         assert_eq!(parse(r#"{"opacity":10}"#).opacity, 60);
+        assert_eq!(parse("{}").panel, PANEL_ITEMS);
+        assert_eq!(parse(r#"{"panel":["net","temp","cpu","net"]}"#).panel, ["cpu", "net"]);
     }
 }

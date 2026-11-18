@@ -135,8 +135,8 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 ### src/widget.rs
 
 桌面小工具（Plasma plasmoid）的設定與資料來源。
-- 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic, app, opacity }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）、`app` 為是否顯示處理器上方的 App 格子（預設 true）、`opacity` 為卡片底色不透明度 %（60–100，預設 100）。
-  缺欄位用預設值（六項依序 `cpu`、`gpu`、`net`、`disk`、`temp`、`mem`——兩欄時左欄處理器／網路／溫度、右欄顯示卡／磁碟／記憶體——2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）、`opacity` 限制在 60–100。`save` 自動建立資料夾。
+- 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic, app, opacity, panel }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）、`app` 為是否顯示處理器上方的 App 格子（預設 true）、`opacity` 為卡片底色不透明度 %（60–100，預設 100）、`panel` 為放在面板時顯示的項目（`PANEL_ITEMS`＝`cpu`、`gpu`、`mem`、`net`、`disk`，面板沒有溫度；預設全部）。
+  缺欄位用預設值（六項依序 `cpu`、`gpu`、`net`、`disk`、`temp`、`mem`——兩欄時左欄處理器／網路／溫度、右欄顯示卡／磁碟／記憶體——2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）、`opacity` 限制在 60–100、`panel` 只留 `PANEL_ITEMS` 中的項目並固定為該順序（只能開關，不能排序）。`save` 自動建立資料夾。
 - `set_order(list)`（`resourcewatch --widget-order cpu,mem,…`）：小工具拖曳重排後呼叫，讀入設定、以逗號分隔的清單取代 `items` 後存檔（同樣經 `clean`，未知與重複名稱會被去掉）。
 - `set_app(on)`（`resourcewatch --widget-app on|off`）：小工具右鍵關閉 App 格子時呼叫，其他參數回傳用法錯誤。
 - `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "cpuModel": 字串, "snapshot": Snapshot }`（`cpuModel` 為 `sys::cpu_model()`，與 `SystemInfo.cpuModel` 相同），`Snapshot` 與 `snapshot` 指令相同。
@@ -185,7 +185,7 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 
 - `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
-- 放在面板（`inPanel`：`Plasmoid.formFactor` 為 Horizontal／Vertical）：`preferredRepresentation` 改為 `compactRepresentation`、背景用 Plasma 預設；`compactRepresentation` 以 `GridLayout`（水平面板一列、垂直面板一欄，間距 10／6）依 `cfg.items` 排出 `PanelItem`，點一項呼叫 `togglePopup(key)`：記下 `popupKey` 並展開，再點同一項收合；第一次取得資料前只顯示 App 圖示。彈出視窗沿用 `fullRepresentation`，`single` 為 true 時只有一欄、只放 `popupKey` 那張卡片，不顯示 App 格子、不能長按重排。`allowDrag` 在面板中不動作（容器的編輯模式只對桌面）。設定（項目、順序、間隔、網卡）與桌面版共用同一份 widget.json。
+- 放在面板（`inPanel`：`Plasmoid.formFactor` 為 Horizontal／Vertical）：`preferredRepresentation` 改為 `compactRepresentation`、背景用 Plasma 預設；`compactRepresentation` 以 `GridLayout`（水平面板一列、垂直面板一欄，間距 10／6）依 `cfg.panel`（與桌面的 `cfg.items` 分開）排出 `PanelItem`，點一項呼叫 `togglePopup(key)`：記下 `popupKey` 並展開，再點同一項收合；第一次取得資料前只顯示 App 圖示。彈出視窗沿用 `fullRepresentation`，`single` 為 true 時只有一欄、只放 `popupKey` 那張卡片，不顯示 App 格子、不能長按重排。`allowDrag` 在面板中不動作（容器的編輯模式只對桌面）。間隔與網卡與桌面版共用同一份 widget.json，顯示項目則各自為 `panel`／`items`。
 - 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`mem`（使用率 %，面板迷你圖用）、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
 - `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／網路／溫度，右三：顯示卡／磁碟／記憶體；main.qml 的預設 `cfg` 與後端預設相同），各欄靠上、卡片高度依內容。
   處理器所在欄的最上方有 `AppCard`（App 圖示與名稱），高度＝另一欄卡片總高 − 本欄卡片總高 − 間距，讓兩欄底部對齊；各欄的 `cardsHeight` 只加總 `Repeater` 產生的卡片（不含 `AppCard`），避免高度互相依賴；差距小於 48 或 `cfg.app` 為 false 時不顯示。處理器被拖到另一欄時跟著移過去。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
@@ -196,10 +196,11 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 
 ### contents/ui/PanelItem.qml
 
-面板中的一項（iStat Menus 風格）：Plasma 圖示（`cpu`／`memory`／`video-display`／`network-wired`／`drive-harddisk`／`temperature-normal`）、數值與迷你圖，整項可點擊（`clicked` 訊號）。
-- 數值：處理器／記憶體／顯示卡為使用率 %，溫度為 CPU 溫度；網路為兩行「↓下載」「↑上傳」、磁碟為兩行「R 讀取」「W 寫入」（`Fmt.short`）。文字色跟隨面板（`Kirigami.Theme.textColor`），字級依面板厚度（單行 42%、兩行各 30%），數值欄以 `TextMetrics` 量最寬的樣本（`100%`／`↓9.9M`／`100 °C`）固定寬度，數字變動時不會左右跳動。
-- 迷你圖寬 32、高為厚度 60%：處理器（藍）、記憶體（黃）、顯示卡（青）為無格線的 `Chart`；網路與磁碟為 `Mirror`（上傳／讀取桃紅在上）；溫度沒有圖。
-- 垂直面板只顯示圖示與第一個數值，上下排列（寬度放不下迷你圖）。
+面板中的一項（iStat Menus 風格），整項可點擊（`clicked` 訊號）。
+- 處理器／顯示卡／記憶體：沒有圖示，兩行置中——上為「CPU」「GPU」「RAM」、下為使用率 %；右側為無格線的 `Chart`（寬 16、高為厚度 60%；藍／青／黃）。
+- 網路／磁碟：Plasma 圖示（`network-wired`／`drive-harddisk`）、兩行靠右的「↓下載」「↑上傳」或「R 讀取」「W 寫入」（`Fmt.short`），右側為 `Mirror`（寬 32，上傳／讀取桃紅在上）。
+- 文字色跟隨面板（`Kirigami.Theme.textColor`），字級依面板厚度（單行 42%、兩行各 30%），數值欄以 `TextMetrics` 量最寬的樣本（`100%`／`↓9.9M`）固定寬度，數字變動時不會左右跳動。
+- 垂直面板只顯示圖示（或標籤）與第一個數值，上下排列（寬度放不下迷你圖）。
 
 ### contents/ui/AppCard.qml
 
@@ -279,7 +280,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「桌面小工具」卡片（`widgetCard`，在「一般」與「關於」之間）：設定存在 widget.json 而不是 `rw-prefs`，啟動時 `get_widget_config` 讀入 `wcfg`（讀取前顯示「讀取設定中…」、失敗顯示錯誤），頂端一行加入方式提示；
-    「顯示項目」為已選項目的有序清單（`.witems`，每列圖示、名稱、上移／下移／移除鈕，`WIDGET_ITEMS` 對照名稱與圖示），下方 `.wadd` 為未選項目的「＋」按鈕；更新間隔 2／5／10 秒；網路卡（自動或指定介面）；ResourceWatch 格子（顯示／隱藏，`data-w="app"`，小工具右鍵關閉後從這裡打開）；卡片透明度為滑桿（`input[type=range][data-wrange]`，0–100%、每格 5%，右側即時顯示 %），對應實際透明度 0–40%（`W_MAX_TRANS`），存入不透明度 `opacity`＝100 − 滑桿值 × 0.4（每格 2%）；拖動中（`pointerdown`／`input` 到 `change`／`pointerup`）`wSliding` 為 true，`tick` 不重畫設定頁以免滑桿被換掉，放開（`change`）才 `setWidget('opacity', …)` 存檔。
+    「顯示項目」為已選項目的有序清單（`.witems`，每列圖示、名稱、上移／下移／移除鈕，`WIDGET_ITEMS` 對照名稱與圖示），下方 `.wadd` 為未選項目的「＋」按鈕；更新間隔 2／5／10 秒；網路卡（自動或指定介面）；ResourceWatch 格子（顯示／隱藏，`data-w="app"`，小工具右鍵關閉後從這裡打開）；設定頁另有「面板小工具」卡片：說明文字與一列 `.seg` 切換鈕（`PANEL_ITEMS`，`data-w="panel"`，可多選，亮起＝顯示），`setWidget('panel', key)` 切換後依固定順序存入 `panel`，與桌面卡片的 `items` 分開；卡片透明度為滑桿（`input[type=range][data-wrange]`，0–100%、每格 5%，右側即時顯示 %），對應實際透明度 0–40%（`W_MAX_TRANS`），存入不透明度 `opacity`＝100 − 滑桿值 × 0.4（每格 2%）；拖動中（`pointerdown`／`input` 到 `change`／`pointerup`）`wSliding` 為 true，`tick` 不重畫設定頁以免滑桿被換掉，放開（`change`）才 `setWidget('opacity', …)` 存檔。
     按鈕帶 `data-w`（`add`／`del`／`up`／`down`／`interval`／`nic`），`setWidget` 改動副本後呼叫 `set_widget_config`，以回傳值（後端整理過）取代 `wcfg`，失敗時卡片底部紅字；每次進入設定頁都重新 `get_widget_config`（小工具拖曳重排會改寫 widget.json，沿用啟動時讀到的舊值會在下次修改時蓋掉新順序）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題左側為兩行（`.nic-title`）：介面名稱、其下以 · 串接網卡型號（廠牌＋晶片）、驅動（依 `driverOpen` 顯示「開源驅動 r8169」／「專有驅動 …」，未知時「驅動程式 …」）與「MTU …」（muted，過長截斷，提示為完整字串）；右側為連線速度與雙工（如「1 Gbps 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
     `.speeds` 兩欄（左 240 px；視窗寬度 ≤ 960 px 時改為單欄，位址在上、每列兩個）：左為 `addrBlock(n, dns)`（`.addr` 直排四列、垂直置中：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出）、IPv6（顯示第一個，多於一個時小字附「另 N 個」，提示逐行列出全部）），右為 `.rates-row` 橫排的下載、上傳大字速率（`.rate.rx`／`.tx`：方向箭頭以藍／桃紅著色、對應條狀圖顏色；數字下方小字為「下載／上傳 · 累計 …」，有 speed 時再接「頻寬 %」＝位元速率／連線速度），其下高條狀圖；

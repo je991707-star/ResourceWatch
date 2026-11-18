@@ -479,6 +479,8 @@ function appsPage() {
 
 // ── pages ──
 // Desktop widget (Plasma): its config lives in widget.json, read by `resourcewatch --widget`.
+// what the panel can show, in its fixed order (same as widget.rs PANEL_ITEMS)
+const PANEL_ITEMS = ['cpu', 'gpu', 'mem', 'net', 'disk'];
 const WIDGET_ITEMS = { cpu: ['處理器', 'gpu'], mem: ['記憶體', 'mem'], gpu: ['顯示卡', 'display'], net: ['網路', 'net'], disk: ['磁碟', 'storage'], temp: ['溫度', 'sensors'] };
 let wcfg = null, wErr = '';
 // the opacity slider's 0–100% (5% steps) maps onto 0–40% real transparency, i.e. opacity 100–60 in 2% steps
@@ -505,6 +507,10 @@ function widgetCard(s, row) {
       return `<div class="set-ctl"><input type="range" class="wrange" data-wrange min="0" max="100" step="5" value="${t}"><span class="wrange-val">${t}%</span></div>`;
     })()),
     wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
+  ].join('')) + card('面板小工具', [
+    `<p class="hint">把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片</p>`,
+    row('顯示項目', '點擊切換顯示／隱藏', `<div class="seg">${PANEL_ITEMS.map((k) =>
+      `<button data-w="panel" data-val="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k][0]}</button>`).join('')}</div>`),
   ].join(''));
 }
 async function setWidget(act, val) {
@@ -516,6 +522,7 @@ async function setWidget(act, val) {
   else if (act === 'interval') c.interval = +val;
   else if (act === 'nic') c.nic = val || null;
   else if (act === 'app') c.app = val === 'true';
+  else if (act === 'panel') { const on = new Set(c.panel ?? PANEL_ITEMS); if (!on.delete(val)) on.add(val); c.panel = PANEL_ITEMS.filter((k) => on.has(k)); }
   else if (act === 'opacity') c.opacity = +val;
   try { wcfg = await invoke('set_widget_config', { cfg: c }); wErr = ''; } catch (e) { wErr = `儲存失敗：${e}`; }
   render();

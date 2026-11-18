@@ -11,7 +11,7 @@ PlasmoidItem {
 
     // ~/.local/bin is not always on plasmashell's PATH
     readonly property string cmd: 'PATH="$HOME/.local/bin:$PATH" resourcewatch --widget'
-    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null, app: true, opacity: 100 })
+    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null, app: true, opacity: 100, panel: ["cpu", "gpu", "mem", "net", "disk"] })
     property var snap: null
     property string cpuModel: ""
     property string error: ""
@@ -153,7 +153,7 @@ PlasmoidItem {
             rowSpacing: 6
             columnSpacing: 10
             Repeater {
-                model: root.snap ? root.cfg.items : []
+                model: root.snap ? root.cfg.panel ?? [] : []
                 PanelItem {
                     required property string modelData
                     key: modelData
