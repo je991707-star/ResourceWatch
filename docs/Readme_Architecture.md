@@ -48,7 +48,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `connections` | `{ list: Conn[], tcpStates: { 狀態: 數量 }, outSegs, retransSegs }`；`Conn`＝`{ pid, name, proto: "tcp"\|"udp", local, remote, state }` | `tcpStates` 為全系統（本網路命名空間所有 socket，含 inode 0）TCP 各狀態數；`outSegs`／`retransSegs` 為 `/proc/net/snmp` 的累計值；`list` 為讀得到 `/proc/<pid>/fd` 的程序（自己的）所持有的 socket；`remote` 在監聽／未連線時為 null；`state` 為小寫 TCP 狀態名，未連線的 UDP 為 `"listen"`；在 `spawn_blocking` 執行緒執行 |
 | `system_info` | `SystemInfo` | 不變的資料（主機、發行版、桌面環境、CPU、記憶體規格、家目錄、發行版 logo） |
 | `app_icons(names)` | `{ 名稱: { icon, name } 或 null }` | 程序名稱或 desktop id → 應用圖示 data URL（找不到圖示檔時 `icon` 為 null）與 `.desktop` 名稱（`icons.rs`）；第一次呼叫要建立索引，所以在 `spawn_blocking` 執行緒執行 |
-| `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache`；執行緒數：路徑在傳統硬碟上（`sys::rotational`）用 2 個（再多會讓磁頭在各執行緒的資料夾間來回尋軌），否則每個 CPU 一個 |
+| `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache`；執行緒數：路徑在傳統硬碟上（`sys::rotational`）用 4 個（不用全部核心：太多執行緒會讓磁頭在各自的資料夾間來回尋軌），否則每個 CPU 一個 |
 | `scan_progress()` | `Progress { items, top }` | 執行中的掃描目前走訪到的項目數，與根目錄各項目到目前為止累計的大小（大到小） |
 | `scan_cancel()` | — | 要求中止執行中的掃描；`scan_dir` 回傳「已取消掃描」，快取維持上一次的結果 |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |

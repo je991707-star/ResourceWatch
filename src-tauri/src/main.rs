@@ -47,13 +47,13 @@ fn scan_cancel() {
     du::cancel()
 }
 
-/// Walks the whole tree on blocking threads so the window stays responsive. A spinning disk gets two workers
+/// Walks the whole tree on blocking threads so the window stays responsive. A spinning disk gets four workers
 /// (more would make the head seek between their folders), anything else one per CPU.
 #[tauri::command]
 async fn scan_dir(path: String, cache: DirCache<'_>) -> Result<du::Scan, String> {
     let (c, scan) = tauri::async_runtime::spawn_blocking(move || {
         let threads = if sys::rotational(std::path::Path::new(&path)) {
-            2
+            4
         } else {
             std::thread::available_parallelism().map_or(4, |n| n.get())
         };
