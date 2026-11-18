@@ -384,5 +384,9 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .btn.icon:hover:not(:disabled) { background: var(--sel); }
 .wadd { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
 .wrange { width: 200px; accent-color: var(--blue); }
+.wchips button { cursor: grab; touch-action: none; }
+.wchips button:not(.on) { opacity: .5; }
+.wchips button.dragging { position: relative; z-index: 1; cursor: grabbing; background: var(--sel); box-shadow: 0 2px 8px rgb(0 0 0 / .3); }
+.wchips button.drop { outline: 2px solid var(--blue); outline-offset: -2px; }
 .wrange-val { width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .about { color: var(--muted); line-height: 1.7; user-select: text; }

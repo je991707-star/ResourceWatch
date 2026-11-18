@@ -479,7 +479,7 @@ function appsPage() {
 
 // ── pages ──
 // Desktop widget (Plasma): its config lives in widget.json, read by `resourcewatch --widget`.
-// what the panel can show, in its fixed order (same as widget.rs PANEL_ITEMS)
+// what the panel can show, default order (same as widget.rs PANEL_ITEMS)
 const PANEL_ITEMS = ['cpu', 'gpu', 'mem', 'net', 'disk'];
 const WIDGET_ITEMS = { cpu: ['處理器', 'gpu'], mem: ['記憶體', 'mem'], gpu: ['顯示卡', 'display'], net: ['網路', 'net'], disk: ['磁碟', 'storage'], temp: ['溫度', 'sensors'] };
 let wcfg = null, wErr = '';
@@ -487,6 +487,8 @@ let wcfg = null, wErr = '';
 const W_MAX_TRANS = 40;
 // while the slider is held the settings page is not re-rendered (that would replace the slider mid-drag)
 let wSliding = false;
+// panel chip being dragged in the settings: { key, x, el, moved }; `moved` suppresses the click that follows
+let wDrag = null;
 function widgetCard(s, row) {
   if (!wcfg) return card('桌面小工具', `<div class="empty">${esc(wErr || '讀取設定中…')}</div>`);
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
@@ -509,10 +511,12 @@ function widgetCard(s, row) {
     wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
   ].join('')) + card('面板小工具', [
     `<p class="hint">把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片</p>`,
-    row('顯示項目', '點擊切換顯示／隱藏', `<div class="seg">${PANEL_ITEMS.map((k) =>
-      `<button data-w="panel" data-val="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k][0]}</button>`).join('')}</div>`),
+    row('顯示項目', '點擊切換顯示／隱藏，拖動調整順序', `<div class="seg wchips">${panelChips().map((k) =>
+      `<button data-w="panel" data-val="${k}" data-wchip="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k][0]}</button>`).join('')}</div>`),
   ].join(''));
 }
+// shown items in panel order, then the hidden ones
+const panelChips = () => { const p = wcfg.panel ?? PANEL_ITEMS; return [...p, ...PANEL_ITEMS.filter((k) => !p.includes(k))]; };
 async function setWidget(act, val) {
   const c = { ...wcfg, items: [...wcfg.items] };
   const i = c.items.indexOf(val);
@@ -522,7 +526,8 @@ async function setWidget(act, val) {
   else if (act === 'interval') c.interval = +val;
   else if (act === 'nic') c.nic = val || null;
   else if (act === 'app') c.app = val === 'true';
-  else if (act === 'panel') { const on = new Set(c.panel ?? PANEL_ITEMS); if (!on.delete(val)) on.add(val); c.panel = PANEL_ITEMS.filter((k) => on.has(k)); }
+  else if (act === 'panel') { const p = c.panel ?? [...PANEL_ITEMS]; c.panel = p.includes(val) ? p.filter((k) => k !== val) : [...p, val]; }
+  else if (act === 'panelOrder') c.panel = val;
   else if (act === 'opacity') c.opacity = +val;
   try { wcfg = await invoke('set_widget_config', { cfg: c }); wErr = ''; } catch (e) { wErr = `儲存失敗：${e}`; }
   render();
@@ -751,8 +756,41 @@ $('#content').addEventListener('change', (e) => {
   if (e.target.dataset.du === 'disk' && e.target.value) duScan(e.target.value);
   if (e.target.matches('[data-wrange]')) { wSliding = false; setWidget('opacity', 100 - (+e.target.value * W_MAX_TRANS) / 100); }
 });
-$('#content').addEventListener('pointerdown', (e) => { if (e.target.matches('[data-wrange]')) wSliding = true; });
-$('#content').addEventListener('pointerup', () => { wSliding = false; });
+$('#content').addEventListener('pointerdown', (e) => {
+  if (e.target.matches('[data-wrange]')) wSliding = true;
+  const chip = e.target.closest('[data-wchip]');
+  if (chip && e.button === 0) { wDrag = { key: chip.dataset.wchip, x: e.clientX, el: chip, moved: false }; wSliding = true; chip.setPointerCapture(e.pointerId); }
+});
+// Panel chips are reordered with pointer events (no HTML5 drag and drop: the webview's drop handling is taken
+// by Tauri): the chip follows the pointer horizontally, the chip under the pointer is marked, and on release the
+// dragged one moves to that chip's place; hidden chips keep their relative order after the shown ones.
+$('#content').addEventListener('pointermove', (e) => {
+  if (!wDrag?.el || !(e.buttons & 1)) return; // after release wDrag only remembers `moved` for the click
+  const dx = e.clientX - wDrag.x;
+  if (!wDrag.moved && Math.abs(dx) < 4) return;
+  wDrag.moved = true;
+  wDrag.el.classList.add('dragging');
+  wDrag.el.style.transform = `translateX(${dx}px)`;
+  const over = document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.dataset?.wchip && x !== wDrag.el);
+  document.querySelectorAll('[data-wchip].drop').forEach((x) => x !== over && x.classList.remove('drop'));
+  over?.classList.add('drop');
+});
+$('#content').addEventListener('pointerup', (e) => {
+  wSliding = false;
+  if (!wDrag?.el) return;
+  if (!wDrag.moved) { wDrag = null; return; } // a plain click: the click handler toggles
+  const over = document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.dataset?.wchip && x !== wDrag.el);
+  const key = wDrag.key;
+  wDrag = { moved: true }; // the click that follows this release is not a toggle
+  const order = panelChips();
+  if (over) {
+    const from = order.indexOf(key), to = order.indexOf(over.dataset.wchip);
+    order.splice(from, 1);
+    order.splice(to, 0, key);
+    const shown = new Set(wcfg.panel ?? PANEL_ITEMS);
+    setWidget('panelOrder', order.filter((k) => shown.has(k)));
+  } else render();
+});
 $('#content').addEventListener('input', (e) => {
   if (e.target.matches('[data-wrange]')) { wSliding = true; e.target.nextElementSibling.textContent = `${e.target.value}%`; }
 });
@@ -767,6 +805,7 @@ $('#content').addEventListener('click', (e) => {
   const el = t.closest('[data-elevate]');
   if (el) return elev.busy || elevate(el.dataset.elevate);
   const w = t.closest('[data-w]');
+  if (w && w.dataset.wchip && wDrag?.moved) { wDrag = null; return; } // the end of a chip drag, not a toggle
   if (w) return setWidget(w.dataset.w, w.dataset.val);
   const pref = t.closest('[data-pref]');
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
