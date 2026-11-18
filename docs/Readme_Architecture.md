@@ -198,7 +198,7 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 ### contents/ui/CpuCard.qml、MemCard.qml、GpuCard.qml、NetCard.qml、DiskCard.qml、TempCard.qml
 
 各自繼承 `Card`，屬性 `snap`（必要）、`hist`、`cfg`（只有網路卡用）。
-- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；其下各執行緒使用率直條（`Cores`）；最下方藍色曲線（`hist.cpu`）。
+- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；其下一列左右並排、寬度 30:70（間距 12，靠底對齊）：左為各執行緒使用率直條（`Cores`，需設 `Layout.fillWidth: false`——Layout 預設填滿寬度，會蓋過比例），右為藍色曲線（`hist.cpu`，高 54 與直條同高）。
 - 記憶體：`extra` 為總量；大字為使用率、其下「N 已使用」；堆疊條：應用程式（used，黃）、快取（藍）、可用（total − used − cached，綠）；圖例四列（含 SWAP 已用／總量，沒有 SWAP 時隱藏）。
 - 顯示卡：只看第一張；標題為型號、`extra` 為溫度；左為青色使用率圓環（中間百分比），右為顯示記憶體／編碼器／解碼器三條細條（`Legend` 加 5 px `StackBar`）；下方青色曲線。沒有顯示卡時顯示「沒有顯示卡」。
 - 網路：`Fmt.nic(snap, cfg.nic)` 選介面，`extra` 為介面名；兩欄大字下載（藍點）／上傳（桃紅點）；下方 `Mirror` 上傳在上、下載在下。
