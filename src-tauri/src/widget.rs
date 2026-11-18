@@ -20,7 +20,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            items: vec!["cpu".into(), "mem".into(), "net".into()],
+            items: ITEMS.iter().map(|s| s.to_string()).collect(),
             interval: 2,
             nic: None,
         }

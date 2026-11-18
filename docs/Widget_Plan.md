@@ -63,6 +63,12 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收：`./install.sh` → 桌面新增小工具正常運作；`./install.sh uninstall` 清乾淨。
 - [x] ✅ 回頭重讀 `docs/Widget_Plan.md`，確認全部 ✅、無新增任務。
 
+## 後續調整
+- [x] ✅ 卡片從頂端排列（原本被撐開平均分布在小工具高度中），小工具最小高度等於內容高度。
+- [x] ✅ 依寬度自動分欄（每欄 280 px），預設寬度兩欄。
+- [x] ✅ 預設顯示全部六項。
+- [x] ✅ 按下即可拖動（改桌面容器的 `editModeCondition` 為 AfterPress，鎖定時不可拖）。
+
 ## 每個 Phase 通用驗證
 `cargo test`、`cargo tauri build --no-bundle` 無錯（程式執行中先 `pkill -x resourcewatch`）。
 
