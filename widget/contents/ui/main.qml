@@ -94,6 +94,45 @@ PlasmoidItem {
         function onImmutableChanged() { root.allowDrag(); }
     }
 
+    // Takes a config read from widget.json (or `--widget` output): fields the widget saved itself override it
+    // until the file catches up; cfg is only replaced when something changed, so bindings do not churn.
+    function applyConfig(c) {
+        const left = {};
+        for (const k in pending) {
+            if (JSON.stringify(c[k]) !== JSON.stringify(pending[k])) {
+                c[k] = pending[k];
+                left[k] = pending[k];
+            }
+        }
+        pending = left;
+        if (JSON.stringify(c) !== JSON.stringify(cfg)) cfg = c;
+    }
+    // Commands run one-shot from Timers (connect, then disconnect on the result): a polled executable source
+    // (`interval`) hands its result over only at the next poll, one whole interval late. Settings changes would
+    // also wait for the next `--widget` run (interval + 1 s of sampling), so the file itself is read every 0.3 s
+    // (a `cat`, about a millisecond).
+    // shortcut: the raw file is used as saved; the settings page and the widget only write cleaned values, a hand edit
+    // with unknown items shows until `--widget` output (cleaned) replaces it; parse with the backend if that matters.
+    readonly property string catCmd: 'cat "${XDG_CONFIG_HOME:-$HOME/.config}/resourcewatch/widget.json"'
+    P5Support.DataSource {
+        id: exec
+        engine: "executable"
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (source === root.catCmd) root.onConfigRead(data);
+            else root.onSample(data);
+        }
+    }
+    function run(command) { if (exec.connectedSources.indexOf(command) < 0) exec.connectSource(command); }
+    Timer { interval: 300; running: true; repeat: true; onTriggered: root.run(root.catCmd) }
+    Timer { interval: root.cfg.interval * 1000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.run(root.cmd) }
+    function onConfigRead(data) {
+        if (data["exit code"] !== 0) return; // no file yet: `--widget` output carries the defaults
+        try {
+            applyConfig(Object.assign({}, cfg, JSON.parse(data.stdout)));
+        } catch (e) { /* half-written file: the next read gets it */ }
+    }
+
     function record(s) {
         const h = Object.assign({}, hist); // a new object so bindings on `hist` update
         const push = (key, v) => { h[key] = (h[key] ?? []).concat([v]).slice(-60); };
@@ -107,33 +146,20 @@ PlasmoidItem {
         hist = h;
     }
 
-    P5Support.DataSource {
-        engine: "executable"
-        connectedSources: [root.cmd]
-        interval: root.cfg.interval * 1000
-        onNewData: (source, data) => {
-            if (data["exit code"] !== 0) {
-                root.error = data["exit code"] === 127 ? "找不到 resourcewatch，請先執行 install.sh" : "resourcewatch 執行失敗：" + (data.stderr || data["exit code"]);
-                return;
-            }
-            try {
-                const out = JSON.parse(data.stdout);
-                const left = {};
-                for (const k in root.pending) {
-                    if (JSON.stringify(out.config[k]) !== JSON.stringify(root.pending[k])) {
-                        out.config[k] = root.pending[k];
-                        left[k] = root.pending[k];
-                    }
-                }
-                root.pending = left;
-                root.cfg = out.config;
-                root.snap = out.snapshot;
-                root.cpuModel = out.cpuModel ?? "";
-                root.record(out.snapshot);
-                root.error = "";
-            } catch (e) {
-                root.error = "無法解析 resourcewatch 輸出";
-            }
+    function onSample(data) {
+        if (data["exit code"] !== 0) {
+            error = data["exit code"] === 127 ? "找不到 resourcewatch，請先執行 install.sh" : "resourcewatch 執行失敗：" + (data.stderr || data["exit code"]);
+            return;
+        }
+        try {
+            const out = JSON.parse(data.stdout);
+            applyConfig(out.config);
+            snap = out.snapshot;
+            cpuModel = out.cpuModel ?? "";
+            record(out.snapshot);
+            error = "";
+        } catch (e) {
+            error = "無法解析 resourcewatch 輸出";
         }
     }
 

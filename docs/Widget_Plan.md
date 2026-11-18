@@ -84,6 +84,7 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - [x] ✅ 垂直面板只顯示圖示與數值。
 - [x] ✅ 設定頁「面板小工具」區塊：個別開關面板上的項目（與桌面卡片分開）。
 - [x] ✅ 面板的 CPU／GPU／RAM 改為文字在上、百分比在下，不顯示圖示，迷你圖寬度減半；面板不顯示溫度。
+- [x] ✅ 設定變更即時套用：小工具每 0.3 秒讀 widget.json，指令改為計時器觸發的一次性執行（輪詢模式會晚一個間隔才交出結果）。
 - [x] ✅ 預設顯示全部六項。
 - [x] ✅ 按下即可拖動（改桌面容器的 `editModeCondition` 為 AfterPress，鎖定時不可拖）。
 
