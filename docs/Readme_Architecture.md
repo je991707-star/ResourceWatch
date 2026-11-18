@@ -136,7 +136,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 
 桌面小工具（Plasma plasmoid）的設定與資料來源。
 - 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）。
-  缺欄位用預設值（全部六項、2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）。`save` 自動建立資料夾。
+  缺欄位用預設值（六項依序 `cpu`、`gpu`、`net`、`disk`、`temp`、`mem`——兩欄時左欄處理器／網路／溫度、右欄顯示卡／磁碟／記憶體——2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）。`save` 自動建立資料夾。
 - `set_order(list)`（`resourcewatch --widget-order cpu,mem,…`）：小工具拖曳重排後呼叫，讀入設定、以逗號分隔的清單取代 `items` 後存檔（同樣經 `clean`，未知與重複名稱會被去掉）。
 - `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "cpuModel": 字串, "snapshot": Snapshot }`（`cpuModel` 為 `sys::cpu_model()`，與 `SystemInfo.cpuModel` 相同），`Snapshot` 與 `snapshot` 指令相同。
 - 單元測試：設定解析（壞 JSON、空物件、未知／重複項目、間隔下限）。
@@ -185,10 +185,15 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 - `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
 - 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
-- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／顯示卡／磁碟，右三：記憶體／網路／溫度），各欄靠上、卡片高度依內容。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
+- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／網路／溫度，右三：顯示卡／磁碟／記憶體；main.qml 的預設 `cfg` 與後端預設相同），各欄靠上、卡片高度依內容。
+  處理器所在欄的最上方有 `AppCard`（App 圖示與名稱），高度＝另一欄卡片總高 − 本欄卡片總高 − 間距，讓兩欄底部對齊；各欄的 `cardsHeight` 只加總 `Repeater` 產生的卡片（不含 `AppCard`），避免高度互相依賴；差距小於 48 時不顯示。處理器被拖到另一欄時跟著移過去。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
 
 - 移動整個小工具：桌面把每個小工具包在 containmentlayoutmanager 的 `ItemContainer` 裡，其 `editModeCondition` 決定按下時是否開始移動，而容器比卡片先收到按下事件。`allowDrag` 沿 `parent` 往上找到有 `editModeCondition` 的容器，依滑鼠位置切換：在卡片標題列或卡片之間的空白時為 `AfterPress`（按下即可拖動，同時出現縮放／設定／移除把手，點別處結束），滑鼠在卡片內容區（`overBody`）或正在拖曳卡片（`dragKey`）時為 `Manual`（不移動，讓卡片收到長按）；小工具被鎖定（`Plasmoid.immutable`）時為 `Locked`。在 `onParentChanged`、`overBody`／`dragKey`／`immutable` 改變時重設（會蓋掉桌面原本的繫結，所以鎖定狀態要自己處理）。
 - 重新排列卡片：`Card` 回報內容區的滑鼠停留（`bodyHovered`）與長按 400 ms 後的拖曳（`holdStarted`／`holdMoved`／`holdEnded`）；每個 `Loader` 以 `Connections` 轉給 `full` 的 `holdStart`／`holdMove`／`holdEnd`（座標換成 `full` 的座標）。拖曳中的卡片以 `Translate` 跟著滑鼠、放大 1.04、`z` 與所在欄提高到上層；`slotAt` 依 x 決定欄、依該欄各卡片的底部決定列（超過最後一張為該欄的空格），換算成 `cfg.items` 索引（超出時為最後一個），目標卡片半透明。放開時與目標交換位置（同一格或取消不動），`setOrder` 立即更新 `cfg.items`，並以第二個 executable `DataSource`（`saver`）執行 `resourcewatch --widget-order …` 存檔；存檔前已開始的 `--widget` 會印出舊順序，所以 `pendingItems` 保留新順序，直到輸出的順序一致為止；存檔失敗時顯示錯誤。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
+
+### contents/ui/AppCard.qml
+
+與卡片相同底色與圓角，置中顯示 App 圖示（`Kirigami.Icon`，圖示名稱 `io.github.local.resourcewatch`，即 install.sh 安裝的 hicolor 圖示；邊長 min(48, 高度 − 24)）與粗體 18 px「ResourceWatch」。高度由 main.qml 決定；不屬於 `cfg.items`，不能拖曳重排，按住它可移動整個小工具。
 
 ### contents/ui/Theme.qml
 

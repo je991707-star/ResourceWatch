@@ -20,7 +20,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            items: ITEMS.iter().map(|s| s.to_string()).collect(),
+            // left column cpu/net/temp, right column gpu/disk/mem (item i goes to column i % 2)
+            items: ["cpu", "gpu", "net", "disk", "temp", "mem"].map(String::from).to_vec(),
             interval: 2,
             nic: None,
         }

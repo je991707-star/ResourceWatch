@@ -10,7 +10,7 @@ PlasmoidItem {
 
     // ~/.local/bin is not always on plasmashell's PATH
     readonly property string cmd: 'PATH="$HOME/.local/bin:$PATH" resourcewatch --widget'
-    property var cfg: ({ items: ["cpu", "mem", "gpu", "net", "disk", "temp"], interval: 2, nic: null })
+    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null })
     property var snap: null
     property string cpuModel: ""
     property string error: ""
@@ -179,7 +179,24 @@ PlasmoidItem {
                         Layout.preferredWidth: full.cardWidth
                         Layout.alignment: Qt.AlignTop
                         spacing: 12
+                        // height of this column's cards alone (without the app card), so the app card can size
+                        // itself from the difference without depending on its own height
+                        readonly property real cardsHeight: {
+                            let h = 0;
+                            for (let i = 0; i < cardRep.count; i++) h += cardRep.itemAt(i)?.implicitHeight ?? 0;
+                            return h + Math.max(0, cardRep.count - 1) * spacing;
+                        }
+                        // App icon and name above the CPU card, filling what the other column is taller by
+                        AppCard {
+                            readonly property var other: columns.count > 1 ? columns.itemAt(1 - col) : null
+                            readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
+                            theme: colors
+                            visible: root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: gap
+                        }
                         Repeater {
+                            id: cardRep
                             model: root.snap ? root.cfg.items.filter((_, i) => i % full.cols === col) : []
                             Loader {
                                 id: ld
