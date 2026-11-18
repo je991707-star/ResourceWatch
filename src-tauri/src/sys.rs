@@ -93,6 +93,7 @@ struct Net {
     gateway: Option<String>,
     model: Option<String>,
     driver: Option<String>,
+    driver_open: Option<bool>,
     speed: Option<u32>, // Mb/s
     duplex: Option<String>,
     mtu: Option<u32>,
@@ -450,6 +451,14 @@ struct Addrs {
 /// Udev's PCI/USB database names → vendor + chip, e.g. "Realtek RTL8111" from
 /// "RTL8111/8168/8211/8411 PCI Express Gigabit Ethernet Controller"; the chip is the first
 /// plain word with both letters and digits ("AX200", "I219-LM"), else the whole name.
+/// Kernel module taint flag `P` marks a proprietary license; drivers built into the kernel have
+/// no module link and are open source by definition. None when the interface has no driver.
+fn driver_open(n: &str) -> Option<bool> {
+    let drv = format!("/sys/class/net/{n}/device/driver");
+    std::fs::metadata(&drv).ok()?;
+    Some(!read(format!("{drv}/module/taint")).contains('P'))
+}
+
 fn parse_nic_model(udev: &str) -> Option<String> {
     let get = |k: &str| {
         udev.lines()
@@ -1283,6 +1292,7 @@ impl Monitor {
                     driver: std::fs::read_link(format!("/sys/class/net/{n}/device/driver"))
                         .ok()
                         .and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned())),
+                    driver_open: driver_open(n),
                     // -1 (unknown) when down or on many Wi-Fi drivers
                     speed: sys("speed")
                         .parse::<i64>()

@@ -74,7 +74,7 @@ Snapshot {
            // busy：活動時間 %（diskstats io_ticks 差值／經過時間，上限 100）
            // 只列有 /sys/block/<n>/device、容量 > 0、不是光碟機（sr*）的實體磁碟；used/total/mounts 為掛載在這顆硬碟上的檔案系統加總（沒有掛載時 used/total 為 null）
   mounts:  [{ mount, device, total, used }]                     // bytes
-  net:     [{ name, up, mac, ip, prefix, ipv6, gateway, model, driver, speed, duplex, mtu,
+  net:     [{ name, up, mac, ip, prefix, ipv6, gateway, model, driver, driverOpen, speed, duplex, mtu,
              rxTotal, txTotal, rxBps, txBps, rxPackets, txPackets, rxErrors, txErrors, rxDropped, txDropped }]
            // 只列有 /sys/class/net/<n>/device 的實體介面；up = operstate "up"；ip 為第一個 IPv4、prefix 為其遮罩位元數；
            // ipv6 為所有 IPv6（"位址/前綴"）；gateway 為該介面的預設路由；speed 為 Mb/s（sysfs 回 -1 時為 null，Wi-Fi 常見）；
@@ -98,7 +98,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版（`os`）：os-release `NAME` + `VERSION_ID`（例如 `Bazzite 45`）；沒有 `VERSION_ID` 時只有名稱，沒有 `NAME` 時用 `PRETTY_NAME`。
 - 桌面環境（`desktop`）：`XDG_CURRENT_DESKTOP` 第一項對應顯示名稱與 shell 執行檔（KDE → `KDE Plasma`／`plasmashell`、GNOME／`gnome-shell`、Cinnamon、Xfce、MATE、LXQt、Budgie），啟動時執行一次 `<執行檔> --version`，取第一個點分數字為版本（`first_version`），例如 `KDE Plasma 6.8.2`；執行檔不存在時只有名稱，未知桌面直接顯示 XDG 名稱，沒有該變數時為 `null`。
 - 網路：IPv4（含遮罩→前綴長度）與 IPv6 由 `getifaddrs` 取得（`if_addrs`）；`/proc/net/dev` 每介面保留 16 個計數（`self.net` 存整列，速率取索引 0／8）；
-  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE` 中的晶片名（第一個只含英數與 `-/*`、且同時有字母與數字的字，取 `/` 前並去掉 `*`，如 RTL8111、AX210、I219-LM；找不到時用整串並去掉括號附註）；驅動為 `device/driver` 連結檔名；
+  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE` 中的晶片名（第一個只含英數與 `-/*`、且同時有字母與數字的字，取 `/` 前並去掉 `*`，如 RTL8111、AX210、I219-LM；找不到時用整串並去掉括號附註）；驅動為 `device/driver` 連結檔名；`driverOpen` 為驅動模組 `device/driver/module/taint` 不含 `P`（專有授權）時 true，核心內建驅動沒有 module 連結、讀到空字串，也算開源；沒有驅動時為 null；
   速度、雙工、MTU 讀 `/sys/class/net/<n>/{speed,duplex,mtu}`；DNS 先讀 `/run/systemd/resolve/resolv.conf`（resolved 的上游清單，`/etc/resolv.conf` 只有 stub 127.0.0.53），空的才退回 `/etc/resolv.conf`；
   Wi-Fi：只對有 `/sys/class/net/<n>/wireless` 的介面每次取樣執行 `iw dev <n> link`（`parse_iw_link`；輸出 "Not connected." 時為 null），
   世代由 rx bitrate 的 `EHT`／`HE`／`VHT`／`MCS`（HT）判斷為 7／6／5／4，頻寬取 `<n>MHz` 字樣；
@@ -188,13 +188,13 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
-  - 網路：每張網卡一張卡，標題左側為兩行（`.nic-title`）：介面名稱、其下以 · 串接網卡型號（廠牌＋晶片）、「驅動程式 …」與「MTU …」（muted，過長截斷，提示為完整字串）；右側為連線速度與雙工（如「1 Gbps 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
+  - 網路：每張網卡一張卡，標題左側為兩行（`.nic-title`）：介面名稱、其下以 · 串接網卡型號（廠牌＋晶片）、驅動（依 `driverOpen` 顯示「開源驅動 r8169」／「專有驅動 …」，未知時「驅動程式 …」）與「MTU …」（muted，過長截斷，提示為完整字串）；右側為連線速度與雙工（如「1 Gbps 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
     `.speeds` 兩欄（左 240 px；視窗寬度 ≤ 960 px 時改為單欄，位址在上、每列兩個）：左為 `addrBlock(n, dns)`（`.addr` 直排四列、垂直置中：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出）、IPv6（顯示第一個，多於一個時小字附「另 N 個」，提示逐行列出全部）），右為 `.rates-row` 橫排的下載、上傳大字速率（`.rate.rx`／`.tx`：方向箭頭以藍／桃紅著色、對應條狀圖顏色；數字下方小字為「下載／上傳 · 累計 …」，有 speed 時再接「頻寬 %」＝位元速率／連線速度），其下高條狀圖；
     其下的 `.details` 為次要資訊面板（不畫分隔線，改以 `--field` 底色圓角區塊與上方區隔，字級 12）（flex 換行、欄間距 64 px，每欄與表格都依內容寬度、靠左排列，不平均撐滿面板）：Wi-Fi 連線中第一欄為 `wifiDetails`（SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID），
     接著 `nicDetails` 的「封包統計（開機以來累計）」：封包／錯誤／丟棄 × 接收／傳送的小表格，欄位標頭帶與速率同色的 ↓／↑；錯誤與丟棄為 0 時顯示淡色「無」，非 0 時錯誤紅字（`.bad`）、丟棄黃字（`.warn`），並附佔同方向封包數的比例（取到小數 2 位，過小顯示 `<0.01%`）；列標籤為虛線底線的 `abbr`，提示說明該項的意義。
     這些清單用 `lv(title, items)`：`.cap` 小標題加 `.lv` 表格，標籤靠左（muted，`th:first-child` 縮到內容寬）、數值緊接在標籤右側（提示為完整值；統計表的數字欄 `.num` 靠右、左側留 32 px），每列第三個值可作為數值的 class。
-    網卡卡片之後是「連線」卡（`connCard`）：標題右側小字「程序清單僅含目前使用者」（提示說明其他使用者需管理員權限、TCP 狀態為全系統）；最上方 `tcpStats` 為一排 `.stats` 數字（第一次取回前不顯示）：已建立、監聽、TIME_WAIT、CLOSE_WAIT、連線中（SYN_SENT＋SYN_RECV）、關閉中（FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與 TCP 重傳率（兩次輪詢間，取到小數 2 位）；
-    分隔線下為 `.procs` 斑馬紋表格，每個程序一列：應用圖示與名稱（提示含 PID）、遠端位址（去重後前 3 個＋「+N」，提示列出全部）、已連線數（有遠端者）、監聽數；依已連線、監聽、名稱排序。
+    網卡卡片之後是「連線」卡（`connCard`）：標題右側小字「程序清單僅含目前使用者」（提示說明其他使用者需管理員權限、上方數字為全系統 TCP）；最上方 `tcpStats` 為一排 `.stats` 白話數字（第一次取回前不顯示，每格提示說明意義與原始狀態名及各自數量）：使用中（ESTABLISHED）、等待連入（LISTEN）、建立中（SYN_SENT＋SYN_RECV）、關閉中（TIME_WAIT、CLOSE_WAIT、FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與重傳率（兩次輪詢間，取到小數 2 位；< 1% 綠字「良好」、< 3% 黃字「普通」、其餘紅字「不佳」）；
+    分隔線下為 `.procs.conns` 斑馬紋表格，每個程序一列：應用程式（圖示與名稱，提示含 PID）、連線對象（`peers`：遠端去重後依主機分「網際網路 N 台」「區域網路 N 台」（`isLan`：10／172.16–31／192.168／127／169.254、IPv6 fc／fd／fe80／::1），再接服務名稱（`HTTPS_LIKE` 常見埠對照，其餘「埠 N」，最多 2 種、其餘「等 N 種」）；提示列出全部遠端位址；`splitAddr` 拆 `ip:port`／`[v6]:port` 並把 `::ffff:` 映射位址還原為 IPv4）、使用中（有遠端的連線數）、等待連入（埠）（監聽中的本機埠號升冪，提示附 TCP／UDP）；依使用中、監聽埠數、名稱排序。
   - 感測器：依張數平均分欄（`evenCols`：欄數比照 `.masonry`，由 `#content` 內寬算出最多 3 欄、每欄至少 330 px、間距 24；張數平均分配、前面的欄多放餘數，例如 6 張為 3:3 或 2:2:2；`.cols`／`.col` 為 flex；視窗縮放時在感測器頁重繪），所有磁碟（`sensorIcon` 為 `storage` 的 nvme／drivetemp）合併成一張「磁碟」卡排在最後，每顆一段（`h3.sub` 圖示＋型號，第二顆起以 `.sect` 分隔線隔開），讓硬碟排在一起；依 `device` 分組（`sensorGroups`，與儀表板共用），卡片標題為類型圖示（`sensorIcon`：處理器晶片、硬碟、顯示卡（含 `nvidia`）`fa-display`、其他為主機板 `fa-server`）與裝置名稱（過長截斷）；
     項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」；RAPL 區域 `package-N`／`core`／`dram`／`uncore` → 封裝／核心／記憶體／內顯功耗，與 CPU 溫度同一張卡。頁首提示（`.hint`）：需要時顯示「載入需要管理員權限的感測器」（`.hint > span` 佔滿一行），下方為按鈕（`data-elevate`）——沒有 `it8*`／`nct*` 晶片、或有 `sd*` 硬碟但沒有 `drivetemp` 時顯示「更多感測器」→ `elevate("modules")`；`raplLocked` 時顯示「CPU功耗」→ `elevate("rapl")`；兩者都不需要時整列不顯示。`elev` 記錄執行中的動作（按鈕停用、顯示「等待授權…」）與上次錯誤（`.hint.err` 紅字）；成功後新數值由下一次快照帶出。App 不自動提權，開機自動載入仍依 `docs/Sensors_Improvement.md` 手動設定。同型號的兩顆硬碟會併在同一張卡。
     卡片內容由 `sensorBody` 產生：有名稱的讀數依種類分段（`KIND_NAME`：溫度／風扇（含 %）／電壓／功耗，只有一種時不顯示分段標題）；沒有名稱的（`tempN`／`inN`／`powerN`）與 0 rpm 的風扇（多半是沒接的接口）收進 `<details class="raw">`「其他讀數（N）」，預設收合，展開狀態以裝置名稱存在 `rawOpen`（每秒重繪仍保留；點 `summary[data-raw]` 時取消瀏覽器預設切換、改由狀態重繪）。整張卡都沒有名稱時（例如 ACPI 溫度區）全部直接顯示。

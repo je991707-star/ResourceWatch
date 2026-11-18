@@ -232,35 +232,60 @@ function wifiDetails(w) {
   ]);
 }
 
-// System-wide TCP socket states and the retransmitted share of sent segments, as a strip of figures.
+// System-wide TCP socket states in plain words (raw state names in the tooltips), plus the retransmitted
+// share of sent segments rated good / fair / poor.
 function tcpStats() {
   if (!tcp) return '';
   const st = tcp.states, n = (...ks) => ks.reduce((a, k) => a + (st[k] ?? 0), 0);
+  const detail = (...ks) => ks.map((k) => `${k.toUpperCase()} ${st[k] ?? 0}`).join('\n');
+  const closing = ['time_wait', 'close_wait', 'fin_wait1', 'fin_wait2', 'last_ack', 'closing', 'close'];
+  const r = tcp.retrans, grade = r == null ? '' : r < 1 ? 'good' : r < 3 ? 'fair' : 'poor';
+  const fig = (v, k, tip, cls = '') => `<div title="${esc(tip)}"><b class="${cls}">${v}</b><span>${k}</span></div>`;
   return `<div class="stats">${[
-    ['已建立', n('established')], ['監聽', n('listen')], ['TIME_WAIT', n('time_wait')], ['CLOSE_WAIT', n('close_wait')],
-    ['連線中', n('syn_sent', 'syn_recv')], ['關閉中', n('fin_wait1', 'fin_wait2', 'last_ack', 'closing', 'close')],
-    ['TCP 重傳率', tcp.retrans == null ? '--' : `${tcp.retrans.toFixed(2)}%`],
-  ].map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`;
+    fig(n('established'), '使用中', '已建立、可以傳輸資料的連線（ESTABLISHED）'),
+    fig(n('listen'), '等待連入', '開著連接埠、等待其他電腦連進來的服務（LISTEN）'),
+    fig(n('syn_sent', 'syn_recv'), '建立中', `正在握手、尚未完成的連線\n${detail('syn_sent', 'syn_recv')}`),
+    fig(n(...closing), '關閉中', `已結束、正在收尾的連線；TIME_WAIT 多屬正常\n${detail(...closing)}`),
+    fig(r == null ? '--' : `${r.toFixed(2)}%`, `重傳率${{ good: ' · 良好', fair: ' · 普通', poor: ' · 不佳' }[grade] ?? ''}`,
+      '兩次更新之間需要重送的封包比例；低於 1% 良好，持續高於 3% 代表網路不穩或壅塞', `q-${grade}`),
+  ].join('')}</div>`;
 }
 
-// One row per process: remote peers (deduplicated, first 3 + count) and socket counts.
+const HTTPS_LIKE = { 443: 'HTTPS', 80: 'HTTP', 22: 'SSH', 53: 'DNS', 993: 'IMAP', 587: 'SMTP', 3478: 'STUN' };
+// "1.2.3.4:443" / "[::1]:443" → [host, port]; v4-mapped v6 hosts are shown as plain IPv4.
+const splitAddr = (a) => { const i = a.lastIndexOf(':'); return [a.slice(0, i).replace(/^\[|\]$/g, '').replace(/^::ffff:/, ''), +a.slice(i + 1)]; };
+const isLan = (h) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.|f[cd]|fe80:|::1$)/i.test(h);
+
+// Remote peers as "where to": host count by LAN / internet and the services by port.
+function peers(remotes) {
+  if (!remotes.length) return '--';
+  const hosts = new Map(), ports = new Set();
+  for (const a of remotes) { const [h, p] = splitAddr(a); hosts.set(h, isLan(h)); ports.add(HTTPS_LIKE[p] ?? `埠 ${p}`); }
+  const lan = [...hosts.values()].filter(Boolean).length, wan = hosts.size - lan;
+  const where = [wan && `網際網路 ${wan} 台`, lan && `區域網路 ${lan} 台`].filter(Boolean).join('、');
+  const svc = [...ports].slice(0, 2).join('、') + (ports.size > 2 ? ` 等 ${ports.size} 種` : '');
+  return `${where} · ${svc}`;
+}
+
+// One row per process: who it talks to, how many live connections, and which ports it listens on.
 function connCard() {
   if (!conns) return card('連線', '<div class="empty">讀取連線中…</div>');
   const by = new Map();
   for (const c of conns) {
-    const g = by.get(c.pid) ?? { name: c.name, pid: c.pid, open: 0, listen: 0, remotes: new Set() };
-    if (c.state === 'listen') g.listen++;
+    const g = by.get(c.pid) ?? { name: c.name, pid: c.pid, open: 0, listen: new Map(), remotes: new Set() };
+    if (c.state === 'listen') { const p = splitAddr(c.local)[1]; g.listen.set(p, [...(g.listen.get(p) ?? []), c.proto.toUpperCase()]); }
     else if (c.remote) { g.open++; g.remotes.add(c.remote); }
     by.set(c.pid, g);
   }
-  const groups = [...by.values()].sort((a, b) => b.open - a.open || b.listen - a.listen || a.name.localeCompare(b.name));
+  const groups = [...by.values()].sort((a, b) => b.open - a.open || b.listen.size - a.listen.size || a.name.localeCompare(b.name));
   const rows = groups.map((g) => {
-    const r = [...g.remotes], shown = r.slice(0, 3).join(', ') + (r.length > 3 ? ` +${r.length - 3}` : '');
+    const r = [...g.remotes], l = [...g.listen.keys()].sort((a, b) => a - b);
     return `<tr><td class="grow" title="${esc(`${g.name}（PID ${g.pid}）`)}">${appIcon(g.name)}${esc(g.name)}</td>
-      <td class="grow muted" title="${esc(r.join('\n'))}">${esc(shown || '--')}</td><td class="num">${g.open}</td><td class="num">${g.listen}</td></tr>`;
+      <td class="grow${r.length ? '' : ' muted'}" title="${esc(r.join('\n'))}">${esc(peers(r))}</td>
+      <td class="num${g.open ? '' : ' muted'}">${g.open || '--'}</td><td class="muted" title="${esc(l.map((p) => `${p}（${g.listen.get(p).join('／')}）`).join('\n'))}">${esc(l.join('、') || '--')}</td></tr>`;
   }).join('');
-  const note = '<i class="spacer"></i><span class="spec" title="其他使用者與系統服務的 socket 需要管理員權限；上方 TCP 狀態為全系統">程序清單僅含目前使用者</span>';
-  return card('連線', `${tcpStats()}<div class="sect"><table class="zebra procs"><thead><tr><th>名稱</th><th>遠端</th><th class="num">已連線</th><th class="num">監聽</th></tr></thead>
+  const note = '<i class="spacer"></i><span class="spec" title="其他使用者與系統服務的 socket 需要管理員權限；上方數字為全系統 TCP">程序清單僅含目前使用者</span>';
+  return card('連線', `${tcpStats()}<div class="sect"><table class="zebra procs conns"><thead><tr><th>應用程式</th><th>連線對象</th><th class="num">使用中</th><th>等待連入（埠）</th></tr></thead>
     <tbody>${rows || '<tr><td class="muted">沒有連線</td></tr>'}</tbody></table></div>`, note);
 }
 
@@ -475,7 +500,7 @@ const PAGES = {
   net: ['網路', (s) => {
     if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
-      const sub = [n.model, n.driver && `驅動程式 ${n.driver}`, n.mtu && `MTU ${n.mtu}`].filter(Boolean).join(' · ');
+      const sub = [n.model, n.driver && `${{ true: '開源驅動', false: '專有驅動' }[n.driverOpen] ?? '驅動程式'} ${n.driver}`, n.mtu && `MTU ${n.mtu}`].filter(Boolean).join(' · ');
       const title = `<span class="nic-title"><span>${esc(n.name)}</span>${sub ? `<span class="spec ell" title="${esc(sub)}">${esc(sub)}</span>` : ''}</span>`;
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gbps` : `${n.speed} Mbps`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
       const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
