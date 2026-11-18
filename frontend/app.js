@@ -544,11 +544,12 @@ function storagePage() {
   // A scanned mount point gets its disk's name and the filesystem's capacity.
   const mnt = snap.mounts.find((m) => m.mount === du.path);
   const dsk = mnt && snap.disks.find((d) => d.mounts.includes(mnt.mount));
-  const title = dsk ? `${diskName(dsk)} · ${mnt.mount}` : null;
-  const cap = mnt && du.root ? ` · 總容量 ${bytes(mnt.total)}，可用 ${bytes(mnt.total - mnt.used)}` : '';
-  const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b>${esc(title ?? du.path ?? '尚未選擇資料夾')}</b>
-      <span class="muted">${du.busy ? `掃描中… 已掃描 ${du.progress.toLocaleString()} 項` : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}${cap}` : ''}</span></div>
-      <label class="btn pick-disk">${icon('storage')}<span class="ell">${esc(title ?? '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
+  const title = dsk ? diskName(dsk) : du.path ?? '尚未選擇資料夾';
+  const cap = mnt && du.root ? ` · 總容量 ${bytes(mnt.total)} · 可用 ${bytes(mnt.total - mnt.used)}` : '';
+  const stats = du.busy ? `掃描中… 已掃描 ${du.progress.toLocaleString()} 項` : du.root ? `${du.root.items.toLocaleString()} 項 · 已用 ${bytes(du.root.size)}${cap}` : '';
+  const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b title="${esc(title)}">${esc(title)}</b>
+      ${dsk ? `<span title="${esc(mnt.mount)}">${esc(mnt.mount)}</span>` : ''}<span class="muted" title="${esc(stats)}">${stats}</span></div>
+      <label class="btn pick-disk">${icon('storage')}<span class="ell">${esc(dsk ? diskName(dsk) : '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
         .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
         .map((m) => `<option value="${esc(m)}"${m === mnt?.mount ? ' selected' : ''}>${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
