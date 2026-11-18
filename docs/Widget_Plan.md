@@ -33,9 +33,9 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收：`resourcewatch --widget | jq` 有 config、速率非 null；執行時間約 1 秒出頭。
 
 ## Phase 2：ResourceWatch 設定頁（frontend/app.js、style.css）
-- [ ] 設定頁新增「桌面小工具」區塊：項目勾選＋上下排序、更新間隔、網路卡；改變即 `set_widget_config`，進頁時 `get_widget_config`。
-- [ ] 一行說明：右鍵桌面 → 新增小工具 → ResourceWatch。
-- [ ] 更新 Architecture（app.js 設定段、style.css），commit。
+- [x] ✅ 設定頁新增「桌面小工具」區塊：項目勾選＋上下排序、更新間隔、網路卡；改變即 `set_widget_config`，進頁時 `get_widget_config`。
+- [x] ✅ 一行說明：右鍵桌面 → 新增小工具 → ResourceWatch。
+- [x] ✅ 更新 Architecture（app.js 設定段、style.css），commit。
 - 驗收：設定頁變更後 `cat ~/.config/resourcewatch/widget.json` 與 `--widget` 輸出同步。
 
 ## Phase 3：Plasmoid 骨架與資料流（新目錄 `widget/`）

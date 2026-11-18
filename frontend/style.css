@@ -376,4 +376,11 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .seg { display: inline-flex; flex-wrap: wrap; background: var(--field); border-radius: 8px; padding: 2px; }
 .seg button { border: 0; background: none; color: var(--text); font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
 .seg button.on { background: var(--sel); font-weight: 600; }
+.witems { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.witems li { display: flex; align-items: center; gap: 8px; background: var(--field); border-radius: 8px; padding: 4px 4px 4px 10px; }
+.witems li span { flex: 1; }
+.witems li.muted { padding: 10px; }
+.btn.icon { padding: 6px; background: none; }
+.btn.icon:hover:not(:disabled) { background: var(--sel); }
+.wadd { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
 .about { color: var(--muted); line-height: 1.7; user-select: text; }

@@ -57,6 +57,7 @@ const ICON = {
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi', dns: 'fa-solid fa-server',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', cancel: 'fa-solid fa-xmark', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
   display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
+  mem: 'fa-solid fa-memory', add: 'fa-solid fa-plus',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -477,6 +478,38 @@ function appsPage() {
 }
 
 // ── pages ──
+// Desktop widget (Plasma): its config lives in widget.json, read by `resourcewatch --widget`.
+const WIDGET_ITEMS = { cpu: ['處理器', 'gpu'], mem: ['記憶體', 'mem'], gpu: ['顯示卡', 'display'], net: ['網路', 'net'], disk: ['磁碟', 'storage'], temp: ['溫度', 'sensors'] };
+let wcfg = null, wErr = '';
+function widgetCard(s, row) {
+  if (!wcfg) return card('桌面小工具', `<div class="empty">${esc(wErr || '讀取設定中…')}</div>`);
+  const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
+  const btn = (act, k, ic, title, off) => `<button class="btn icon" data-w="${act}" data-val="${k}" title="${title}"${off ? ' disabled' : ''}>${icon(ic)}</button>`;
+  const on = wcfg.items.map((k, i) => `<li>${icon(WIDGET_ITEMS[k][1])}<span>${WIDGET_ITEMS[k][0]}</span>
+    ${btn('up', k, 'up', '上移', !i)}${btn('down', k, 'down', '下移', i === wcfg.items.length - 1)}${btn('del', k, 'cancel', '移除')}</li>`).join('');
+  const off = Object.keys(WIDGET_ITEMS).filter((k) => !wcfg.items.includes(k))
+    .map((k) => `<button class="btn" data-w="add" data-val="${k}">${icon('add')}${WIDGET_ITEMS[k][0]}</button>`).join('');
+  return card('桌面小工具', [
+    `<p class="hint">右鍵桌面 → 新增或管理小工具 → ResourceWatch</p>`,
+    row('顯示項目', '依順序排列卡片', ''),
+    `<ul class="witems">${on || '<li class="muted">未選擇任何項目</li>'}</ul>${off ? `<div class="wadd">${off}</div>` : ''}`,
+    row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
+    row('網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+    wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
+  ].join(''));
+}
+async function setWidget(act, val) {
+  const c = { ...wcfg, items: [...wcfg.items] };
+  const i = c.items.indexOf(val);
+  if (act === 'add') c.items.push(val);
+  else if (act === 'del') c.items.splice(i, 1);
+  else if (act === 'up' || act === 'down') { const j = act === 'up' ? i - 1 : i + 1; [c.items[i], c.items[j]] = [c.items[j], c.items[i]]; }
+  else if (act === 'interval') c.interval = +val;
+  else if (act === 'nic') c.nic = val || null;
+  try { wcfg = await invoke('set_widget_config', { cfg: c }); wErr = ''; } catch (e) { wErr = `儲存失敗：${e}`; }
+  render();
+}
+
 const PAGES = {
   dash: ['儀表板', (s) => `<div class="masonry">${[summaryCard(s), cpuCard(s), memCard(s), netCard(s), disksCard(s), gpuCard(s), ioCard(s), sensorsCard(s)].join('')}</div>`],
 
@@ -493,7 +526,7 @@ const PAGES = {
       row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
       row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
       row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
-    ].join(''))}${card('關於', `<div class="about">ResourceWatch 0.3.5 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
+    ].join(''))}${widgetCard(s, row)}${card('關於', `<div class="about">ResourceWatch 0.3.5 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
   }],
 
@@ -707,6 +740,8 @@ $('#content').addEventListener('click', (e) => {
   if (raw) { e.preventDefault(); const d = raw.dataset.raw; if (!rawOpen.delete(d)) rawOpen.add(d); return render(); }
   const el = t.closest('[data-elevate]');
   if (el) return elev.busy || elevate(el.dataset.elevate);
+  const w = t.closest('[data-w]');
+  if (w) return setWidget(w.dataset.w, w.dataset.val);
   const pref = t.closest('[data-pref]');
   if (pref) return setPref(pref.dataset.pref, pref.dataset.val);
   const flip = t.closest('[data-disk]');
@@ -782,6 +817,7 @@ async function pollProcs() {
 
 applyPrefs();
 invoke('system_info').then((i) => { info = i; hostBar(); }).catch(console.error);
+invoke('get_widget_config').then((c) => { wcfg = c; }).catch((e) => { wErr = `無法讀取小工具設定：${e}`; });
 tick();
 pollProcs();
 setInterval(pollProcs, 2000);
