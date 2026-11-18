@@ -7,7 +7,8 @@ Card {
     property var snap
     property var hist
     readonly property var g: snap.gpus[0] ?? null
-    title: g ? g.name : "顯示卡"
+    title: "顯示卡"
+    subtitle: g ? g.name : ""
     extra: g ? Fmt.temp(g.temp) : ""
     Text { visible: !c.g; text: "沒有顯示卡"; color: c.theme.muted }
     RowLayout {
