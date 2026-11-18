@@ -239,13 +239,13 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .zebra td:first-child { border-radius: 6px 0 0 6px; }
 .zebra td:last-child { border-radius: 0 6px 6px 0; }
 
-.addr { display: grid; gap: 22px; align-content: center; }
-/* network card: facts in columns, label left / value right */
-.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 40px; }
-.lv th, .lv td { padding: 3px 0; font-size: 13px; }
+.addr { display: grid; gap: 16px; align-content: center; }
+/* network card: secondary facts on a tinted panel, values next to their labels */
+.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px 40px; margin-top: 22px; padding: 14px 18px; border-radius: 12px; background: var(--field); }
+.lv th, .lv td { padding: 3px 0; font-size: 12px; }
 .lv th { color: var(--muted); font-weight: 400; }
 .lv th:first-child { width: 1%; padding-right: 16px; }
-.lv td { max-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.lv td { max-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lv thead th { font-size: 11px; font-weight: 600; }
 .lv .bad { color: var(--red); }
 /* TCP state figures above the connection table */
@@ -268,13 +268,19 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 /* network page */
 .iface h2 .dot { width: 12px; height: 12px; }
 .iface.down h2 { margin: 0; }
-.speeds { display: grid; grid-template-columns: 200px 1fr; gap: 24px; }
+.speeds { display: grid; grid-template-columns: 240px 1fr; gap: 32px; }
+@media (max-width: 960px) { /* too narrow for addresses beside the chart: put them above, two per row */
+  .speeds { grid-template-columns: 1fr; gap: 20px; }
+  .speeds .addr { grid-template-columns: 1fr 1fr; }
+}
 .rates-row { display: flex; flex-wrap: wrap; gap: 12px 48px; margin-bottom: 12px; }
 .nic-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.iface .details { border-top: 0; }
 .speeds .rate { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-items: center; }
-.speeds .rate b { font-size: 22px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.speeds .rate .i { width: 26px; font-size: 20px; color: var(--muted); grid-row: span 2; }
+.speeds .rate b { font-size: 22px; font-weight: 500; white-space: nowrap; }
+.speeds .rate .i { width: 26px; font-size: 20px; grid-row: span 2; }
+.speeds .rx .i { color: var(--blue); }
+.speeds .tx .i { color: var(--magenta); }
+.speeds .rate span { font-size: 12px; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; }
 

@@ -206,8 +206,7 @@ const lv = (title, items) => `<div>${cap(title, '')}<table class="lv">${items.ma
 function nicDetails(n) {
   const c = (v, warn) => `<td class="num${warn && v ? ' bad' : ''}">${v.toLocaleString()}</td>`;
   const row = (k, rx, tx, warn) => `<tr><th>${k}</th>${c(rx, warn)}${c(tx, warn)}</tr>`;
-  return `${lv('介面', [['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'],
-    ...(n.ipv6.length ? n.ipv6 : ['--']).map((a, i) => [i ? '' : 'IPv6', a])])}
+  return `${lv('介面', [['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--']])}
     <div>${cap('統計', '')}<table class="lv"><thead><tr><th></th><th class="num">接收</th><th class="num">傳送</th></tr></thead>
       <tbody>${row('封包', n.rxPackets, n.txPackets)}${row('錯誤', n.rxErrors, n.txErrors, true)}${row('丟棄', n.rxDropped, n.txDropped, true)}</tbody></table></div>`;
 }
@@ -263,7 +262,8 @@ function addrBlock(n, dns) {
   return `<div class="addr">
     <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
     <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div>
-    <div>${icon('dns')}<p><span title="${esc(dns.join('\n'))}">${esc(dns.join(', ') || '--')}</span><span class="muted sm">DNS</span></p></div></div>`;
+    <div>${icon('dns')}<p><span title="${esc(dns.join('\n'))}">${esc(dns.join(', ') || '--')}</span><span class="muted sm">DNS</span></p></div>
+    <div>${icon('net')}<p><span title="${esc(n.ipv6.join('\n'))}">${esc(n.ipv6[0] ?? '--')}</span><span class="muted sm">IPv6${n.ipv6.length > 1 ? ` · 另 ${n.ipv6.length - 1} 個` : ''}</span></p></div></div>`;
 }
 
 const peak = (k) => Math.max(0, ...(hist[k] ?? []).filter((v) => v != null));
@@ -473,12 +473,12 @@ const PAGES = {
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gbps` : `${n.speed} Mbps`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
       const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
       // share of link capacity; speed is Mb/s, rates are bytes/s
-      const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
+      const use = (bps) => (n.speed && bps != null ? ` · 頻寬 ${pct((bps * 8) / (n.speed * 1e4))}` : '');
+      const r = (dir, cls, l, bps, total) => `<div class="rate ${cls}">${icon(dir)}<b>${rate(bps)}</b><span class="muted">${l} · 累計 ${bytes(total)}${use(bps)}</span></div>`;
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
       return `<section class="card iface"><h2>${title}${dot}</h2><div class="speeds">${addrBlock(n, s.dns)}<div><div class="rates-row">
-          <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
-          <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
-        ${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="sect details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
+          ${r('down', 'rx', '下載', n.rxBps, n.rxTotal)}${r('up', 'tx', '上傳', n.txBps, n.txTotal)}</div>
+        ${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
     }).join('')}${connCard()}</div>`;
   }],
 
