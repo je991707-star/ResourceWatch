@@ -122,7 +122,7 @@ function ring(rings, size, text) {
 }
 
 const card = (title, body, extra = '') => `<section class="card">${title ? `<h2>${title}${extra}</h2>` : ''}${body}</section>`;
-const kv = (pairs) => `<div class="kv">${pairs.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+const kv = (pairs) => `<div class="kv">${pairs.map(([k, v, cls]) => `<div><span>${k}</span><b${cls ? ` class="${cls}"` : ''}>${esc(v)}</b></div>`).join('')}</div>`;
 const legend = (items) => `<div class="legend">${items.map(([cls, k, v]) => `<div><span><i class="dot ${cls}"></i>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
 const cap = (a, b) => `<div class="cap"><span>${a}</span><span>${b}</span></div>`;
 const more = (pg, t) => `<a class="more" data-goto="${pg}">${t}</a>`;
@@ -196,9 +196,20 @@ function memCard(s) {
     <div class="sect"><table class="zebra procs"><thead><tr><th>名稱</th><th class="num">記憶體</th></tr></thead>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
 }
 
+// Link details below the rates; error/drop counters turn red once non-zero.
+function nicDetails(n, dns) {
+  const pair = (rx, tx) => [`↓ ${rx.toLocaleString()}　↑ ${tx.toLocaleString()}`, rx + tx ? 'bad' : ''];
+  return `<div class="sect">${kv([
+    ['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'],
+    ['IPv6', n.ipv6.join('\n') || '--', 'multi'], ['DNS', dns.join('\n') || '--', 'multi'],
+    ['封包', `↓ ${n.rxPackets.toLocaleString()}　↑ ${n.txPackets.toLocaleString()}`, ''],
+    ['錯誤', ...pair(n.rxErrors, n.txErrors)], ['丟棄', ...pair(n.rxDropped, n.txDropped)],
+  ])}</div>`;
+}
+
 function addrBlock(n) {
   return `<div class="addr">
-    <div>${icon('pc')}<p><span>${esc(n.ip ?? '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
+    <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
     <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div></div>`;
 }
 
@@ -405,13 +416,16 @@ const PAGES = {
   net: ['網路', (s) => {
     if (!s.net.length) return card('網路', '<div class="empty">沒有實體網路介面</div>');
     return `<div class="stack">${s.net.map((n) => {
-      const title = `${esc(n.name)}`;
-      const dot = `<i class="spacer"></i><i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
+      const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
+      const link = n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
+      const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
+      // share of link capacity; speed is Mb/s, rates are bytes/s
+      const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
       return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n)}<div class="speeds"><div>
-          <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}</span></div>
-          <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}</span></div></div>
-        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div></section>`;
+          <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
+          <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${nicDetails(n, s.dns)}</section>`;
     }).join('')}</div>`;
   }],
 

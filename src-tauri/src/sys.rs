@@ -27,6 +27,8 @@ pub struct Snapshot {
     disks: Vec<Disk>,
     mounts: Vec<Mount>,
     net: Vec<Net>,
+    /// Nameservers from systemd-resolved's upstream list, else /etc/resolv.conf.
+    dns: Vec<String>,
     sensors: Vec<Sensor>,
     /// A RAPL zone exists but its `energy_uj` is root-only (the frontend offers `elevate("rapl")`).
     rapl_locked: bool,
@@ -86,11 +88,24 @@ struct Net {
     up: bool,
     mac: String,
     ip: Option<String>,
+    prefix: Option<u32>,
+    ipv6: Vec<String>,
     gateway: Option<String>,
+    model: Option<String>,
+    driver: Option<String>,
+    speed: Option<u32>, // Mb/s
+    duplex: Option<String>,
+    mtu: Option<u32>,
     rx_total: u64,
     tx_total: u64,
     rx_bps: Option<f64>,
     tx_bps: Option<f64>,
+    rx_packets: u64,
+    tx_packets: u64,
+    rx_errors: u64,
+    tx_errors: u64,
+    rx_dropped: u64,
+    tx_dropped: u64,
 }
 
 #[derive(Serialize)]
@@ -400,9 +415,39 @@ fn parse_routes(text: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// First IPv4 address of each interface.
-fn ipv4_addrs() -> HashMap<String, String> {
-    let mut out = HashMap::new();
+#[derive(Default)]
+struct Addrs {
+    v4: Option<(String, u32)>,
+    v6: Vec<String>,
+}
+
+/// Udev's PCI/USB database names → "Realtek RTL8111/8168/8211/8411 PCI Express Gigabit Ethernet Controller".
+fn parse_nic_model(udev: &str) -> Option<String> {
+    let get = |k: &str| {
+        udev.lines()
+            .find_map(|l| l.strip_prefix(&format!("E:{k}=")))
+            .map(str::trim)
+    };
+    let model = get("ID_MODEL_FROM_DATABASE")?;
+    let model = model.split(" (").next().unwrap_or(model);
+    Some(
+        match get("ID_VENDOR_FROM_DATABASE").and_then(|v| v.split_whitespace().next()) {
+            Some(v) => format!("{v} {model}"),
+            None => model.to_string(),
+        },
+    )
+}
+
+fn parse_nameservers(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|l| l.strip_prefix("nameserver"))
+        .map(|v| v.trim().to_string())
+        .collect()
+}
+
+/// First IPv4 (with prefix length) and every IPv6 address of each interface.
+fn if_addrs() -> HashMap<String, Addrs> {
+    let mut out: HashMap<String, Addrs> = HashMap::new();
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
     // SAFETY: getifaddrs fills a linked list we only read and then free once.
     unsafe {
@@ -411,13 +456,41 @@ fn ipv4_addrs() -> HashMap<String, String> {
         }
         let mut p = ifap;
         while let Some(ifa) = p.as_ref() {
-            if !ifa.ifa_addr.is_null() && (*ifa.ifa_addr).sa_family as i32 == libc::AF_INET {
-                let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+            if !ifa.ifa_addr.is_null() {
                 let name = std::ffi::CStr::from_ptr(ifa.ifa_name)
                     .to_string_lossy()
                     .into_owned();
-                let ip = std::net::Ipv4Addr::from(sin.sin_addr.s_addr.to_ne_bytes());
-                out.entry(name).or_insert(ip.to_string());
+                let mask = ifa.ifa_netmask;
+                match (*ifa.ifa_addr).sa_family as i32 {
+                    libc::AF_INET => {
+                        let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                        let ip = std::net::Ipv4Addr::from(sin.sin_addr.s_addr.to_ne_bytes());
+                        let bits = if mask.is_null() {
+                            0
+                        } else {
+                            (*(mask as *const libc::sockaddr_in))
+                                .sin_addr
+                                .s_addr
+                                .count_ones()
+                        };
+                        out.entry(name)
+                            .or_default()
+                            .v4
+                            .get_or_insert((ip.to_string(), bits));
+                    }
+                    libc::AF_INET6 => {
+                        let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
+                        let ip = std::net::Ipv6Addr::from(sin.sin6_addr.s6_addr);
+                        let bits: u32 = if mask.is_null() {
+                            0
+                        } else {
+                            let m = &*(mask as *const libc::sockaddr_in6);
+                            m.sin6_addr.s6_addr.iter().map(|b| b.count_ones()).sum()
+                        };
+                        out.entry(name).or_default().v6.push(format!("{ip}/{bits}"));
+                    }
+                    _ => {}
+                }
             }
             p = ifa.ifa_next;
         }
@@ -489,8 +562,8 @@ fn parse_diskstats(text: &str) -> HashMap<String, (u64, u64, u64)> {
         .collect()
 }
 
-/// /proc/net/dev → name → (rx bytes, tx bytes).
-fn parse_net_dev(text: &str) -> HashMap<String, (u64, u64)> {
+/// /proc/net/dev → name → the 16 counters (rx bytes, packets, errs, drop, …; tx starts at 8).
+fn parse_net_dev(text: &str) -> HashMap<String, Vec<u64>> {
     text.lines()
         .skip(2)
         .filter_map(|l| {
@@ -499,7 +572,7 @@ fn parse_net_dev(text: &str) -> HashMap<String, (u64, u64)> {
                 .split_whitespace()
                 .filter_map(|v| v.parse().ok())
                 .collect();
-            Some((name.trim().to_string(), (*f.first()?, *f.get(8)?)))
+            (f.len() >= 12).then(|| (name.trim().to_string(), f))
         })
         .collect()
 }
@@ -818,7 +891,7 @@ pub struct Monitor {
     at: Option<Instant>,
     cpu: Vec<(u64, u64)>,
     disk: HashMap<String, (u64, u64, u64)>,
-    net: HashMap<String, (u64, u64)>,
+    net: HashMap<String, Vec<u64>>,
     procs_at: Option<Instant>,
     /// pid → (cpu ticks, disk bytes)
     procs: HashMap<u32, (u64, Option<u64>)>,
@@ -954,24 +1027,47 @@ impl Monitor {
         self.disk = ds;
 
         let nd = parse_net_dev(&read("/proc/net/dev"));
-        let (mut ips, mut gws) = (ipv4_addrs(), parse_routes(&read("/proc/net/route")));
+        let (mut addrs, mut gws) = (if_addrs(), parse_routes(&read("/proc/net/route")));
         let mut net: Vec<Net> = nd
             .iter()
             .filter(|(n, _)| Path::new(&format!("/sys/class/net/{n}/device")).exists())
-            .map(|(n, &(rx, tx))| {
+            .map(|(n, f)| {
                 let prev = self.net.get(n);
+                let a = addrs.remove(n).unwrap_or_default();
+                let sys = |k: &str| read(format!("/sys/class/net/{n}/{k}")).trim().to_string();
+                let ifindex = sys("ifindex");
                 Net {
                     name: n.clone(),
                     up: read(format!("/sys/class/net/{n}/operstate")).trim() == "up",
                     mac: read(format!("/sys/class/net/{n}/address"))
                         .trim()
                         .to_string(),
-                    ip: ips.remove(n),
+                    prefix: a.v4.as_ref().map(|v| v.1),
+                    ip: a.v4.map(|v| v.0),
+                    ipv6: a.v6,
                     gateway: gws.remove(n),
-                    rx_total: rx,
-                    tx_total: tx,
-                    rx_bps: rate(prev.map(|p| &p.0), rx),
-                    tx_bps: rate(prev.map(|p| &p.1), tx),
+                    model: parse_nic_model(&read(format!("/run/udev/data/n{ifindex}"))),
+                    driver: std::fs::read_link(format!("/sys/class/net/{n}/device/driver"))
+                        .ok()
+                        .and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned())),
+                    // -1 (unknown) when down or on many Wi-Fi drivers
+                    speed: sys("speed")
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|&v| v > 0)
+                        .map(|v| v as u32),
+                    duplex: Some(sys("duplex")).filter(|d| d == "full" || d == "half"),
+                    mtu: sys("mtu").parse().ok(),
+                    rx_total: f[0],
+                    tx_total: f[8],
+                    rx_bps: rate(prev.map(|p| &p[0]), f[0]),
+                    tx_bps: rate(prev.map(|p| &p[8]), f[8]),
+                    rx_packets: f[1],
+                    tx_packets: f[9],
+                    rx_errors: f[2],
+                    tx_errors: f[10],
+                    rx_dropped: f[3],
+                    tx_dropped: f[11],
                 }
             })
             .collect();
@@ -1013,6 +1109,10 @@ impl Monitor {
             disks,
             mounts,
             net,
+            // stub 127.0.0.53 in /etc/resolv.conf hides the real servers when resolved runs
+            dns: Some(parse_nameservers(&read("/run/systemd/resolve/resolv.conf")))
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| parse_nameservers(&read("/etc/resolv.conf"))),
             sensors,
             rapl_locked,
             uptime: read("/proc/uptime")
@@ -1255,7 +1355,12 @@ mod tests {
         let d = parse_diskstats(" 259 0 nvme0n1 10 0 2048 5 20 0 4096 9 0 77 0\n");
         assert_eq!(d["nvme0n1"], (2048, 4096, 77));
         let n = parse_net_dev("h1\nh2\n  eth0: 100 1 0 0 0 0 0 0 200 2 0 0 0 0 0 0\n");
-        assert_eq!(n["eth0"], (100, 200));
+        assert_eq!((n["eth0"][0], n["eth0"][1], n["eth0"][8]), (100, 1, 200));
+        assert_eq!(parse_nic_model("E:ID_VENDOR_FROM_DATABASE=Realtek Semiconductor Co., Ltd.\nE:ID_MODEL_FROM_DATABASE=RTL8111/8168 PCI Express Gigabit Ethernet Controller (Onboard Ethernet)\n").as_deref(), Some("Realtek RTL8111/8168 PCI Express Gigabit Ethernet Controller"));
+        assert_eq!(
+            parse_nameservers("# x\nnameserver 1.1.1.1\nsearch .\nnameserver ::1\n"),
+            ["1.1.1.1", "::1"]
+        );
     }
 
     #[test]
