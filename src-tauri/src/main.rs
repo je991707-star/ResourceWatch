@@ -37,6 +37,11 @@ fn system_info() -> sys::SystemInfo {
     sys::system_info()
 }
 
+#[tauri::command]
+fn scan_progress() -> u64 {
+    du::PROGRESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Walks the whole tree on a blocking thread so the window stays responsive.
 #[tauri::command]
 async fn scan_dir(path: String, cache: DirCache<'_>) -> Result<du::Scan, String> {
@@ -206,6 +211,7 @@ fn main() {
             connections,
             system_info,
             scan_dir,
+            scan_progress,
             elevate,
             dir_children,
             app_icons,

@@ -49,6 +49,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `system_info` | `SystemInfo` | 不變的資料（主機、發行版、桌面環境、CPU、記憶體規格、家目錄、發行版 logo） |
 | `app_icons(names)` | `{ 名稱: { icon, name } 或 null }` | 程序名稱或 desktop id → 應用圖示 data URL（找不到圖示檔時 `icon` 為 null）與 `.desktop` 名稱（`icons.rs`）；第一次呼叫要建立索引，所以在 `spawn_blocking` 執行緒執行 |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
+| `scan_progress()` | `u64` | 執行中的掃描目前走訪到的項目數（`du::PROGRESS`） |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
 | `elevate(action)` | `null` 或錯誤字串 | 以 `pkexec /bin/sh -c` 執行寫死的 root 指令（`elevate_script`，只接受 `rapl`／`modules`，其他值不執行），效果只到重開機；在 `spawn_blocking` 執行緒等待 polkit 密碼視窗。`rapl`：把 `/sys/class/powercap/intel-rapl:*/energy_uj` 改為呼叫者主要群組（`id -gn $PKEXEC_UID`）可讀、`0440`，不開放給所有使用者（PLATYPUS 側通道，CVE-2020-8694）；`modules`：`modprobe drivetemp` 與 `modprobe it87 ignore_resource_conflict=1`，任一失敗即回傳失敗。結束碼 126／127 →「已取消或授權失敗」 |
 | `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時攔截 inspector 的 `attach` 訊號並回傳 `true` 取消嵌入 App，改由 `inspector_window` 把檢查器的 view 放進自建的 GTK 視窗「ResourceWatch 檢查器」；已開啟時只把視窗帶到前面，關閉視窗會一併關閉檢查器，反之亦然；`tauri` 啟用 `devtools` feature，release 版也可用） |
@@ -127,7 +128,8 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 資料夾空間分析。`scan(path)`：路徑必須是絕對路徑且為資料夾（否則回傳中文錯誤訊息），遞迴走訪一次，記錄每個資料夾的總大小到 `Cache`（`HashMap<PathBuf, u64>`）。
 - 大小為實際佔用（`st_blocks × 512`，同 `du`，稀疏檔不會被高估）；不跟隨符號連結；不進入其他檔案系統（`st_dev` 不同的資料夾算 0）；讀不到的資料夾視為空的，不中斷掃描。
   硬連結會重複計算。
-- `Scan { path, size, items }`：`items` 為走訪到的項目數（檔案＋資料夾＋連結）。
+- 每個資料夾的項目先依 inode 編號排序再逐一 stat（同 coreutils `du`）：傳統硬碟上會依序讀 inode 表，不必來回尋軌。
+- `Scan { path, size, items }`：`items` 為走訪到的項目數（檔案＋資料夾＋連結）；走訪中即時累加在 `PROGRESS`（`AtomicU64`，每次掃描開始歸零）。
 - `children(dir)` → `Entry { name, path, size, dir }[]`，大到小、同大小依名稱；資料夾大小取自快取（不在快取內為 0），檔案即時讀 metadata。
 - 單元測試在暫存目錄建立樹（含符號連結）驗證大小、排序、項目數與路徑驗證。
 
@@ -199,6 +201,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
     項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」；RAPL 區域 `package-N`／`core`／`dram`／`uncore` → 封裝／核心／記憶體／內顯功耗，與 CPU 溫度同一張卡。頁首提示（`.hint`）：需要時顯示「載入需要管理員權限的感測器」（`.hint > span` 佔滿一行），下方為按鈕（`data-elevate`）——沒有 `it8*`／`nct*` 晶片、或有 `sd*` 硬碟但沒有 `drivetemp` 時顯示「更多感測器」→ `elevate("modules")`；`raplLocked` 時顯示「CPU功耗」→ `elevate("rapl")`；兩者都不需要時整列不顯示。`elev` 記錄執行中的動作（按鈕停用、顯示「等待授權…」）與上次錯誤（`.hint.err` 紅字）；成功後新數值由下一次快照帶出。App 不自動提權，開機自動載入仍依 `docs/Sensors_Improvement.md` 手動設定。同型號的兩顆硬碟會併在同一張卡。
     卡片內容由 `sensorBody` 產生：有名稱的讀數依種類分段（`KIND_NAME`：溫度／風扇（含 %）／電壓／功耗，只有一種時不顯示分段標題）；沒有名稱的（`tempN`／`inN`／`powerN`）與 0 rpm 的風扇（多半是沒接的接口）收進 `<details class="raw">`「其他讀數（N）」，預設收合，展開狀態以裝置名稱存在 `rawOpen`（每秒重繪仍保留；點 `summary[data-raw]` 時取消瀏覽器預設切換、改由狀態重繪）。整張卡都沒有名稱時（例如 ACPI 溫度區）全部直接顯示。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇磁碟…」下拉選單（`label.btn.pick-disk` 外觀與其他按鈕相同，透明的 `select[data-du=disk]` 疊在上面開系統選單；選項為 `snap.disks` 各硬碟的掛載點，排除 `/boot`、`/efi` 開頭的啟動磁區，顯示「型號 · 掛載點」；`#content` 的 `change` 事件選了就掃描該掛載點，掃描不跨檔案系統，所以只算這個分割區）、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
+    `du.path` 為目前掃描的路徑：開始掃描時立刻清掉舊結果（`root`、`levels`），標題改為新的磁碟／路徑，不會在長時間掃描中顯示上一顆硬碟；掃描中每次輪詢呼叫 `scan_progress` 並重繪，副標顯示「掃描中… 已掃描 N 項」。
     掃描路徑是某個掛載點（`snap.mounts` 找得到）時：標題改為硬碟圖示與「型號 · 掛載點」，副標加上總容量與可用空間，磁碟按鈕顯示目前選中的磁碟；左欄名稱下方標示總容量；色塊條只畫掃描到的項目，不放可用空間或無法讀取的部分（會把資料夾擠成細條）。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（處理器、顯示卡；SVG `viewBox 0 0 59 100`、背景三條線：頂端（上限）長虛線、中間（一半）短虛線、底部（0）實線；`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線；半透明面積上再畫一條線，0 的位置在 y=99，全為 0 的序列仍看得到底線）、

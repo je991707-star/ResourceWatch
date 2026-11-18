@@ -536,23 +536,23 @@ const PAGES = {
 };
 
 // ── storage analyzer ──
-const du = { root: null, levels: [], busy: false, err: null, started: false };
+const du = { path: null, root: null, levels: [], busy: false, progress: 0, err: null, started: false };
 const SIZE_STEPS = [1e8, 2.5e8, 5e8, 1e9, 2.5e9, 5e9, 1e10, 2e10, 5e10];
 const sizeClass = (b) => `s${SIZE_STEPS.filter((t) => b >= t).length}`;
 
 function storagePage() {
   // A scanned mount point gets its disk's name and the filesystem's capacity.
-  const mnt = snap.mounts.find((m) => m.mount === du.root?.path);
+  const mnt = snap.mounts.find((m) => m.mount === du.path);
   const dsk = mnt && snap.disks.find((d) => d.mounts.includes(mnt.mount));
   const title = dsk ? `${diskName(dsk)} · ${mnt.mount}` : null;
-  const cap = mnt ? ` · 總容量 ${bytes(mnt.total)}，可用 ${bytes(mnt.total - mnt.used)}` : '';
-  const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b>${esc(title ?? du.root?.path ?? '尚未選擇資料夾')}</b>
-      <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}${cap}` : ''}</span></div>
+  const cap = mnt && du.root ? ` · 總容量 ${bytes(mnt.total)}，可用 ${bytes(mnt.total - mnt.used)}` : '';
+  const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b>${esc(title ?? du.path ?? '尚未選擇資料夾')}</b>
+      <span class="muted">${du.busy ? `掃描中… 已掃描 ${du.progress.toLocaleString()} 項` : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}${cap}` : ''}</span></div>
       <label class="btn pick-disk">${icon('storage')}<span class="ell">${esc(title ?? '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
         .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
         .map((m) => `<option value="${esc(m)}"${m === mnt?.mount ? ' selected' : ''}>${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
-      <button class="btn" data-du="rescan"${du.busy || !du.root ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
+      <button class="btn" data-du="rescan"${du.busy || !du.path ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;
   const rows = du.levels.map((lv, i) => {
     const shown = lv.children.filter((c) => c.size > 0).slice(0, 40);
@@ -578,7 +578,9 @@ async function duOpen(path, name, depth) {
 }
 
 async function duScan(path) {
-  du.busy = true; du.err = null; render();
+  // Drop the old result right away so a long scan never shows the previous disk.
+  Object.assign(du, { path, root: null, levels: [], busy: true, progress: 0, err: null });
+  render();
   try {
     du.root = await invoke('scan_dir', { path });
     du.levels = [];
@@ -594,9 +596,9 @@ async function duClick(t) {
   const blk = t.closest('.blk[data-lvl]');
   const row = t.closest('tr.dir');
   const btn = t.closest('[data-du]');
-  if (btn?.dataset.du === 'rescan') return duScan(du.root.path);
+  if (btn?.dataset.du === 'rescan') return duScan(du.path);
   if (btn?.dataset.du === 'pick') {
-    const dir = await invoke('plugin:dialog|open', { options: { directory: true, defaultPath: du.root?.path ?? info?.home } }).catch((e) => { du.err = String(e); return null; });
+    const dir = await invoke('plugin:dialog|open', { options: { directory: true, defaultPath: du.path ?? info?.home } }).catch((e) => { du.err = String(e); return null; });
     if (dir) duScan(dir); else render();
     return;
   }
@@ -732,7 +734,7 @@ async function tick() {
     snap = await invoke('snapshot');
     record(snap);
     // The analyzer and the process table only change on their own events.
-    if (page === 'storage' || page === 'apps') hostBar(); else render();
+    if (page === 'storage' && du.busy) { du.progress = await invoke('scan_progress'); render(); } else if (page === 'storage' || page === 'apps') hostBar(); else render();
   } catch (e) {
     console.error(e);
   }

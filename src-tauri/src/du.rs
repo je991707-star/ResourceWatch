@@ -5,8 +5,12 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{DirEntryExt, MetadataExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+/// Items walked so far by the running scan; the frontend polls it for the progress line.
+pub static PROGRESS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct Cache(HashMap<PathBuf, u64>);
@@ -37,8 +41,9 @@ pub fn scan(path: &str) -> Result<(Cache, Scan), String> {
         return Err(format!("{path} 不是資料夾"));
     }
     let mut cache = Cache::default();
-    let mut items = 0;
-    let size = walk(root, meta.dev(), &mut cache.0, &mut items);
+    PROGRESS.store(0, Relaxed);
+    let size = walk(root, meta.dev(), &mut cache.0);
+    let items = PROGRESS.load(Relaxed);
     Ok((
         cache,
         Scan {
@@ -49,15 +54,18 @@ pub fn scan(path: &str) -> Result<(Cache, Scan), String> {
     ))
 }
 
-fn walk(dir: &Path, dev: u64, sizes: &mut HashMap<PathBuf, u64>, items: &mut u64) -> u64 {
+fn walk(dir: &Path, dev: u64, sizes: &mut HashMap<PathBuf, u64>) -> u64 {
     let mut total = 0;
     // Unreadable folders count as empty instead of failing the whole scan.
-    for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+    let mut entries: Vec<_> = fs::read_dir(dir).into_iter().flatten().flatten().collect();
+    // stat in inode order: on a hard disk that reads the inode table in sequence instead of seeking (coreutils du does the same).
+    entries.sort_unstable_by_key(|e| e.ino());
+    for e in entries {
         let Ok(m) = e.metadata() else { continue }; // does not follow symlinks
-        *items += 1;
+        PROGRESS.fetch_add(1, Relaxed);
         total += if m.is_dir() {
             if m.dev() == dev {
-                walk(&e.path(), dev, sizes, items)
+                walk(&e.path(), dev, sizes)
             } else {
                 0
             }
