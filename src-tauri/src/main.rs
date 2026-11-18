@@ -26,7 +26,7 @@ fn processes(m: Mon) -> Vec<sys::Proc> {
 
 /// Reads every fd of every process, so it runs off the main thread.
 #[tauri::command]
-async fn connections() -> Vec<sys::Conn> {
+async fn connections() -> sys::Conns {
     tauri::async_runtime::spawn_blocking(sys::connections)
         .await
         .unwrap_or_default()

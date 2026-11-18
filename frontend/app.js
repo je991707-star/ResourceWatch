@@ -8,6 +8,7 @@ let snap = null;
 let info = null;
 let procs = [];
 let conns = null; // socket list from `connections`, polled only on the network page
+let tcp = null; // { states, retrans: % over the last poll, prev counters }
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
@@ -221,6 +222,18 @@ function wifiDetails(w) {
     ['頻段', w.freq ? [wifiBand(w.freq), `頻道 ${wifiChannel(Math.round(w.freq))}`, w.width && `${w.width} MHz`].filter(Boolean).join(' · ') : '--'],
     ['連線速率', `↓ ${mb(w.rxRate)}　↑ ${mb(w.txRate)}`], ['標準', w.generation ? `Wi-Fi ${w.generation}` : '--'],
   ])}</div>`;
+}
+
+// System-wide TCP socket states and the retransmitted share of sent segments.
+function tcpCard() {
+  if (!tcp) return '';
+  const st = tcp.states, n = (...ks) => ks.reduce((a, k) => a + (st[k] ?? 0), 0);
+  return card('TCP', kv([
+    ['已建立', n('established')], ['監聽', n('listen')],
+    ['TIME_WAIT', n('time_wait')], ['CLOSE_WAIT', n('close_wait')],
+    ['連線中（SYN）', n('syn_sent', 'syn_recv')], ['關閉中', n('fin_wait1', 'fin_wait2', 'last_ack', 'closing', 'close')],
+    ['重傳率', tcp.retrans == null ? '--' : `${tcp.retrans.toFixed(2)}%`],
+  ]));
 }
 
 // One row per process: remote peers (deduplicated, first 3 + count) and socket counts.
@@ -451,7 +464,7 @@ const PAGES = {
   }],
 
   net: ['網路', (s) => {
-    if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
+    if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${tcpCard()}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
       const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
@@ -463,7 +476,7 @@ const PAGES = {
           <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
         <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n, s.dns)}</section>`;
-    }).join('')}${connCard()}</div>`;
+    }).join('')}${tcpCard()}${connCard()}</div>`;
   }],
 
   sensors: ['感測器', (s) => {
@@ -683,7 +696,10 @@ async function pollProcs() {
   if (document.hidden || paused) return;
   if (page === 'net') {
     try {
-      conns = await invoke('connections');
+      const r = await invoke('connections');
+      conns = r.list;
+      const p = tcp?.prev, dOut = p && r.outSegs - p.outSegs;
+      tcp = { states: r.tcpStates, prev: r, retrans: dOut > 0 ? (100 * (r.retransSegs - p.retransSegs)) / dOut : dOut === 0 ? 0 : null };
       loadIcons(conns.map((c) => c.name));
       render();
     } catch (e) {

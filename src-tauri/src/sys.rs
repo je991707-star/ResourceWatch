@@ -577,8 +577,31 @@ fn parse_proc_net(text: &str, udp: bool) -> Vec<(u64, String, Option<String>, &'
         .collect()
 }
 
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Conns {
+    list: Vec<Conn>,
+    /// System-wide TCP socket count per state (every socket in the netns, not only ours).
+    tcp_states: HashMap<&'static str, u32>,
+    /// Cumulative /proc/net/snmp counters; the frontend turns their deltas into a retransmit rate.
+    out_segs: Option<u64>,
+    retrans_segs: Option<u64>,
+}
+
+/// /proc/net/snmp → the `Tcp:` header/value line pair as name → value.
+fn parse_snmp_tcp(text: &str) -> HashMap<String, u64> {
+    let mut rows = text.lines().filter_map(|l| l.strip_prefix("Tcp:"));
+    let (Some(keys), Some(vals)) = (rows.next(), rows.next()) else {
+        return HashMap::new();
+    };
+    keys.split_whitespace()
+        .zip(vals.split_whitespace())
+        .filter_map(|(k, v)| Some((k.to_string(), v.parse().ok()?)))
+        .collect()
+}
+
 /// Sockets owned by processes we can read (/proc/<pid>/fd is owner/root only).
-pub fn connections() -> Vec<Conn> {
+pub fn connections() -> Conns {
     let mut owner: HashMap<u64, u32> = HashMap::new();
     for e in fs::read_dir("/proc").into_iter().flatten().flatten() {
         let Some(pid) = e.file_name().to_str().and_then(|p| p.parse::<u32>().ok()) else {
@@ -601,6 +624,7 @@ pub fn connections() -> Vec<Conn> {
         }
     }
     let mut out = Vec::new();
+    let mut tcp_states = HashMap::new();
     for (file, proto) in [
         ("tcp", "tcp"),
         ("tcp6", "tcp"),
@@ -610,6 +634,9 @@ pub fn connections() -> Vec<Conn> {
         for (ino, local, remote, state) in
             parse_proc_net(&read(format!("/proc/net/{file}")), proto == "udp")
         {
+            if proto == "tcp" {
+                *tcp_states.entry(state).or_insert(0) += 1;
+            }
             // inode 0: TIME_WAIT and other sockets no longer held by a process
             let Some(&pid) = owner.get(&ino).filter(|_| ino != 0) else {
                 continue;
@@ -624,7 +651,13 @@ pub fn connections() -> Vec<Conn> {
             });
         }
     }
-    out
+    let snmp = parse_snmp_tcp(&read("/proc/net/snmp"));
+    Conns {
+        list: out,
+        tcp_states,
+        out_segs: snmp.get("OutSegs").copied(),
+        retrans_segs: snmp.get("RetransSegs").copied(),
+    }
 }
 
 fn parse_nameservers(text: &str) -> Vec<String> {
@@ -1571,6 +1604,9 @@ mod tests {
             })
         );
         assert_eq!(parse_iw_link("Not connected.\n"), None);
+        let snmp = "Ip: Forwarding\nIp: 1\nTcp: ActiveOpens OutSegs RetransSegs\nTcp: 5 1000 20\nUdp: InDatagrams\nUdp: 9\n";
+        let t = parse_snmp_tcp(snmp);
+        assert_eq!((t["OutSegs"], t["RetransSegs"]), (1000, 20));
         let tcp = "  sl  local_address rem_address   st\n   0: 0100007F:0035 00000000:0000 0A 00000000:00000000 00:00000000 00000000   991        0 22983 1\n   1: D432A8C0:A1B2 22D8B85D:01BB 01 00000000:00000000 00:00000000 00000000  1000        0 555 1\n";
         assert_eq!(
             parse_proc_net(tcp, false),
