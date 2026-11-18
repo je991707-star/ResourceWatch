@@ -3,11 +3,12 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。修改任何程式時，請把變更寫入對應章節。
 
 Rust + Tauri 2 單一程式：後端只負責讀 `/proc`、`/sys`（以及資料夾掃描）並回傳 JSON；前端（無打包工具、無 npm 依賴的 HTML／CSS／JS）輪詢、保存歷史、繪圖。
-沒有常駐背景執行緒、沒有設定檔、不連網路；外部程序只有啟動時讀桌面環境版本的一次 `<shell> --version`，以及使用者在感測器頁按下按鈕時的 `pkexec`（`elevate`）。缺值一律為 JSON `null`，前端顯示 `--`。
+沒有常駐背景執行緒、沒有設定檔、不連網路；外部程序只有啟動時讀桌面環境版本的一次 `<shell> --version`、有無線網卡時每次取樣的 `iw dev <n> link`，以及使用者在感測器頁按下按鈕時的 `pkexec`（`elevate`）。缺值一律為 JSON `null`，前端顯示 `--`。
 
 ```text
 frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
                ── 儀表板／應用程式頁每 2 秒 invoke("processes") │
+               ── 網路頁每 2 秒 invoke("connections")         │
                ── 啟動時 invoke("system_info")；新程序名 invoke("app_icons") ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
                ── 儲存頁 invoke("scan_dir") / ("dir_children") │                         ├─ Gpus（gpu.rs：NVML／DRM sysfs）
                ── 「選擇資料夾…」invoke("plugin:dialog|open")   ─┘                         └─ Mutex<du::Cache>（du.rs：資料夾大小）
@@ -44,6 +45,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | --- | --- | --- |
 | `snapshot` | `Snapshot` | 一次取樣；速率類欄位第一次呼叫為 `null` |
 | `processes` | `Proc[]` | 掃描所有程序；第一次呼叫 `cpu` 為 `null` |
+| `connections` | `Conn[]`：`{ pid, name, proto: "tcp"\|"udp", local, remote, state }` | 讀得到 `/proc/<pid>/fd` 的程序（自己的）所持有的 socket；`remote` 在監聽／未連線時為 null；`state` 為小寫 TCP 狀態名，未連線的 UDP 為 `"listen"`；在 `spawn_blocking` 執行緒執行 |
 | `system_info` | `SystemInfo` | 不變的資料（主機、發行版、桌面環境、CPU、記憶體規格、家目錄、發行版 logo） |
 | `app_icons(names)` | `{ 名稱: { icon, name } 或 null }` | 程序名稱或 desktop id → 應用圖示 data URL（找不到圖示檔時 `icon` 為 null）與 `.desktop` 名稱（`icons.rs`）；第一次呼叫要建立索引，所以在 `spawn_blocking` 執行緒執行 |
 | `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
@@ -100,6 +102,8 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
   速度、雙工、MTU 讀 `/sys/class/net/<n>/{speed,duplex,mtu}`；DNS 先讀 `/run/systemd/resolve/resolv.conf`（resolved 的上游清單，`/etc/resolv.conf` 只有 stub 127.0.0.53），空的才退回 `/etc/resolv.conf`；
   Wi-Fi：只對有 `/sys/class/net/<n>/wireless` 的介面每次取樣執行 `iw dev <n> link`（`parse_iw_link`；輸出 "Not connected." 時為 null），
   世代由 rx bitrate 的 `EHT`／`HE`／`VHT`／`MCS`（HT）判斷為 7／6／5／4，頻寬取 `<n>MHz` 字樣；
+  連線（`connections`）：先走訪 `/proc/*/fd` 把 `socket:[inode]` 對到 pid，再解析 `/proc/net/{tcp,tcp6,udp,udp6}`（`parse_proc_net`，第 9 欄為 inode；inode 0 為 TIME_WAIT 等已無程序持有者，略過）；
+  位址（`proc_addr`）的 IP 是以本機位元組序印出的 32 位元字組（IPv4 一個、IPv6 四個），port 為大端十六進位；IPv6 的 `::ffff:a.b.c.d` 轉成 IPv4 顯示，全零位址且 port 0 視為無遠端；
   閘道讀 `/proc/net/route` 閘道讀 `/proc/net/route` 目的地 `00000000` 且 flags 含 RTF_GATEWAY 的列，位址是以本機位元組序印出的網路序數值（`to_ne_bytes` 還原）。
 - 檔案系統：`/proc/self/mountinfo` 只取 `/dev/` 裝置（排除 loop）。同一裝置會掛很多次（btrfs 子卷、ostree 的 `/etc` bind mount），
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
@@ -171,7 +175,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
 
 - 每秒 `snapshot` → `record` 把 CPU、各 GPU、各磁碟讀寫（`r:`／`w:` + 裝置名）、各網卡上下行存入 120 點歷史 → `render` 以目前頁的函式產生 HTML 換掉 `#content`。
   儲存頁與應用程式頁不隨每秒快照重畫（只更新主機列），各自在自己的事件（掃描、點擊、程序資料）後重畫。
-- 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；儀表板顯示 CPU 前 5／記憶體前 5（每列前有應用圖示：`loadIcons` 只對還沒查過的名稱呼叫 `app_icons`，結果 `{ icon, name }` 存在 `appIcons`，查詢中或找不到時用通用圖示 `fa-window-maximize`；兩個清單都是斑馬紋）；在應用程式頁時查詢所有程序名稱與 desktop id。
+- 程序：儀表板或應用程式頁可見（且視窗未隱藏）時每 2 秒 `processes`；網路頁改為每 2 秒 `connections`（存在 `conns`，取回後重繪並載入圖示）；儀表板顯示 CPU 前 5／記憶體前 5（每列前有應用圖示：`loadIcons` 只對還沒查過的名稱呼叫 `app_icons`，結果 `{ icon, name }` 存在 `appIcons`，查詢中或找不到時用通用圖示 `fa-window-maximize`；兩個清單都是斑馬紋）；在應用程式頁時查詢所有程序名稱與 desktop id。
   應用程式頁（`appsPage`）：依 `Proc.kind` 分三區「應用程式／背景處理程序／系統處理程序」（`APP_SECTIONS`，區段標題括號內為群組數），每區以 `unit` 分組（`procGroups`；沒有 unit 的程序自成一組，`kernel` 顯示為「核心執行緒」）；群組名稱為 `app` 對應的 `.desktop` 名稱，沒有時為 PID 最小的程序名稱，圖示同理。群組數值為成員加總（`sumOf`，全部缺值時為 null；GPU 上限 100），GPU 引擎取 GPU 最高的成員；狀態：單一程序照原狀態，多個程序全部暫停才顯示「已暫停」，全部 nice > 0 才顯示葉子。超過一個程序的群組可點擊展開（`data-group`，展開的鍵存在 `appOpen`，每 2 秒重繪仍保留），子列依同一排序列出、滑鼠提示 PID。
   欄位：名稱、狀態（標題不顯示文字；`T`／`t` → 已暫停、`Z` → 殭屍、nice > 0 → 葉子）、CPU、記憶體、磁碟（MB/秒）、GPU、GPU 引擎；CPU／記憶體／磁碟／GPU 標題上方為整機 %（最近一次快照：CPU 使用率、記憶體 used/total、各硬碟 `busy` 最大值、各顯示卡使用率最大值）。點欄位標題排序，群組與子列都依同一鍵（名稱預設升冪，其他降冪，缺值永遠排最後）。
 - 頁面（`PAGES`）：
@@ -186,6 +190,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的顯示位址（IPv4 帶 `/前綴`）、大字速率與累計（有 speed 時附頻寬使用率 %＝位元速率／連線速度）、上傳在上／下載在下的大條狀圖；
     Wi-Fi 連線中先有一區 `wifiDetails`：SSID、BSSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代；
     其後分隔線下 `nicDetails` 以 `kv` 列驅動程式、MTU、IPv6、DNS（多筆換行，`.kv b.multi`）、封包、錯誤、丟棄（↓ 接收／↑ 傳送；錯誤與丟棄非 0 時紅字 `.kv b.bad`）。`kv` 的每組可帶第三個值作為數值的 class。
+    網卡卡片之後是「連線」卡（`connCard`）：說明只列出目前使用者的程序，`.procs` 斑馬紋表格每個程序一列：應用圖示與名稱（提示含 PID）、遠端位址（去重後前 3 個＋「+N」，提示列出全部）、已連線數（有遠端者）、監聽數；依已連線、監聽、名稱排序。
   - 感測器：依張數平均分欄（`evenCols`：欄數比照 `.masonry`，由 `#content` 內寬算出最多 3 欄、每欄至少 330 px、間距 24；張數平均分配、前面的欄多放餘數，例如 6 張為 3:3 或 2:2:2；`.cols`／`.col` 為 flex；視窗縮放時在感測器頁重繪），所有磁碟（`sensorIcon` 為 `storage` 的 nvme／drivetemp）合併成一張「磁碟」卡排在最後，每顆一段（`h3.sub` 圖示＋型號，第二顆起以 `.sect` 分隔線隔開），讓硬碟排在一起；依 `device` 分組（`sensorGroups`，與儀表板共用），卡片標題為類型圖示（`sensorIcon`：處理器晶片、硬碟、顯示卡（含 `nvidia`）`fa-display`、其他為主機板 `fa-server`）與裝置名稱（過長截斷）；
     項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」；RAPL 區域 `package-N`／`core`／`dram`／`uncore` → 封裝／核心／記憶體／內顯功耗，與 CPU 溫度同一張卡。頁首提示（`.hint`）：需要時顯示「載入需要管理員權限的感測器」（`.hint > span` 佔滿一行），下方為按鈕（`data-elevate`）——沒有 `it8*`／`nct*` 晶片、或有 `sd*` 硬碟但沒有 `drivetemp` 時顯示「更多感測器」→ `elevate("modules")`；`raplLocked` 時顯示「CPU功耗」→ `elevate("rapl")`；兩者都不需要時整列不顯示。`elev` 記錄執行中的動作（按鈕停用、顯示「等待授權…」）與上次錯誤（`.hint.err` 紅字）；成功後新數值由下一次快照帶出。App 不自動提權，開機自動載入仍依 `docs/Sensors_Improvement.md` 手動設定。同型號的兩顆硬碟會併在同一張卡。
     卡片內容由 `sensorBody` 產生：有名稱的讀數依種類分段（`KIND_NAME`：溫度／風扇（含 %）／電壓／功耗，只有一種時不顯示分段標題）；沒有名稱的（`tempN`／`inN`／`powerN`）與 0 rpm 的風扇（多半是沒接的接口）收進 `<details class="raw">`「其他讀數（N）」，預設收合，展開狀態以裝置名稱存在 `rawOpen`（每秒重繪仍保留；點 `summary[data-raw]` 時取消瀏覽器預設切換、改由狀態重繪）。整張卡都沒有名稱時（例如 ACPI 溫度區）全部直接顯示。

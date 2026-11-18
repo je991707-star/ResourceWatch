@@ -157,6 +157,18 @@ pub struct Proc {
     gpu_engine: Option<String>,
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Conn {
+    pid: u32,
+    name: String,
+    proto: &'static str, // "tcp" | "udp"
+    local: String,
+    /// None for listening / unconnected sockets.
+    remote: Option<String>,
+    /// TCP state name; "listen" for unconnected UDP.
+    state: &'static str,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
@@ -494,6 +506,125 @@ fn parse_iw_link(text: &str) -> Option<Wifi> {
         }
     }
     Some(w)
+}
+
+/// /proc/net/{tcp,udp}{,6} address "0100007F:0035" → "127.0.0.1:53"; the IP is
+/// 32-bit words printed in host order, the port is big-endian hex.
+fn proc_addr(hex: &str) -> Option<(String, bool)> {
+    let (ip, port) = hex.split_once(':')?;
+    let port = u16::from_str_radix(port, 16).ok()?;
+    let words: Vec<[u8; 4]> = (0..ip.len() / 8)
+        .map(|i| {
+            Some(
+                u32::from_str_radix(ip.get(i * 8..i * 8 + 8)?, 16)
+                    .ok()?
+                    .to_ne_bytes(),
+            )
+        })
+        .collect::<Option<_>>()?;
+    let ip: std::net::IpAddr = match words.len() {
+        1 => std::net::Ipv4Addr::from(words[0]).into(),
+        4 => {
+            let v6 = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(words.concat()).ok()?);
+            // dual-stack sockets show IPv4 peers as ::ffff:a.b.c.d
+            v6.to_ipv4_mapped().map_or(v6.into(), Into::into)
+        }
+        _ => return None,
+    };
+    let unspecified = ip.is_unspecified() && port == 0;
+    Some((std::net::SocketAddr::new(ip, port).to_string(), unspecified))
+}
+
+/// /proc/net/<proto> → (inode, local, remote, state).
+fn parse_proc_net(text: &str, udp: bool) -> Vec<(u64, String, Option<String>, &'static str)> {
+    const TCP: [&str; 12] = [
+        "",
+        "established",
+        "syn_sent",
+        "syn_recv",
+        "fin_wait1",
+        "fin_wait2",
+        "time_wait",
+        "close",
+        "close_wait",
+        "last_ack",
+        "listen",
+        "closing",
+    ];
+    text.lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let (local, _) = proc_addr(f.get(1)?)?;
+            let (remote, none) = proc_addr(f.get(2)?)?;
+            let st = usize::from_str_radix(f.get(3)?, 16).ok()?;
+            let state = if udp {
+                if st == 1 {
+                    "established"
+                } else {
+                    "listen"
+                }
+            } else {
+                TCP.get(st).copied().unwrap_or("")
+            };
+            Some((
+                f.get(9)?.parse().ok()?,
+                local,
+                (!none).then_some(remote),
+                state,
+            ))
+        })
+        .collect()
+}
+
+/// Sockets owned by processes we can read (/proc/<pid>/fd is owner/root only).
+pub fn connections() -> Vec<Conn> {
+    let mut owner: HashMap<u64, u32> = HashMap::new();
+    for e in fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|p| p.parse::<u32>().ok()) else {
+            continue;
+        };
+        for fd in fs::read_dir(e.path().join("fd"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let link = fs::read_link(fd.path()).unwrap_or_default();
+            if let Some(ino) = link
+                .to_str()
+                .and_then(|l| l.strip_prefix("socket:["))
+                .and_then(|l| l.strip_suffix(']'))
+                .and_then(|l| l.parse().ok())
+            {
+                owner.entry(ino).or_insert(pid);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (file, proto) in [
+        ("tcp", "tcp"),
+        ("tcp6", "tcp"),
+        ("udp", "udp"),
+        ("udp6", "udp"),
+    ] {
+        for (ino, local, remote, state) in
+            parse_proc_net(&read(format!("/proc/net/{file}")), proto == "udp")
+        {
+            // inode 0: TIME_WAIT and other sockets no longer held by a process
+            let Some(&pid) = owner.get(&ino).filter(|_| ino != 0) else {
+                continue;
+            };
+            out.push(Conn {
+                pid,
+                name: read(format!("/proc/{pid}/comm")).trim().to_string(),
+                proto,
+                local,
+                remote,
+                state,
+            });
+        }
+    }
+    out
 }
 
 fn parse_nameservers(text: &str) -> Vec<String> {
@@ -1440,6 +1571,29 @@ mod tests {
             })
         );
         assert_eq!(parse_iw_link("Not connected.\n"), None);
+        let tcp = "  sl  local_address rem_address   st\n   0: 0100007F:0035 00000000:0000 0A 00000000:00000000 00:00000000 00000000   991        0 22983 1\n   1: D432A8C0:A1B2 22D8B85D:01BB 01 00000000:00000000 00:00000000 00000000  1000        0 555 1\n";
+        assert_eq!(
+            parse_proc_net(tcp, false),
+            [
+                (22983, "127.0.0.1:53".into(), None, "listen"),
+                (
+                    555,
+                    "192.168.50.212:41394".into(),
+                    Some("93.184.216.34:443".into()),
+                    "established"
+                ),
+            ]
+        );
+        let tcp6 = "h\n 0: 00000000000000000000000001000000:0277 0000000000000000FFFF00000100007F:1F90 01 0 0 0 0 0 7 1\n";
+        assert_eq!(
+            parse_proc_net(tcp6, false)[0],
+            (
+                7,
+                "[::1]:631".into(),
+                Some("127.0.0.1:8080".into()),
+                "established"
+            )
+        );
         assert_eq!(parse_nic_model("E:ID_VENDOR_FROM_DATABASE=Realtek Semiconductor Co., Ltd.\nE:ID_MODEL_FROM_DATABASE=RTL8111/8168 PCI Express Gigabit Ethernet Controller (Onboard Ethernet)\n").as_deref(), Some("Realtek RTL8111/8168 PCI Express Gigabit Ethernet Controller"));
         assert_eq!(
             parse_nameservers("# x\nnameserver 1.1.1.1\nsearch .\nnameserver ::1\n"),

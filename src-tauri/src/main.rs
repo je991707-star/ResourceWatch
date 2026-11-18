@@ -24,6 +24,14 @@ fn processes(m: Mon) -> Vec<sys::Proc> {
     lock(&m).processes()
 }
 
+/// Reads every fd of every process, so it runs off the main thread.
+#[tauri::command]
+async fn connections() -> Vec<sys::Conn> {
+    tauri::async_runtime::spawn_blocking(sys::connections)
+        .await
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn system_info() -> sys::SystemInfo {
     sys::system_info()
@@ -195,6 +203,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             snapshot,
             processes,
+            connections,
             system_info,
             scan_dir,
             elevate,

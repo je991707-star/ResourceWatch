@@ -7,6 +7,7 @@ const hist = {};
 let snap = null;
 let info = null;
 let procs = [];
+let conns = null; // socket list from `connections`, polled only on the network page
 let page = 'dash';
 let sort = { key: 'cpu', desc: true };
 let sumDisk = 0; // SUMMARY disk flip index
@@ -222,6 +223,27 @@ function wifiDetails(w) {
   ])}</div>`;
 }
 
+// One row per process: remote peers (deduplicated, first 3 + count) and socket counts.
+function connCard() {
+  if (!conns) return card('連線', '<div class="empty">讀取連線中…</div>');
+  const by = new Map();
+  for (const c of conns) {
+    const g = by.get(c.pid) ?? { name: c.name, pid: c.pid, open: 0, listen: 0, remotes: new Set() };
+    if (c.state === 'listen') g.listen++;
+    else if (c.remote) { g.open++; g.remotes.add(c.remote); }
+    by.set(c.pid, g);
+  }
+  const groups = [...by.values()].sort((a, b) => b.open - a.open || b.listen - a.listen || a.name.localeCompare(b.name));
+  const rows = groups.map((g) => {
+    const r = [...g.remotes], shown = r.slice(0, 3).join(', ') + (r.length > 3 ? ` +${r.length - 3}` : '');
+    return `<tr><td class="grow" title="${esc(`${g.name}（PID ${g.pid}）`)}">${appIcon(g.name)}${esc(g.name)}</td>
+      <td class="grow muted" title="${esc(r.join('\n'))}">${esc(shown || '--')}</td><td class="num">${g.open}</td><td class="num">${g.listen}</td></tr>`;
+  }).join('');
+  return card('連線', `<p class="hint">只列出目前使用者的程序（其他使用者與系統服務的 socket 需要管理員權限）</p>
+    <table class="zebra procs"><thead><tr><th>名稱</th><th>遠端</th><th class="num">已連線</th><th class="num">監聽</th></tr></thead>
+    <tbody>${rows || '<tr><td class="muted">沒有連線</td></tr>'}</tbody></table>`);
+}
+
 function addrBlock(n) {
   return `<div class="addr">
     <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
@@ -429,7 +451,7 @@ const PAGES = {
   }],
 
   net: ['網路', (s) => {
-    if (!s.net.length) return card('網路', '<div class="empty">沒有實體網路介面</div>');
+    if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
       const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
@@ -441,7 +463,7 @@ const PAGES = {
           <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
         <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n, s.dns)}</section>`;
-    }).join('')}</div>`;
+    }).join('')}${connCard()}</div>`;
   }],
 
   sensors: ['感測器', (s) => {
@@ -658,7 +680,18 @@ async function tick() {
 }
 
 async function pollProcs() {
-  if ((page !== 'dash' && page !== 'apps') || document.hidden || paused) return;
+  if (document.hidden || paused) return;
+  if (page === 'net') {
+    try {
+      conns = await invoke('connections');
+      loadIcons(conns.map((c) => c.name));
+      render();
+    } catch (e) {
+      console.error(e);
+    }
+    return;
+  }
+  if (page !== 'dash' && page !== 'apps') return;
   try {
     procs = await invoke('processes');
     loadIcons(page === 'apps' ? procs.flatMap((p) => (p.app ? [p.app, p.name] : [p.name])) : [...topProcs('cpu', 5), ...topProcs('mem', 5)].map((p) => p.name));
