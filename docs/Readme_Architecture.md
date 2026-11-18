@@ -61,7 +61,7 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
 | `get_widget_config()` | `widget::Config` | 讀桌面小工具設定（`widget::load`） |
 | `set_widget_config(cfg)` | `widget::Config` 或錯誤字串 | 整理後寫入 widget.json，回傳實際存入的值 |
 
-`main()` 第一個參數為 `--widget` 時直接執行 `widget::run()`、為 `--widget-order <清單>` 時執行 `widget::set_order`（失敗時錯誤訊息寫到 stderr、結束碼 1），之後結束，不建立 Tauri／GTK／WebKit。
+`main()` 第一個參數為 `--widget` 時直接執行 `widget::run()`、為 `--widget-order <清單>`／`--widget-app on|off` 時執行 `widget::set_order`／`set_app`（失敗時錯誤訊息寫到 stderr、結束碼 1），之後結束，不建立 Tauri／GTK／WebKit。
 `Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。
 啟動時偵測到 NVIDIA 專有驅動（`/proc/driver/nvidia`）且使用者沒有自行設定時，設 `WEBKIT_DISABLE_DMABUF_RENDERER=1`：WebKitGTK 的 DMA-BUF 渲染在 X11 會空白、在 Wayland 縮放會落後。
 
@@ -135,9 +135,10 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 ### src/widget.rs
 
 桌面小工具（Plasma plasmoid）的設定與資料來源。
-- 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）。
+- 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic, app }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）、`app` 為是否顯示處理器上方的 App 格子（預設 true）。
   缺欄位用預設值（六項依序 `cpu`、`gpu`、`net`、`disk`、`temp`、`mem`——兩欄時左欄處理器／網路／溫度、右欄顯示卡／磁碟／記憶體——2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）。`save` 自動建立資料夾。
 - `set_order(list)`（`resourcewatch --widget-order cpu,mem,…`）：小工具拖曳重排後呼叫，讀入設定、以逗號分隔的清單取代 `items` 後存檔（同樣經 `clean`，未知與重複名稱會被去掉）。
+- `set_app(on)`（`resourcewatch --widget-app on|off`）：小工具右鍵關閉 App 格子時呼叫，其他參數回傳用法錯誤。
 - `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "cpuModel": 字串, "snapshot": Snapshot }`（`cpuModel` 為 `sys::cpu_model()`，與 `SystemInfo.cpuModel` 相同），`Snapshot` 與 `snapshot` 指令相同。
 - 單元測試：設定解析（壞 JSON、空物件、未知／重複項目、間隔下限）。
 
@@ -186,11 +187,11 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
 - 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
 - `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／網路／溫度，右三：顯示卡／磁碟／記憶體；main.qml 的預設 `cfg` 與後端預設相同），各欄靠上、卡片高度依內容。
-  處理器所在欄的最上方有 `AppCard`（App 圖示與名稱），高度＝另一欄卡片總高 − 本欄卡片總高 − 間距，讓兩欄底部對齊；各欄的 `cardsHeight` 只加總 `Repeater` 產生的卡片（不含 `AppCard`），避免高度互相依賴；差距小於 48 時不顯示。處理器被拖到另一欄時跟著移過去。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
+  處理器所在欄的最上方有 `AppCard`（App 圖示與名稱），高度＝另一欄卡片總高 − 本欄卡片總高 − 間距，讓兩欄底部對齊；各欄的 `cardsHeight` 只加總 `Repeater` 產生的卡片（不含 `AppCard`），避免高度互相依賴；差距小於 48 或 `cfg.app` 為 false 時不顯示。處理器被拖到另一欄時跟著移過去。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
 
 - 移動整個小工具：桌面把每個小工具包在 containmentlayoutmanager 的 `ItemContainer` 裡，其 `editModeCondition` 決定按下時是否開始移動，而容器比卡片先收到按下事件。`allowDrag` 沿 `parent` 往上找到有 `editModeCondition` 的容器，依滑鼠位置切換：在卡片標題列或卡片之間的空白時為 `AfterPress`（按下即可拖動，同時出現縮放／設定／移除把手，點別處結束），滑鼠在卡片內容區（`overBody`）或正在拖曳卡片（`dragKey`）時為 `Manual`（不移動，讓卡片收到長按）；小工具被鎖定（`Plasmoid.immutable`）時為 `Locked`。在 `onParentChanged`、`overBody`／`dragKey`／`immutable` 改變時重設（會蓋掉桌面原本的繫結，所以鎖定狀態要自己處理）。
-- 重新排列卡片：`Card` 回報內容區的滑鼠停留（`bodyHovered`）與長按 400 ms 後的拖曳（`holdStarted`／`holdMoved`／`holdEnded`）；每個 `Loader` 以 `Connections` 轉給 `full` 的 `holdStart`／`holdMove`／`holdEnd`（座標換成 `full` 的座標）。拖曳中的卡片以 `Translate` 跟著滑鼠、放大 1.04、`z` 與所在欄提高到上層；`slotAt` 依 x 決定欄、依該欄各卡片的底部決定列（超過最後一張為該欄的空格），換算成 `cfg.items` 索引（超出時為最後一個），目標卡片半透明。放開時與目標交換位置（同一格或取消不動），`setOrder` 立即更新 `cfg.items`，並以第二個 executable `DataSource`（`saver`）執行 `resourcewatch --widget-order …` 存檔；存檔前已開始的 `--widget` 會印出舊順序，所以 `pendingItems` 保留新順序，直到輸出的順序一致為止；存檔失敗時顯示錯誤。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
-- 關閉卡片：`Plasmoid.contextualActions` 在 Plasma 的右鍵選單加一項「關閉「<卡片標題>」卡片」（`window-close` 圖示，標題對照 `titles`）。`full` 上的被動 `PointHandler`（右鍵）在按下時以 `cardAt` 找出游標下的卡片存進 `menuKey`，不攔截事件，Plasma 仍照常開啟選單；游標在卡片間空白或 App 卡片上、或只剩一張卡片時不顯示此項。選取後以 `setOrder` 把該項目從 `cfg.items` 移除並寫回 widget.json，可在 ResourceWatch 設定頁重新加入。
+- 重新排列卡片：`Card` 回報內容區的滑鼠停留（`bodyHovered`）與長按 400 ms 後的拖曳（`holdStarted`／`holdMoved`／`holdEnded`）；每個 `Loader` 以 `Connections` 轉給 `full` 的 `holdStart`／`holdMove`／`holdEnd`（座標換成 `full` 的座標）。拖曳中的卡片以 `Translate` 跟著滑鼠、放大 1.04、`z` 與所在欄提高到上層；`slotAt` 依 x 決定欄、依該欄各卡片的底部決定列（超過最後一張為該欄的空格），換算成 `cfg.items` 索引（超出時為最後一個），目標卡片半透明。放開時與目標交換位置（同一格或取消不動），`setOrder` 立即更新 `cfg.items`，並以第二個 executable `DataSource`（`saver`）執行 `resourcewatch --widget-order …` 存檔（`setApp` 同理執行 `--widget-app`，共用 `save`）；存檔前已開始的 `--widget` 會印出舊值，所以 `pending` 保留小工具自己改過的欄位，蓋過輸出中的舊值，直到輸出一致為止；存檔失敗時清空 `pending` 並顯示錯誤。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
+- 關閉卡片：`Plasmoid.contextualActions` 在 Plasma 的右鍵選單加一項「關閉「<卡片標題>」卡片」（`window-close` 圖示，標題對照 `titles`）。桌面容器會先攔下右鍵按下事件並開啟選單，小工具收不到，所以改在 `contextualActionsAboutToShow` 時以 `full` 上 `HoverHandler` 的游標位置經 `cardAt` 找出卡片存進 `menuKey`（`cardAt` 也認得 App 格子，回傳 `app`）；游標在卡片間空白、或只剩一張卡片時不顯示此項。選取後一般卡片以 `setOrder` 從 `cfg.items` 移除、App 格子以 `setApp(false)` 隱藏，都寫回 widget.json，可在 ResourceWatch 設定頁重新加入／顯示。
 
 ### contents/ui/AppCard.qml
 
@@ -270,7 +271,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「桌面小工具」卡片（`widgetCard`，在「一般」與「關於」之間）：設定存在 widget.json 而不是 `rw-prefs`，啟動時 `get_widget_config` 讀入 `wcfg`（讀取前顯示「讀取設定中…」、失敗顯示錯誤），頂端一行加入方式提示；
-    「顯示項目」為已選項目的有序清單（`.witems`，每列圖示、名稱、上移／下移／移除鈕，`WIDGET_ITEMS` 對照名稱與圖示），下方 `.wadd` 為未選項目的「＋」按鈕；更新間隔 2／5／10 秒；網路卡（自動或指定介面）。
+    「顯示項目」為已選項目的有序清單（`.witems`，每列圖示、名稱、上移／下移／移除鈕，`WIDGET_ITEMS` 對照名稱與圖示），下方 `.wadd` 為未選項目的「＋」按鈕；更新間隔 2／5／10 秒；網路卡（自動或指定介面）；ResourceWatch 格子（顯示／隱藏，`data-w="app"`，小工具右鍵關閉後從這裡打開）。
     按鈕帶 `data-w`（`add`／`del`／`up`／`down`／`interval`／`nic`），`setWidget` 改動副本後呼叫 `set_widget_config`，以回傳值（後端整理過）取代 `wcfg`，失敗時卡片底部紅字；每次進入設定頁都重新 `get_widget_config`（小工具拖曳重排會改寫 widget.json，沿用啟動時讀到的舊值會在下次修改時蓋掉新順序）；「關於」顯示版本、系統與 Font Awesome 授權。
   - 網路：每張網卡一張卡，標題左側為兩行（`.nic-title`）：介面名稱、其下以 · 串接網卡型號（廠牌＋晶片）、驅動（依 `driverOpen` 顯示「開源驅動 r8169」／「專有驅動 …」，未知時「驅動程式 …」）與「MTU …」（muted，過長截斷，提示為完整字串）；右側為連線速度與雙工（如「1 Gbps 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
     `.speeds` 兩欄（左 240 px；視窗寬度 ≤ 960 px 時改為單欄，位址在上、每列兩個）：左為 `addrBlock(n, dns)`（`.addr` 直排四列、垂直置中：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出）、IPv6（顯示第一個，多於一個時小字附「另 N 個」，提示逐行列出全部）），右為 `.rates-row` 橫排的下載、上傳大字速率（`.rate.rx`／`.tx`：方向箭頭以藍／桃紅著色、對應條狀圖顏色；數字下方小字為「下載／上傳 · 累計 …」，有 speed 時再接「頻寬 %」＝位元速率／連線速度），其下高條狀圖；

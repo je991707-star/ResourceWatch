@@ -15,6 +15,8 @@ pub struct Config {
     pub interval: u32,
     /// Interface for the network card; None = the one with the default gateway.
     pub nic: Option<String>,
+    /// The app icon/name card above the CPU card.
+    pub app: bool,
 }
 
 impl Default for Config {
@@ -24,6 +26,7 @@ impl Default for Config {
             items: ["cpu", "gpu", "net", "disk", "temp", "mem"].map(String::from).to_vec(),
             interval: 2,
             nic: None,
+            app: true,
         }
     }
 }
@@ -77,6 +80,17 @@ pub fn set_order(list: &str) -> Result<(), String> {
     save(cfg).map(|_| ())
 }
 
+/// `resourcewatch --widget-app on|off`: the widget's right-click menu closes the app card.
+pub fn set_app(on: &str) -> Result<(), String> {
+    let mut cfg = load();
+    cfg.app = match on {
+        "on" => true,
+        "off" => false,
+        _ => return Err("用法：--widget-app on|off".into()),
+    };
+    save(cfg).map(|_| ())
+}
+
 /// Samples twice a second apart (rates need two readings), prints `{ config, cpuModel, snapshot }`. No GUI is started.
 pub fn run() {
     let mut m = crate::sys::Monitor::new();
@@ -100,5 +114,7 @@ mod tests {
         assert_eq!(c.nic, None);
         assert_eq!(parse(r#"{"nic":"eth0","interval":5}"#).nic.as_deref(), Some("eth0"));
         assert_eq!(parse(r#"{"interval":5}"#).interval, 5);
+        assert!(parse("{}").app);
+        assert!(!parse(r#"{"app":false}"#).app);
     }
 }

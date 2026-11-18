@@ -10,7 +10,7 @@ PlasmoidItem {
 
     // ~/.local/bin is not always on plasmashell's PATH
     readonly property string cmd: 'PATH="$HOME/.local/bin:$PATH" resourcewatch --widget'
-    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null })
+    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null, app: true })
     property var snap: null
     property string cpuModel: ""
     property string error: ""
@@ -19,19 +19,21 @@ PlasmoidItem {
     // card reordering: the pointer is over a card's content area / the key of the card being dragged
     property bool overBody: false
     property string dragKey: ""
-    // order saved by a drag but not yet seen in `--widget` output (a run already under way prints the old one)
-    property var pendingItems: null
-    // card under the pointer at the last right press, for the "close card" entry in Plasma's context menu
+    // config fields saved from the widget (order, app card) but not yet seen in `--widget` output
+    // (a run already under way prints the old values); they override the output until it matches
+    property var pending: ({})
+    // card under the pointer when Plasma's context menu opened, for its "close card" entry
     property string menuKey: ""
-    readonly property var titles: ({ cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
+    onContextualActionsAboutToShow: menuKey = fullRepresentationItem?.cardUnderPointer() ?? ""
+    readonly property var titles: ({ app: "ResourceWatch", cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: "關閉「" + (root.titles[root.menuKey] ?? "") + "」卡片"
             icon.name: "window-close"
-            // keep at least one card; it comes back from ResourceWatch's settings page
-            visible: root.menuKey !== "" && root.cfg.items.length > 1
-            onTriggered: root.setOrder(root.cfg.items.filter(k => k !== root.menuKey))
+            // keep at least one card; closed cards come back from ResourceWatch's settings page
+            visible: root.menuKey === "app" || (root.menuKey !== "" && root.cfg.items.length > 1)
+            onTriggered: root.menuKey === "app" ? root.setApp(false) : root.setOrder(root.cfg.items.filter(k => k !== root.menuKey))
         }
     ]
 
@@ -59,19 +61,21 @@ PlasmoidItem {
     onOverBodyChanged: allowDrag()
     onDragKeyChanged: allowDrag()
 
-    function setOrder(items) {
-        pendingItems = items;
-        cfg = Object.assign({}, cfg, { items: items });
-        saver.connectSource('PATH="$HOME/.local/bin:$PATH" resourcewatch --widget-order ' + items.join(","));
+    function save(field, value, arg) {
+        pending = Object.assign({}, pending, { [field]: value });
+        cfg = Object.assign({}, cfg, { [field]: value });
+        saver.connectSource('PATH="$HOME/.local/bin:$PATH" resourcewatch ' + arg);
     }
+    function setOrder(items) { save("items", items, "--widget-order " + items.join(",")); }
+    function setApp(on) { save("app", on, "--widget-app " + (on ? "on" : "off")); }
     P5Support.DataSource {
         id: saver
         engine: "executable"
         onNewData: (source, data) => {
             disconnectSource(source);
             if (data["exit code"] !== 0) {
-                root.pendingItems = null;
-                root.error = "無法儲存排列：" + (data.stderr || data["exit code"]);
+                root.pending = ({});
+                root.error = "無法儲存小工具設定：" + (data.stderr || data["exit code"]);
             }
         }
     }
@@ -103,10 +107,14 @@ PlasmoidItem {
             }
             try {
                 const out = JSON.parse(data.stdout);
-                if (root.pendingItems) {
-                    if (out.config.items.join() === root.pendingItems.join()) root.pendingItems = null;
-                    else out.config.items = root.pendingItems;
+                const left = {};
+                for (const k in root.pending) {
+                    if (JSON.stringify(out.config[k]) !== JSON.stringify(root.pending[k])) {
+                        out.config[k] = root.pending[k];
+                        left[k] = root.pending[k];
+                    }
                 }
+                root.pending = left;
                 root.cfg = out.config;
                 root.snap = out.snapshot;
                 root.cpuModel = out.cpuModel ?? "";
@@ -152,18 +160,17 @@ PlasmoidItem {
         function cardAt(p) {
             for (let c = 0; c < columns.count; c++) {
                 const column = columns.itemAt(c);
-                for (const l of column.children.filter(ch => ch.modelData !== undefined)) {
+                for (const l of column.children.filter(ch => ch.modelData !== undefined || (ch.isApp && ch.visible))) {
                     const q = l.mapFromItem(full, p.x, p.y);
-                    if (q.x >= 0 && q.y >= 0 && q.x < l.width && q.y < l.height) return l.modelData;
+                    if (q.x >= 0 && q.y >= 0 && q.x < l.width && q.y < l.height) return l.isApp ? "app" : l.modelData;
                 }
             }
             return "";
         }
-        // passive: Plasma still opens its context menu, which then shows the close entry for this card
-        PointHandler {
-            acceptedButtons: Qt.RightButton
-            onActiveChanged: if (active) root.menuKey = full.cardAt(point.position)
-        }
+        // the desktop's container takes the right press and opens the menu before the widget sees it, so the
+        // card is read from the hover position when the menu is about to show (contextualActionsAboutToShow)
+        HoverHandler { id: hover }
+        function cardUnderPointer() { return hover.hovered ? cardAt(hover.point.position) : ""; }
         function holdStart(key, p) { dragFrom = p; dragDx = 0; dragDy = 0; root.dragKey = key; dropIndex = -1; }
         function holdMove(p) { dragDx = p.x - dragFrom.x; dragDy = p.y - dragFrom.y; dropIndex = slotAt(p); }
         // dropping on another slot swaps the two cards; the order is saved through `--widget-order`
@@ -220,7 +227,8 @@ PlasmoidItem {
                             readonly property var other: columns.count > 1 ? columns.itemAt(1 - col) : null
                             readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
                             theme: colors
-                            visible: root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
+                            readonly property bool isApp: true
+                            visible: root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
                             Layout.fillWidth: true
                             Layout.preferredHeight: gap
                         }

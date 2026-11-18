@@ -495,6 +495,7 @@ function widgetCard(s, row) {
     `<ul class="witems">${on || '<li class="muted">未選擇任何項目</li>'}</ul>${off ? `<div class="wadd">${off}</div>` : ''}`,
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
     row('網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+    row('ResourceWatch 格子', '處理器上方的圖示與名稱', seg('app', [[true, '顯示'], [false, '隱藏']])),
     wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
   ].join(''));
 }
@@ -506,6 +507,7 @@ async function setWidget(act, val) {
   else if (act === 'up' || act === 'down') { const j = act === 'up' ? i - 1 : i + 1; [c.items[i], c.items[j]] = [c.items[j], c.items[i]]; }
   else if (act === 'interval') c.interval = +val;
   else if (act === 'nic') c.nic = val || null;
+  else if (act === 'app') c.app = val === 'true';
   try { wcfg = await invoke('set_widget_config', { cfg: c }); wErr = ''; } catch (e) { wErr = `儲存失敗：${e}`; }
   render();
 }

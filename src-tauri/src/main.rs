@@ -207,8 +207,10 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("--widget") => return widget::run(),
-        Some("--widget-order") => {
-            if let Err(e) = widget::set_order(args.get(2).map_or("", String::as_str)) {
+        Some(flag @ ("--widget-order" | "--widget-app")) => {
+            let arg = args.get(2).map_or("", String::as_str);
+            let r = if flag == "--widget-order" { widget::set_order(arg) } else { widget::set_app(arg) };
+            if let Err(e) = r {
                 eprintln!("{e}");
                 std::process::exit(1);
             }
