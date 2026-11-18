@@ -168,6 +168,34 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 其他：`/sys/class/drm/cardN/device`，vendor `0x1002` AMD、`0x8086` Intel、`0x10de`（只在 NVML 載入失敗時，例如 nouveau）；讀 `gpu_busy_percent`、`mem_info_vram_used/total`、`hwmon/*/temp1_input`。
   Intel 與 nouveau 通常沒有這些檔案，對應欄位為 `null`。名稱只有廠牌（不讀 PCI ID 資料庫）。
 
+## widget/
+
+KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widget`，`FormFactors: desktop`），以 `kpackagetool6 -t Plasma/Applet` 安裝到 `~/.local/share/plasma/plasmoids/`。純 QML，沒有編譯步驟；資料全部來自 `resourcewatch --widget`（見 src/widget.rs），不必開著主程式。
+
+### metadata.json
+
+名稱、說明（含 zh_TW）、圖示沿用 App 圖示名稱、分類 System Information、`X-Plasma-API-Minimum-Version: 6.0`；`Version` 與 Cargo 版本一起更新。
+
+### contents/ui/main.qml
+
+- `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
+  結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
+- 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總）。
+- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面為直向 `ColumnLayout`（寬 300、最小 220、卡片間距 12），依 `cfg.items` 順序以 `Repeater` 產生卡片，內容目前為 `Fmt.lines` 的文字列。
+
+### contents/ui/Theme.qml
+
+與 style.css 相同的色彩 token（卡片、欄位、線、文字、muted、軌道與各指標色）；深／淺色依 Plasma 色彩配置的背景亮度（`Kirigami.ColorUtils.brightnessForColor`）切換。main.qml 以 id `colors` 建立一份傳給各卡片（不用 `theme`／`palette`，兩者會與卡片屬性或 Item 內建屬性同名）。
+
+### contents/ui/Card.qml
+
+儀表板卡片：圓角 16、無邊框、`theme.card` 底色，內距上 14／其他 18，標題（15 px 粗體）與內容間距 10；`default property` 讓子元件放進內容欄。
+
+### contents/ui/fmt.js
+
+`.pragma library`，與 app.js 同邏輯的 `bytes`／`rate`／`pct`／`ratio`；`temp` 固定 °C（App 的 °C／°F 存在 WebView localStorage，小工具讀不到）。
+`nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度；`TITLES` 為卡片標題；`lines(key, s, cfg)` 為各卡片的文字列（處理器使用率與溫度、記憶體已用／總量、第一張顯示卡、網路上下行、所有硬碟讀寫加總、前 4 個裝置溫度）。
+
 ## frontend/
 
 ### index.html

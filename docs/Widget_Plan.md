@@ -39,12 +39,12 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收：設定頁變更後 `cat ~/.config/resourcewatch/widget.json` 與 `--widget` 輸出同步。
 
 ## Phase 3：Plasmoid 骨架與資料流（新目錄 `widget/`）
-- [ ] `metadata.json`：id `io.github.local.resourcewatch.widget`、`Plasma/Applet`、API 6.0。
-- [ ] `contents/ui/main.qml`：`P5Support.DataSource`（executable，`resourcewatch --widget`，interval＝config.interval）；`onNewData` 解析 JSON、推進歷史；找不到執行檔／解析失敗時顯示「找不到 resourcewatch」。
-- [ ] `preferredRepresentation: fullRepresentation`、`NoBackground`，依 `config.items` 以 `Repeater` 排卡片（先放純文字數值）。
-- [ ] `Theme.qml`：照 style.css 深／淺色 token，依 `Kirigami.Theme` 背景亮度切換；`fmt.js`：複製 app.js 的 bytes／速率／溫度格式化。
-- [ ] 新增 Architecture `widget/` 章節，commit。
-- 驗收：`plasmoidviewer -a widget/` 顯示數值且每 N 秒更新、項目增刪排序會反映。
+- [x] ✅ `metadata.json`：id `io.github.local.resourcewatch.widget`、`Plasma/Applet`、API 6.0。
+- [x] ✅ `contents/ui/main.qml`：`P5Support.DataSource`（executable，`resourcewatch --widget`，interval＝config.interval）；`onNewData` 解析 JSON、推進歷史；找不到執行檔／解析失敗時顯示「找不到 resourcewatch」。
+- [x] ✅ `preferredRepresentation: fullRepresentation`、`NoBackground`，依 `config.items` 以 `Repeater` 排卡片（先放純文字數值）。
+- [x] ✅ `Theme.qml`：照 style.css 深／淺色 token，依 `Kirigami.Theme` 背景亮度切換；`fmt.js`：複製 app.js 的 bytes／速率／溫度格式化。
+- [x] ✅ 新增 Architecture `widget/` 章節，commit。
+- 驗收（系統沒有 plasmoidviewer，改為 kpackagetool6 安裝後加到桌面測試）： 顯示數值且每 N 秒更新、項目增刪排序會反映。
 
 ## Phase 4：卡片視覺（儀表板風格）
 - [ ] `CpuCard`：大字 %、迷你面積曲線（Canvas）、溫度。
@@ -57,6 +57,7 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收：plasmoidviewer 深／淺色截圖比對儀表板卡片樣式。
 
 ## Phase 5：安裝與收尾（install.sh、版本）
+- [ ] 修正 install.sh 舊版 widget 偵測：`grep -q "$ID"` 會誤中新 id `io.github.local.resourcewatch.widget`，改為整行比對。
 - [ ] `install`：`kpackagetool6 -t Plasma/Applet -i widget/`（已安裝則 `-u`）；`uninstall`：`-r io.github.local.resourcewatch.widget`；無 `kpackagetool6` 時略過並提示。
 - [ ] 更新 Architecture（install.sh），bump 版本（Cargo.toml＋app.js「關於」），commit。
 - 驗收：`./install.sh` → 桌面新增小工具正常運作；`./install.sh uninstall` 清乾淨。

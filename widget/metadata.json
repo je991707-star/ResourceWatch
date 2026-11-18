@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Id": "io.github.local.resourcewatch.widget",
+        "Name": "ResourceWatch",
+        "Description": "Desktop resource monitor cards",
+        "Description[zh_TW]": "桌面系統資源監看卡片",
+        "Icon": "io.github.local.resourcewatch",
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.3.5",
+        "FormFactors": ["desktop"]
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
