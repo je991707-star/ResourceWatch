@@ -118,6 +118,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
 - 檔案系統 → 實體硬碟（`disk_of`）：裝置路徑先 `canonicalize`（`/dev/mapper/…` → `/dev/dm-0`），dm／md 沿 `/sys/block/<n>/slaves` 往下找到分割區，
   分割區再由 `/sys/class/block/<n>` 連結的上一層目錄得到硬碟名稱；整顆硬碟直接格式化時就是它本身。
+- `cpu_model()`：`/proc/cpuinfo` 經 `parse_cpuinfo` 的型號（同 `cpuModel`），供 `--widget` 使用。
 - `rotational(path)`：在完整的 mountinfo 中找包含該路徑、掛載點最長的那筆（同長度取後面的，疊在上面的掛載），經 `disk_of` 讀 `/sys/block/<disk>/queue/rotational`，為 1 表示傳統硬碟；找不到時當成非傳統硬碟。
 - 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
   優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
@@ -137,7 +138,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）。
   缺欄位用預設值（全部六項、2 秒、自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）。`save` 自動建立資料夾。
 - `set_order(list)`（`resourcewatch --widget-order cpu,mem,…`）：小工具拖曳重排後呼叫，讀入設定、以逗號分隔的清單取代 `items` 後存檔（同樣經 `clean`，未知與重複名稱會被去掉）。
-- `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "snapshot": Snapshot }`，`Snapshot` 與 `snapshot` 指令相同。
+- `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "cpuModel": 字串, "snapshot": Snapshot }`（`cpuModel` 為 `sys::cpu_model()`，與 `SystemInfo.cpuModel` 相同），`Snapshot` 與 `snapshot` 指令相同。
 - 單元測試：設定解析（壞 JSON、空物件、未知／重複項目、間隔下限）。
 
 ### src/du.rs
@@ -195,15 +196,15 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 
 ### contents/ui/Card.qml
 
-儀表板卡片：圓角 16、無邊框、`theme.card` 底色，內容區上方疊一個 `MouseArea`（`hold`，與內容區同位置大小、`hoverEnabled`，長按 400 ms 後回報拖曳；取消時以 (-1, -1) 結束），內距上 14／其他 18，標題列（15 px 粗體，過長截斷）右端可放 muted 小字 `extra`（溫度、總量、網卡名稱），標題與內容、內容各區塊之間距 10；`default property` 讓子元件放進內容欄。
+儀表板卡片：圓角 16、無邊框、`theme.card` 底色，內容區上方疊一個 `MouseArea`（`hold`，與內容區同位置大小、`hoverEnabled`，長按 400 ms 後回報拖曳；取消時以 (-1, -1) 結束），內距上 14／其他 18，標題列（15 px 粗體，過長截斷）右端可放 muted 小字 `extra`（溫度、總量、網卡名稱），其下可放一行 muted 12 px 副標 `subtitle`（與標題列間距 4，過長截斷，空字串時隱藏；屬於標題區，按住可移動整個小工具），標題與內容、內容各區塊之間距 10；`default property` 讓子元件放進內容欄。
 
 ### contents/ui/CpuCard.qml、MemCard.qml、GpuCard.qml、NetCard.qml、DiskCard.qml、TempCard.qml
 
 各自繼承 `Card`，屬性 `snap`（必要）、`hist`、`cfg`（只有網路卡用）。
-- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；其下一列左右並排、寬度 30:70（間距 12，靠底對齊）：左為各執行緒使用率直條（`Cores`），右為藍色曲線（`hist.cpu`，高 54 與直條同高）；比例以兩者相同比例的 `Layout.preferredWidth`（3／7）與 `Layout.horizontalStretchFactor`（3／7）分配，不綁定列本身的寬度（那會讓 Layout 遞迴重排、plasmashell 記錄 "Detected recursive rearrange"）。
+- 處理器：`extra` 為 CPU 溫度、`subtitle` 為處理器型號（`--widget` 輸出的 `cpuModel`，經 main.qml `cpuModel` 傳入 `model`）；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；其下一列左右並排、寬度 30:70（間距 12，靠底對齊）：左為各執行緒使用率直條（`Cores`），右為藍色曲線（`hist.cpu`，高 54 與直條同高）；比例以兩者相同比例的 `Layout.preferredWidth`（3／7）與 `Layout.horizontalStretchFactor`（3／7）分配，不綁定列本身的寬度（那會讓 Layout 遞迴重排、plasmashell 記錄 "Detected recursive rearrange"）。
 - 記憶體：`extra` 為總量；大字為使用率、其下「N 已使用」；堆疊條：應用程式（used，黃）、快取（藍）、可用（total − used − cached，綠）；圖例四列（含 SWAP 已用／總量，沒有 SWAP 時隱藏）。
 - 顯示卡：只看第一張；標題為型號、`extra` 為溫度；左為青色使用率圓環（中間百分比），右為顯示記憶體／編碼器／解碼器三條細條（`Legend` 加 5 px `StackBar`）；下方青色曲線。沒有顯示卡時顯示「沒有顯示卡」。
-- 網路：`Fmt.nic(snap, cfg.nic)` 選介面，`extra` 為介面名；兩欄大字下載（藍點）／上傳（桃紅點）；下方 `Mirror` 上傳在上、下載在下；最下方一列「本機 IPv4」為 `ip/prefix`（沒有 IPv4 時 `--`）。
+- 網路：`Fmt.nic(snap, cfg.nic)` 選介面，`extra` 為介面名；兩欄大字下載（藍點）／上傳（桃紅點）；下方 `Mirror` 上傳在上、下載在下；`subtitle` 為「本機 IPv4 `ip/prefix`」（沒有 IPv4 時 `--`）。
 - 磁碟：兩欄大字為所有硬碟讀取（桃紅）／寫入（藍）加總，`Mirror` 讀取在上；其下每顆有掛載的硬碟一列型號（`_` 換空格）與「已用 / 總量」，配黃色細用量條。
 - 溫度：`Fmt.temps` 前 8 個裝置，名稱 muted、數值靠右；達到 `crit` 時紅色粗體。
 

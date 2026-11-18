@@ -12,6 +12,7 @@ PlasmoidItem {
     readonly property string cmd: 'PATH="$HOME/.local/bin:$PATH" resourcewatch --widget'
     property var cfg: ({ items: ["cpu", "mem", "gpu", "net", "disk", "temp"], interval: 2, nic: null })
     property var snap: null
+    property string cpuModel: ""
     property string error: ""
     // 60 points per series, oldest first; drawn by the cards
     property var hist: ({})
@@ -95,6 +96,7 @@ PlasmoidItem {
                 }
                 root.cfg = out.config;
                 root.snap = out.snapshot;
+                root.cpuModel = out.cpuModel ?? "";
                 root.record(out.snapshot);
                 root.error = "";
             } catch (e) {
@@ -206,7 +208,7 @@ PlasmoidItem {
     }
 
     // Inline components so the cards bind to this file's snap/hist/cfg.
-    Component { id: cpu; CpuCard { theme: colors; snap: root.snap; hist: root.hist } }
+    Component { id: cpu; CpuCard { theme: colors; snap: root.snap; hist: root.hist; model: root.cpuModel } }
     Component { id: mem; MemCard { theme: colors; snap: root.snap } }
     Component { id: gpu; GpuCard { theme: colors; snap: root.snap; hist: root.hist } }
     Component { id: net; NetCard { theme: colors; snap: root.snap; hist: root.hist; cfg: root.cfg } }

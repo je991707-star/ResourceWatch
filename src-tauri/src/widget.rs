@@ -76,12 +76,12 @@ pub fn set_order(list: &str) -> Result<(), String> {
     save(cfg).map(|_| ())
 }
 
-/// Samples twice a second apart (rates need two readings), prints `{ config, snapshot }`. No GUI is started.
+/// Samples twice a second apart (rates need two readings), prints `{ config, cpuModel, snapshot }`. No GUI is started.
 pub fn run() {
     let mut m = crate::sys::Monitor::new();
     m.sample();
     std::thread::sleep(std::time::Duration::from_secs(1));
-    let out = serde_json::json!({ "config": load(), "snapshot": m.sample() });
+    let out = serde_json::json!({ "config": load(), "cpuModel": crate::sys::cpu_model(), "snapshot": m.sample() });
     println!("{out}");
 }
 

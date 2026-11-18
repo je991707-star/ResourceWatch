@@ -1104,6 +1104,11 @@ fn ite_label(gigabyte: bool, prefix: &str, temp_type: Option<u32>) -> Option<(&'
     }
 }
 
+/// CPU model as `system_info` gives it (`clean_cpu_name`), for `resourcewatch --widget`.
+pub fn cpu_model() -> String {
+    parse_cpuinfo(&read("/proc/cpuinfo")).0
+}
+
 /// Display name of the device behind a hwmon chip; `model` is `<hwmon>/device/model` (disks) or empty.
 fn sensor_device(chip: &str, model: &str) -> String {
     static CPU: std::sync::OnceLock<String> = std::sync::OnceLock::new();

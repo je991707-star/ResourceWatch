@@ -8,6 +8,8 @@ Rectangle {
     property string title
     // muted text at the right end of the title row
     property string extra
+    // muted line under the title row (CPU model, local IPv4); hidden when empty
+    property string subtitle
     default property alias content: body.data
     // Content area (below the title): hovering it and long-pressing it are reported so main.qml can
     // reorder cards; the title row and the gaps stay free for moving the whole widget.
@@ -31,6 +33,7 @@ Rectangle {
             Text { text: root.title; color: root.theme.text; font.bold: true; font.pixelSize: 15; Layout.fillWidth: true; elide: Text.ElideRight }
             Text { text: root.extra; color: root.theme.muted; font.pixelSize: 12; visible: root.extra !== "" }
         }
+        Text { text: root.subtitle; color: root.theme.muted; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true; Layout.topMargin: -6; visible: root.subtitle !== "" }
         ColumnLayout { id: body; spacing: 10; Layout.fillWidth: true }
     }
 

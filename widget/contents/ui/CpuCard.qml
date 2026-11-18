@@ -6,8 +6,10 @@ Card {
     id: c
     property var snap
     property var hist
+    property string model
     title: "處理器"
     extra: Fmt.temp(snap.cpu.temp)
+    subtitle: model
     RowLayout {
         uniformCellSizes: true
         Layout.fillWidth: true

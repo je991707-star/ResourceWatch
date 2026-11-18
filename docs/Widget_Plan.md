@@ -71,6 +71,7 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - [x] ✅ 處理器卡片：執行緒直條在左、曲線在右，寬度 30:70。
 - [x] ✅ 長按卡片內容區可拖曳到其他格（與該格交換），排列寫回 widget.json；拖動整個小工具改為按標題列或卡片間空白。
 - [x] ✅ 網路卡片加上本機 IPv4。
+- [x] ✅ 卡片副標：網路的 IPv4 移到標題下方；處理器標題下方加上處理器型號。
 - [x] ✅ 預設顯示全部六項。
 - [x] ✅ 按下即可拖動（改桌面容器的 `editModeCondition` 為 AfterPress，鎖定時不可拖）。
 
