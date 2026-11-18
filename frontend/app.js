@@ -54,7 +54,7 @@ function duration(s) {
 const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
-  eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
+  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi', dns: 'fa-solid fa-server',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
   display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
 };
@@ -202,30 +202,29 @@ function memCard(s) {
 const lv = (title, items) => `<div>${cap(title, '')}<table class="lv">${items.map(([k, v, cls]) =>
   `<tr><th>${k}</th><td class="${cls ?? ''}" title="${esc(v)}">${esc(v)}</td></tr>`).join('')}</table></div>`;
 
-// Address, interface (plus Wi-Fi) and rx/tx counter columns; error/drop counters turn red once non-zero.
-function nicDetails(n, dns) {
+// Interface facts and rx/tx counters side by side; error/drop counters turn red once non-zero.
+function nicDetails(n) {
   const c = (v, warn) => `<td class="num${warn && v ? ' bad' : ''}">${v.toLocaleString()}</td>`;
   const row = (k, rx, tx, warn) => `<tr><th>${k}</th>${c(rx, warn)}${c(tx, warn)}</tr>`;
-  return `<div class="sect details">${lv('位址', [['IPv4', n.ip ? `${n.ip}/${n.prefix}` : '--'],
-    ...(n.ipv6.length ? n.ipv6 : ['--']).map((a, i) => [i ? '' : 'IPv6', a]), ['閘道', n.gateway ?? '--'], ['DNS', dns.join(', ') || '--']])}
-    ${lv('介面', [['MAC', n.mac || '--'], ['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'], ...(n.wifi ? wifiRows(n.wifi) : [])])}
+  return `${lv('介面', [['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'],
+    ...(n.ipv6.length ? n.ipv6 : ['--']).map((a, i) => [i ? '' : 'IPv6', a])])}
     <div>${cap('統計', '')}<table class="lv"><thead><tr><th></th><th class="num">接收</th><th class="num">傳送</th></tr></thead>
-      <tbody>${row('封包', n.rxPackets, n.txPackets)}${row('錯誤', n.rxErrors, n.txErrors, true)}${row('丟棄', n.rxDropped, n.txDropped, true)}</tbody></table></div></div>`;
+      <tbody>${row('封包', n.rxPackets, n.txPackets)}${row('錯誤', n.rxErrors, n.txErrors, true)}${row('丟棄', n.rxDropped, n.txDropped, true)}</tbody></table></div>`;
 }
 
 // Wi-Fi channel number from the center frequency (MHz).
 const wifiChannel = (f) => (f === 2484 ? 14 : f < 2500 ? (f - 2407) / 5 : f < 5925 ? (f - 5000) / 5 : (f - 5950) / 5);
 const wifiBand = (f) => (f < 2500 ? '2.4 GHz' : f < 5925 ? '5 GHz' : '6 GHz');
 
-function wifiRows(w) {
+function wifiDetails(w) {
   const mb = (v) => (v == null ? '--' : `${v}`);
-  return [
+  return lv('Wi-Fi', [
     ['SSID', w.ssid || '（隱藏）'],
     // NetworkManager's mapping: -100 dBm → 0%, -50 dBm → 100%
     ['訊號', w.signal == null ? '--' : `${w.signal} dBm · ${Math.max(0, Math.min(100, 2 * (w.signal + 100)))}%`],
     ['頻段', w.freq ? [wifiBand(w.freq), `頻道 ${wifiChannel(Math.round(w.freq))}`, w.width && `${w.width} MHz`].filter(Boolean).join(' · ') : '--'],
     ['速率', `↓ ${mb(w.rxRate)} ↑ ${mb(w.txRate)} Mb/s`], ['標準', w.generation ? `Wi-Fi ${w.generation}` : '--'], ['BSSID', w.bssid],
-  ];
+  ]);
 }
 
 // System-wide TCP socket states and the retransmitted share of sent segments, as a strip of figures.
@@ -260,12 +259,19 @@ function connCard() {
     <tbody>${rows || '<tr><td class="muted">沒有連線</td></tr>'}</tbody></table></div>`, note);
 }
 
+function addrBlock(n, dns) {
+  return `<div class="addr">
+    <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
+    <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div>
+    <div>${icon('dns')}<p><span title="${esc(dns.join('\n'))}">${esc(dns.join(', ') || '--')}</span><span class="muted sm">DNS</span></p></div></div>`;
+}
+
 const peak = (k) => Math.max(0, ...(hist[k] ?? []).filter((v) => v != null));
 // Big current rates (color dot, label, window peak) above mirrored bars; `up`/`down` are [label, hist key].
-function flow([upL, upK], [downL, downK], tall) {
+function flow([upL, upK], [downL, downK]) {
   const col = (l, k, cls) => `<div><b><i class="dot ${cls}"></i>${rate(last(k))}</b><span>${l}</span><span class="peak">峰值 ${rate(peak(k))}</span></div>`;
   return `<div class="rates">${col(upL, upK, 'c-magenta')}${col(downL, downK, 'c-blue')}</div>
-    ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' }, tall)}`;
+    ${mirror({ data: hist[upK], cls: 'c-magenta' }, { data: hist[downK], cls: 'c-blue' })}`;
 }
 
 // ‹ › stepping through `keys` from index i; a click stores the neighbour's key in pick[kind].
@@ -469,8 +475,10 @@ const PAGES = {
       // share of link capacity; speed is Mb/s, rates are bytes/s
       const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
-      return `<section class="card iface"><h2>${title}${dot}</h2>
-        ${flow([`上傳 · ${bytes(n.txTotal)}${use(n.txBps)}`, `tx:${n.name}`], [`下載 · ${bytes(n.rxTotal)}${use(n.rxBps)}`, `rx:${n.name}`], true)}${nicDetails(n, s.dns)}</section>`;
+      return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n, s.dns)}<div class="speeds"><div>
+          <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
+          <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="sect details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
     }).join('')}${connCard()}</div>`;
   }],
 

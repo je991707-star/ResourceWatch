@@ -447,9 +447,7 @@ struct Addrs {
     v6: Vec<String>,
 }
 
-/// Udev's PCI/USB database names → vendor + chip, e.g. "Realtek RTL8111" from
-/// "RTL8111/8168/8211/8411 PCI Express Gigabit Ethernet Controller"; the chip is the first
-/// plain word with both letters and digits ("AX200", "I219-LM"), else the whole name.
+/// Udev's PCI/USB database names → "Realtek RTL8111/8168/8211/8411 PCI Express Gigabit Ethernet Controller".
 fn parse_nic_model(udev: &str) -> Option<String> {
     let get = |k: &str| {
         udev.lines()
@@ -457,16 +455,7 @@ fn parse_nic_model(udev: &str) -> Option<String> {
             .map(str::trim)
     };
     let model = get("ID_MODEL_FROM_DATABASE")?;
-    let chip = model.split_whitespace().find(|w| {
-        w.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-/*".contains(c))
-            && w.chars().any(|c| c.is_ascii_alphabetic())
-            && w.chars().any(|c| c.is_ascii_digit())
-    });
-    let model = match chip {
-        Some(c) => c.split('/').next().unwrap_or(c).trim_end_matches('*'),
-        None => model.split(" (").next().unwrap_or(model),
-    };
+    let model = model.split(" (").next().unwrap_or(model);
     Some(
         match get("ID_VENDOR_FROM_DATABASE").and_then(|v| v.split_whitespace().next()) {
             Some(v) => format!("{v} {model}"),
@@ -1641,28 +1630,7 @@ mod tests {
                 "established"
             )
         );
-        assert_eq!(parse_nic_model("E:ID_VENDOR_FROM_DATABASE=Realtek Semiconductor Co., Ltd.\nE:ID_MODEL_FROM_DATABASE=RTL8111/8168 PCI Express Gigabit Ethernet Controller (Onboard Ethernet)\n").as_deref(), Some("Realtek RTL8111"));
-        let m = |v: &str, d: &str| {
-            parse_nic_model(&format!(
-                "E:ID_VENDOR_FROM_DATABASE={v}\nE:ID_MODEL_FROM_DATABASE={d}\n"
-            ))
-        };
-        assert_eq!(
-            m(
-                "Intel Corporation",
-                "Wi-Fi 6E(802.11ax) AX210/AX1675* 2x2 [Typhoon Peak]"
-            )
-            .as_deref(),
-            Some("Intel AX210")
-        );
-        assert_eq!(
-            m("Intel Corporation", "Ethernet Connection (17) I219-LM").as_deref(),
-            Some("Intel I219-LM")
-        );
-        assert_eq!(
-            m("Intel Corporation", "Ethernet Controller").as_deref(),
-            Some("Intel Ethernet Controller")
-        );
+        assert_eq!(parse_nic_model("E:ID_VENDOR_FROM_DATABASE=Realtek Semiconductor Co., Ltd.\nE:ID_MODEL_FROM_DATABASE=RTL8111/8168 PCI Express Gigabit Ethernet Controller (Onboard Ethernet)\n").as_deref(), Some("Realtek RTL8111/8168 PCI Express Gigabit Ethernet Controller"));
         assert_eq!(
             parse_nameservers("# x\nnameserver 1.1.1.1\nsearch .\nnameserver ::1\n"),
             ["1.1.1.1", "::1"]

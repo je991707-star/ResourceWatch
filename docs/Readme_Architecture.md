@@ -98,7 +98,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版（`os`）：os-release `NAME` + `VERSION_ID`（例如 `Bazzite 45`）；沒有 `VERSION_ID` 時只有名稱，沒有 `NAME` 時用 `PRETTY_NAME`。
 - 桌面環境（`desktop`）：`XDG_CURRENT_DESKTOP` 第一項對應顯示名稱與 shell 執行檔（KDE → `KDE Plasma`／`plasmashell`、GNOME／`gnome-shell`、Cinnamon、Xfce、MATE、LXQt、Budgie），啟動時執行一次 `<執行檔> --version`，取第一個點分數字為版本（`first_version`），例如 `KDE Plasma 6.8.2`；執行檔不存在時只有名稱，未知桌面直接顯示 XDG 名稱，沒有該變數時為 `null`。
 - 網路：IPv4（含遮罩→前綴長度）與 IPv6 由 `getifaddrs` 取得（`if_addrs`）；`/proc/net/dev` 每介面保留 16 個計數（`self.net` 存整列，速率取索引 0／8）；
-  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE` 中的晶片名（第一個只含英數與 `-/*`、且同時有字母與數字的字，取 `/` 前並去掉 `*`，如 RTL8111、AX210、I219-LM；找不到時用整串並去掉括號附註）；驅動為 `device/driver` 連結檔名；
+  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE`（去掉括號附註）；驅動為 `device/driver` 連結檔名；
   速度、雙工、MTU 讀 `/sys/class/net/<n>/{speed,duplex,mtu}`；DNS 先讀 `/run/systemd/resolve/resolv.conf`（resolved 的上游清單，`/etc/resolv.conf` 只有 stub 127.0.0.53），空的才退回 `/etc/resolv.conf`；
   Wi-Fi：只對有 `/sys/class/net/<n>/wireless` 的介面每次取樣執行 `iw dev <n> link`（`parse_iw_link`；輸出 "Not connected." 時為 null），
   世代由 rx bitrate 的 `EHT`／`HE`／`VHT`／`MCS`（HT）判斷為 7／6／5／4，頻寬取 `<n>MHz` 字樣；
@@ -166,7 +166,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
 - 色彩 token 在 `:root`（淺色）與 `:root[data-theme="dark"]`（深色）；主題的「跟隨系統」由 app.js 換算成 `data-theme`，CSS 只有兩套值。
   深色為中性灰：主區 `#262627`、側欄 `#2f2f31`、卡片 `#353537`（圓角 16、無邊框、無透明、無模糊）。
 - 指標色（`.c-*` 同時設定 stroke／fill／background）：應用程式記憶體／磁碟用量黃、快取／CPU 曲線藍、上傳／讀取桃紅、下載／寫入藍、可用綠、CPU 環洋紅、顯示卡環青、SWAP 灰。
-- 卡片內間距：卡片內距 20／22（上／其他）、標題下 18、分區（`.sect` 分隔線）上下各 18、區塊之間 16（圖表後的 `.foot`、GPU 各列）、同一區塊的行距 10（`.kv`、`.legend`、環下數值；標籤與數值間 2）、小標題 `.cap`（無底線）下 8、表格儲存格 6；卡片之間 24；卡片內一般表格首尾欄不留左右內距，與卡片文字對齊（`.zebra`、`.files` 除外）。
+- 卡片內間距：卡片內距 20／22（上／其他）、標題下 18、分區（`.sect` 分隔線）上下各 18、區塊之間 16（圖表後的 `.foot`、`.addr` 與速率、GPU 各列）、同一區塊的行距 10（`.kv`、`.legend`、環下數值；標籤與數值間 2）、小標題 `.cap`（無底線）下 8、表格儲存格 6；卡片之間 24；卡片內一般表格首尾欄不留左右內距，與卡片文字對齊（`.zebra`、`.files` 除外）。
 - 應用程式頁 `.apps`：欄位標題上方的整機 % 為 `th b`（18 px）；區段標題列放在獨立的 `tbody.sec`，不上斑馬紋；群組列有展開箭頭 `.tw`（無子項時留同寬空位以對齊），展開後的子列 `tr.kid` 名稱縮排 54 px；低優先權的葉子 `.leaf` 為綠色。
 - 斑馬紋 `.zebra`：只替資料列上色（`tbody` 的奇數列，標題列放在 `<thead>`），所以有無標題列的清單都從第一列資料開始深色；標題儲存格左右內距與資料列同為 10。程序圖示 `.app-ic` 為固定 18×18 的框（圖片與通用圖示字型都垂直置中），接在名稱前。儀表板的兩個程序清單 `.procs` 是固定大小的格子：`table-layout: fixed`、每列高 34、數值欄寬 90、名稱欄填滿其餘並在過長時截斷，列的大小不受名稱、數值長度或圖示種類影響。
 - 版面：側欄 220 px（收合 68 px，只留圖示）；收合鈕展開時靠左（左移 3 px 對齊選單圖示），收合時置中；儀表板用 CSS 多欄（`columns: 3 330px`）做瀑布流，卡片 `break-inside: avoid`；其他頁用 `.stack`（直向）或 `.grid`。
@@ -188,10 +188,10 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
-  - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（廠牌＋晶片，過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
-    `flow(…, tall)`：上傳／下載兩欄大字速率（標籤附累計，有 speed 時再附頻寬使用率 %＝位元速率／連線速度；下方峰值），其下整寬的高條狀圖；
-    分隔線下的 `nicDetails(n, dns)` 為 `.details` 欄位格（`auto-fit` 每欄至少 240 px）三欄：「位址」（IPv4 帶 `/前綴`、每個 IPv6 一列、閘道、DNS 逗號串接）、
-    「介面」（MAC、驅動程式、MTU；Wi-Fi 連線中接著 `wifiRows`：SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID）、「統計」（封包／錯誤／丟棄 × 接收／傳送的小表格，錯誤與丟棄非 0 時紅字）。
+  - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
+    位址列 `addrBlock(n, dns)`（`.addr` 三欄：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出））、大字速率與累計（有 speed 時附頻寬使用率 %＝位元速率／連線速度）與上傳在上／下載在下的大條狀圖、
+    分隔線下的 `.details` 欄位格（`auto-fit` 每欄至少 240 px）：Wi-Fi 連線中第一欄為 `wifiDetails`（SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID），
+    接著 `nicDetails` 的「介面」（驅動程式、MTU、每個 IPv6 一列）與「統計」（封包／錯誤／丟棄 × 接收／傳送的小表格，錯誤與丟棄非 0 時紅字）。
     這些清單用 `lv(title, items)`：`.cap` 小標題加 `.lv` 表格，標籤靠左（muted，`th:first-child` 縮到內容寬）、數值靠右單行截斷（提示為完整值），每列第三個值可作為數值的 class。
     網卡卡片之後是「連線」卡（`connCard`）：標題右側小字「程序清單僅含目前使用者」（提示說明其他使用者需管理員權限、TCP 狀態為全系統）；最上方 `tcpStats` 為一排 `.stats` 數字（第一次取回前不顯示）：已建立、監聽、TIME_WAIT、CLOSE_WAIT、連線中（SYN_SENT＋SYN_RECV）、關閉中（FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與 TCP 重傳率（兩次輪詢間，取到小數 2 位）；
     分隔線下為 `.procs` 斑馬紋表格，每個程序一列：應用圖示與名稱（提示含 PID）、遠端位址（去重後前 3 個＋「+N」，提示列出全部）、已連線數（有遠端者）、監聽數；依已連線、監聽、名稱排序。
@@ -201,7 +201,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（處理器、顯示卡；SVG `viewBox 0 0 59 100`、背景三條線：頂端（上限）長虛線、中間（一半）短虛線、底部（0）實線；`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線；半透明面積上再畫一條線，0 的位置在 y=99，全為 0 的序列仍看得到底線）、
-  `mirror`（上下對稱條狀圖：中線以上為上傳／讀取（桃紅）、以下為下載／寫入（藍），上下各自依近期最大值縮放，0 畫成中線上的短條；以 HTML flex 排 120 根長條（間隔 1 px、外側端點 2 px 圓角：上半部圓在頂端、下半部圓在底端），高度以 `data-h` 經 CSSOM 設定，不用 SVG 以免圓角被拉伸變形；用於 `flow`；`tall` 時高 120，網路頁使用）、`bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時反向繪製，讓前一段的圓頭疊在下一段上）。
+  `mirror`（上下對稱條狀圖：中線以上為上傳／讀取（桃紅）、以下為下載／寫入（藍），上下各自依近期最大值縮放，0 畫成中線上的短條；以 HTML flex 排 120 根長條（間隔 1 px、外側端點 2 px 圓角：上半部圓在頂端、下半部圓在底端），高度以 `data-h` 經 CSSOM 設定，不用 SVG 以免圓角被拉伸變形；用於 `flow` 與網路頁）、`bar`（多段堆疊條）、`ring`（同心圓環，`pathLength=100` 以 dasharray／dashoffset 畫各段；線端皆為圓頭；多段時反向繪製，讓前一段的圓頭疊在下一段上）。
 - 偏好：`localStorage` `rw-prefs`（JSON：`theme`、`interval`、`unit`、`nic`、`dev`，壞掉時用預設值）；左下主題鈕以 `system` → `dark` → `light` 循環；`system` 時監聽 `prefers-color-scheme`。側欄收合存 `rw-collapsed`。`localStorage` 讀寫失敗時忽略。
 - 所有來自系統的字串（程序名稱、感測器標籤、型號、檔名、路徑）經 `esc` 跳脫後才放進 HTML。
 - `window.__TAURI__` 不存在時改用 `window.mockInvoke`：只供在一般瀏覽器載入頁面、注入假資料檢查排版，App 內不會用到。
