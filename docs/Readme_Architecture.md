@@ -98,7 +98,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - 發行版（`os`）：os-release `NAME` + `VERSION_ID`（例如 `Bazzite 45`）；沒有 `VERSION_ID` 時只有名稱，沒有 `NAME` 時用 `PRETTY_NAME`。
 - 桌面環境（`desktop`）：`XDG_CURRENT_DESKTOP` 第一項對應顯示名稱與 shell 執行檔（KDE → `KDE Plasma`／`plasmashell`、GNOME／`gnome-shell`、Cinnamon、Xfce、MATE、LXQt、Budgie），啟動時執行一次 `<執行檔> --version`，取第一個點分數字為版本（`first_version`），例如 `KDE Plasma 6.8.2`；執行檔不存在時只有名稱，未知桌面直接顯示 XDG 名稱，沒有該變數時為 `null`。
 - 網路：IPv4（含遮罩→前綴長度）與 IPv6 由 `getifaddrs` 取得（`if_addrs`）；`/proc/net/dev` 每介面保留 16 個計數（`self.net` 存整列，速率取索引 0／8）；
-  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE`（去掉括號附註）；驅動為 `device/driver` 連結檔名；
+  型號讀 udev `/run/udev/data/n<ifindex>` 的 `ID_VENDOR_FROM_DATABASE` 第一個字＋`ID_MODEL_FROM_DATABASE` 中的晶片名（第一個只含英數與 `-/*`、且同時有字母與數字的字，取 `/` 前並去掉 `*`，如 RTL8111、AX210、I219-LM；找不到時用整串並去掉括號附註）；驅動為 `device/driver` 連結檔名；
   速度、雙工、MTU 讀 `/sys/class/net/<n>/{speed,duplex,mtu}`；DNS 先讀 `/run/systemd/resolve/resolv.conf`（resolved 的上游清單，`/etc/resolv.conf` 只有 stub 127.0.0.53），空的才退回 `/etc/resolv.conf`；
   Wi-Fi：只對有 `/sys/class/net/<n>/wireless` 的介面每次取樣執行 `iw dev <n> link`（`parse_iw_link`；輸出 "Not connected." 時為 null），
   世代由 rx bitrate 的 `EHT`／`HE`／`VHT`／`MCS`（HT）判斷為 7／6／5／4，頻寬取 `<n>MHz` 字樣；
@@ -188,9 +188,9 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
-  - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
-    位址列 `addrBlock(n, dns)`（`.addr` 三欄：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出））、大字速率與累計（有 speed 時附頻寬使用率 %＝位元速率／連線速度）與上傳在上／下載在下的大條狀圖、
-    分隔線下的 `.details` 欄位格（`auto-fit` 每欄至少 240 px）：Wi-Fi 連線中第一欄為 `wifiDetails`（SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID），
+  - 網路：每張網卡一張卡，標題左側為兩行（`.nic-title`）：介面名稱、其下網卡型號（廠牌＋晶片，muted，過長截斷）；右側為連線速度與雙工（如「1 Gbps 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
+    `.speeds` 兩欄（左 200 px）：左為 `addrBlock(n, dns)`（`.addr` 直排三列、垂直置中：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出）），右為 `.rates-row` 橫排的下載、上傳大字速率（下方為累計，有 speed 時附頻寬使用率 %＝位元速率／連線速度），其下高條狀圖；
+    其下的 `.details` 欄位格（網路卡片中不畫分隔線）（`auto-fit` 每欄至少 240 px）：Wi-Fi 連線中第一欄為 `wifiDetails`（SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID），
     接著 `nicDetails` 的「介面」（驅動程式、MTU、每個 IPv6 一列）與「統計」（封包／錯誤／丟棄 × 接收／傳送的小表格，錯誤與丟棄非 0 時紅字）。
     這些清單用 `lv(title, items)`：`.cap` 小標題加 `.lv` 表格，標籤靠左（muted，`th:first-child` 縮到內容寬）、數值靠右單行截斷（提示為完整值），每列第三個值可作為數值的 class。
     網卡卡片之後是「連線」卡（`connCard`）：標題右側小字「程序清單僅含目前使用者」（提示說明其他使用者需管理員權限、TCP 狀態為全系統）；最上方 `tcpStats` 為一排 `.stats` 數字（第一次取回前不顯示）：已建立、監聽、TIME_WAIT、CLOSE_WAIT、連線中（SYN_SENT＋SYN_RECV）、關閉中（FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與 TCP 重傳率（兩次輪詢間，取到小數 2 位）；

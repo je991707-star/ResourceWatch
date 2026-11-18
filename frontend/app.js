@@ -469,16 +469,16 @@ const PAGES = {
   net: ['網路', (s) => {
     if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
-      const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
-      const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
+      const title = `<span class="nic-title"><span>${esc(n.name)}</span>${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}</span>`;
+      const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gbps` : `${n.speed} Mbps`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
       const dot = `<i class="spacer"></i>${n.up ? link : ''}<i class="dot ${n.up ? 'c-green' : 'c-red'}"></i>`;
       // share of link capacity; speed is Mb/s, rates are bytes/s
       const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
-      return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n, s.dns)}<div class="speeds"><div>
+      return `<section class="card iface"><h2>${title}${dot}</h2><div class="speeds">${addrBlock(n, s.dns)}<div><div class="rates-row">
           <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
-        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="sect details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
+        ${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="sect details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
     }).join('')}${connCard()}</div>`;
   }],
 
