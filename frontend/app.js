@@ -481,6 +481,10 @@ function appsPage() {
 // Desktop widget (Plasma): its config lives in widget.json, read by `resourcewatch --widget`.
 const WIDGET_ITEMS = { cpu: ['處理器', 'gpu'], mem: ['記憶體', 'mem'], gpu: ['顯示卡', 'display'], net: ['網路', 'net'], disk: ['磁碟', 'storage'], temp: ['溫度', 'sensors'] };
 let wcfg = null, wErr = '';
+// the opacity slider's 0–100% (5% steps) maps onto 0–40% real transparency, i.e. opacity 100–60 in 2% steps
+const W_MAX_TRANS = 40;
+// while the slider is held the settings page is not re-rendered (that would replace the slider mid-drag)
+let wSliding = false;
 function widgetCard(s, row) {
   if (!wcfg) return card('桌面小工具', `<div class="empty">${esc(wErr || '讀取設定中…')}</div>`);
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
@@ -496,7 +500,10 @@ function widgetCard(s, row) {
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
     row('網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
     row('ResourceWatch 格子', '處理器上方的圖示與名稱', seg('app', [[true, '顯示'], [false, '隱藏']])),
-    row('卡片透明度', '只影響卡片底色，文字與圖表不透明', seg('opacity', [100, 80, 60, 40, 20, 0].map((v) => [v, `${100 - v}%`]))),
+    row('卡片透明度', '只影響卡片底色，文字與圖表不透明', (() => {
+      const t = Math.round((100 - (wcfg.opacity ?? 100)) / (W_MAX_TRANS / 100) / 5) * 5;
+      return `<div class="set-ctl"><input type="range" class="wrange" data-wrange min="0" max="100" step="5" value="${t}"><span class="wrange-val">${t}%</span></div>`;
+    })()),
     wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
   ].join(''));
 }
@@ -735,6 +742,12 @@ $('#pages').addEventListener('click', (e) => { const b = e.target.closest('[data
 
 $('#content').addEventListener('change', (e) => {
   if (e.target.dataset.du === 'disk' && e.target.value) duScan(e.target.value);
+  if (e.target.matches('[data-wrange]')) { wSliding = false; setWidget('opacity', 100 - (+e.target.value * W_MAX_TRANS) / 100); }
+});
+$('#content').addEventListener('pointerdown', (e) => { if (e.target.matches('[data-wrange]')) wSliding = true; });
+$('#content').addEventListener('pointerup', () => { wSliding = false; });
+$('#content').addEventListener('input', (e) => {
+  if (e.target.matches('[data-wrange]')) { wSliding = true; e.target.nextElementSibling.textContent = `${e.target.value}%`; }
 });
 $('#content').addEventListener('click', (e) => {
   const t = e.target;
@@ -790,7 +803,7 @@ async function tick() {
     snap = await invoke('snapshot');
     record(snap);
     // The analyzer and the process table only change on their own events.
-    if (page === 'storage' || page === 'apps') hostBar(); else render();
+    if (page === 'storage' || page === 'apps' || wSliding) hostBar(); else render();
   } catch (e) {
     console.error(e);
   }

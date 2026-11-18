@@ -383,4 +383,6 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .btn.icon { padding: 6px; background: none; }
 .btn.icon:hover:not(:disabled) { background: var(--sel); }
 .wadd { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+.wrange { width: 200px; accent-color: var(--blue); }
+.wrange-val { width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .about { color: var(--muted); line-height: 1.7; user-select: text; }

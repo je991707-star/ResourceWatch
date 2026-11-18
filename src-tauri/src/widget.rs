@@ -17,7 +17,7 @@ pub struct Config {
     pub nic: Option<String>,
     /// The app icon/name card above the CPU card.
     pub app: bool,
-    /// Card background opacity in percent (text and charts stay opaque).
+    /// Card background opacity in percent, 60–100 (the settings slider covers 0–40% transparency; text and charts stay opaque).
     pub opacity: u32,
 }
 
@@ -41,7 +41,7 @@ impl Config {
         self.items
             .retain(|i| ITEMS.contains(&i.as_str()) && !seen.contains(i) && { seen.push(i.clone()); true });
         self.interval = self.interval.clamp(2, 60);
-        self.opacity = self.opacity.min(100);
+        self.opacity = self.opacity.clamp(60, 100);
         self
     }
 }
@@ -122,5 +122,6 @@ mod tests {
         assert!(!parse(r#"{"app":false}"#).app);
         assert_eq!(parse("{}").opacity, 100);
         assert_eq!(parse(r#"{"opacity":250}"#).opacity, 100);
+        assert_eq!(parse(r#"{"opacity":10}"#).opacity, 60);
     }
 }
