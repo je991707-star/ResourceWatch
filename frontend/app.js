@@ -689,6 +689,8 @@ function go(p) {
   document.querySelectorAll('.nav-item[data-page]').forEach((b) => b.classList.toggle('active', b.dataset.page === p));
   $('#content').scrollTop = 0;
   if (p === 'storage' && !du.started && info) { du.started = true; duScan(info.home); }
+  // the desktop widget rewrites the order after a drag, so re-read before showing the settings
+  if (p === 'settings') invoke('get_widget_config').then((c) => { wcfg = c; render(); }).catch(() => {});
   pollProcs();
   render();
 }

@@ -19,4 +19,5 @@ Card {
         Big { theme: c.theme; value: Fmt.rate(c.n?.txBps); caption: "上傳"; dot: c.theme.magenta; Layout.fillWidth: true }
     }
     Mirror { visible: !!c.n; up: c.hist.tx ?? []; down: c.hist.rx ?? []; upColor: c.theme.magenta; downColor: c.theme.blue; Layout.fillWidth: true; Layout.preferredHeight: implicitHeight }
+    Legend { visible: !!c.n; theme: c.theme; label: "本機 IPv4"; value: c.n?.ip ? c.n.ip + "/" + c.n.prefix : "--" }
 }

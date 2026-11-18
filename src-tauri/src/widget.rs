@@ -68,6 +68,14 @@ pub fn save(cfg: Config) -> Result<Config, String> {
     Ok(cfg)
 }
 
+/// `resourcewatch --widget-order cpu,mem,…`: the widget saves a new card order after a drag.
+/// The list goes through `clean` like any other save, so unknown names are dropped.
+pub fn set_order(list: &str) -> Result<(), String> {
+    let mut cfg = load();
+    cfg.items = list.split(',').map(str::to_string).collect();
+    save(cfg).map(|_| ())
+}
+
 /// Samples twice a second apart (rates need two readings), prints `{ config, snapshot }`. No GUI is started.
 pub fn run() {
     let mut m = crate::sys::Monitor::new();

@@ -15,15 +15,23 @@ PlasmoidItem {
     property string error: ""
     // 60 points per series, oldest first; drawn by the cards
     property var hist: ({})
+    // card reordering: the pointer is over a card's content area / the key of the card being dragged
+    property bool overBody: false
+    property string dragKey: ""
+    // order saved by a drag but not yet seen in `--widget` output (a run already under way prints the old one)
+    property var pendingItems: null
 
     Theme { id: colors }
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     preferredRepresentation: fullRepresentation
 
-    // Drag with a plain press instead of Plasma's press-and-hold: the desktop wraps each widget in a
-    // containmentlayoutmanager ItemContainer whose editModeCondition decides that. Private API;
-    // if a Plasma release renames it, `container()` finds nothing and press-and-hold still works.
+    // Move the whole widget with a plain press on a card's title row or the gaps, while a long press on a
+    // card's content reorders cards: the desktop wraps each widget in a containmentlayoutmanager
+    // ItemContainer whose editModeCondition decides whether a press starts a move, and the container sees
+    // the press before the card does, so the condition is switched as the pointer moves: AfterPress
+    // outside card contents, Manual (no move) over them or while a card is dragged. Private API; if a
+    // Plasma release renames it, `container()` finds nothing and Plasma's own press-and-hold still applies.
     function container() {
         let p = root.parent;
         while (p && p.editModeCondition === undefined) p = p.parent;
@@ -31,9 +39,28 @@ PlasmoidItem {
     }
     function allowDrag() {
         const c = container();
-        if (c) c.editModeCondition = Plasmoid.immutable ? 0 /* Locked */ : 3 /* AfterPress */;
+        if (c) c.editModeCondition = Plasmoid.immutable ? 0 /* Locked */ : overBody || dragKey ? 1 /* Manual */ : 3 /* AfterPress */;
     }
     onParentChanged: allowDrag()
+    onOverBodyChanged: allowDrag()
+    onDragKeyChanged: allowDrag()
+
+    function setOrder(items) {
+        pendingItems = items;
+        cfg = Object.assign({}, cfg, { items: items });
+        saver.connectSource('PATH="$HOME/.local/bin:$PATH" resourcewatch --widget-order ' + items.join(","));
+    }
+    P5Support.DataSource {
+        id: saver
+        engine: "executable"
+        onNewData: (source, data) => {
+            disconnectSource(source);
+            if (data["exit code"] !== 0) {
+                root.pendingItems = null;
+                root.error = "無法儲存排列：" + (data.stderr || data["exit code"]);
+            }
+        }
+    }
     Connections {
         target: Plasmoid
         function onImmutableChanged() { root.allowDrag(); }
@@ -62,6 +89,10 @@ PlasmoidItem {
             }
             try {
                 const out = JSON.parse(data.stdout);
+                if (root.pendingItems) {
+                    if (out.config.items.join() === root.pendingItems.join()) root.pendingItems = null;
+                    else out.config.items = root.pendingItems;
+                }
                 root.cfg = out.config;
                 root.snap = out.snapshot;
                 root.record(out.snapshot);
@@ -79,6 +110,41 @@ PlasmoidItem {
         id: full
         readonly property int cardWidth: 282
         readonly property int cols: 2
+        property point dragFrom
+        property real dragDx: 0
+        property real dragDy: 0
+        // cfg.items index of the card under the pointer while dragging, -1 when none
+        property int dropIndex: -1
+
+        // cfg.items index of the slot at `p` (full's coordinates): the card in that column whose bottom is
+        // below p, else the empty slot after the column's last card (clamped to the last index).
+        function slotAt(p) {
+            const items = root.cfg.items;
+            const col = p.x < cardWidth + cards.spacing / 2 ? 0 : 1;
+            const column = columns.itemAt(col);
+            if (!column) return -1;
+            const keys = items.filter((_, i) => i % cols === col);
+            const loaders = column.children.filter(ch => ch.modelData !== undefined);
+            const top = column.mapToItem(full, 0, 0).y;
+            let row = keys.length;
+            for (let r = 0; r < keys.length; r++) {
+                const l = loaders.find(x => x.modelData === keys[r]);
+                if (l && p.y < top + l.y + l.height) { row = r; break; }
+            }
+            return Math.min(row * cols + col, items.length - 1);
+        }
+        function holdStart(key, p) { dragFrom = p; dragDx = 0; dragDy = 0; root.dragKey = key; dropIndex = -1; }
+        function holdMove(p) { dragDx = p.x - dragFrom.x; dragDy = p.y - dragFrom.y; dropIndex = slotAt(p); }
+        // dropping on another slot swaps the two cards; the order is saved through `--widget-order`
+        function holdEnd(p) {
+            const items = root.cfg.items.slice();
+            const from = items.indexOf(root.dragKey);
+            const to = p.x < 0 ? -1 : slotAt(p);
+            root.dragKey = ""; dropIndex = -1; dragDx = 0; dragDy = 0;
+            if (from < 0 || to < 0 || to === from) return;
+            [items[from], items[to]] = [items[to], items[from]];
+            root.setOrder(items);
+        }
         Layout.minimumWidth: cards.implicitWidth
         Layout.maximumWidth: cards.implicitWidth
         Layout.preferredWidth: cards.implicitWidth
@@ -101,18 +167,35 @@ PlasmoidItem {
             RowLayout {
                 spacing: 12
                 Repeater {
+                    id: columns
                     model: full.cols
                     ColumnLayout {
                         required property int index
                         readonly property int col: index
+                        // the dragged card's column draws above the other one
+                        z: root.cfg.items.indexOf(root.dragKey) % full.cols === col ? 1 : 0
                         Layout.preferredWidth: full.cardWidth
                         Layout.alignment: Qt.AlignTop
                         spacing: 12
                         Repeater {
                             model: root.snap ? root.cfg.items.filter((_, i) => i % full.cols === col) : []
                             Loader {
+                                id: ld
                                 required property string modelData
+                                readonly property bool dragged: root.dragKey === modelData
                                 Layout.fillWidth: true
+                                z: dragged ? 1 : 0
+                                scale: dragged ? 1.04 : 1
+                                opacity: !dragged && full.dropIndex >= 0 && full.dropIndex === root.cfg.items.indexOf(modelData) ? 0.5 : 1
+                                Behavior on scale { NumberAnimation { duration: 120 } }
+                                transform: Translate { x: ld.dragged ? full.dragDx : 0; y: ld.dragged ? full.dragDy : 0 }
+                                Connections {
+                                    target: ld.item
+                                    function onHoldStarted(p) { full.holdStart(ld.modelData, ld.item.mapToItem(full, p.x, p.y)); }
+                                    function onHoldMoved(p) { full.holdMove(ld.item.mapToItem(full, p.x, p.y)); }
+                                    function onHoldEnded(p) { full.holdEnd(p.x < 0 ? p : ld.item.mapToItem(full, p.x, p.y)); }
+                                    function onBodyHoveredChanged() { root.overBody = ld.item.bodyHovered; }
+                                }
                                 sourceComponent: ({ cpu: cpu, mem: mem, gpu: gpu, net: net, disk: disk, temp: temps })[modelData] ?? null
                             }
                         }

@@ -204,8 +204,17 @@ fn inspector_window(i: &webkit2gtk::WebInspector) {
 }
 
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("--widget") {
-        return widget::run();
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("--widget") => return widget::run(),
+        Some("--widget-order") => {
+            if let Err(e) = widget::set_order(args.get(2).map_or("", String::as_str)) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        _ => {}
     }
     // NVIDIA proprietary driver: WebKitGTK's DMA-BUF renderer leaves the window blank on X11
     // and lags behind resizes on Wayland. Set before any thread starts.
