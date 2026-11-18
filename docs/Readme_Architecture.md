@@ -3,7 +3,7 @@
 本文件依「程式檔／目錄」分章，描述每個檔案的職責、資料流與對外契約。修改任何程式時，請把變更寫入對應章節。
 
 Rust + Tauri 2 單一程式：後端只負責讀 `/proc`、`/sys`（以及資料夾掃描）並回傳 JSON；前端（無打包工具、無 npm 依賴的 HTML／CSS／JS）輪詢、保存歷史、繪圖。
-沒有常駐背景執行緒、沒有設定檔、不連網路；外部程序只有啟動時讀桌面環境版本的一次 `<shell> --version`、有無線網卡時每次取樣的 `iw dev <n> link`，以及使用者在感測器頁按下按鈕時的 `pkexec`（`elevate`）。缺值一律為 JSON `null`，前端顯示 `--`。
+沒有常駐背景執行緒、不連網路；唯一的設定檔是桌面小工具的 `~/.config/resourcewatch/widget.json`（App 自己的偏好存在 WebView 的 `localStorage`）；外部程序只有啟動時讀桌面環境版本的一次 `<shell> --version`、有無線網卡時每次取樣的 `iw dev <n> link`，以及使用者在感測器頁按下按鈕時的 `pkexec`（`elevate`）。缺值一律為 JSON `null`，前端顯示 `--`。
 
 ```text
 frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
@@ -12,6 +12,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
                ── 啟動時 invoke("system_info")；新程序名 invoke("app_icons") ├─ src-tauri/src/main.rs ── Mutex<Monitor>（sys.rs，保存上次計數器以算速率）
                ── 儲存頁 invoke("scan_dir") / ("dir_children") │                         ├─ Gpus（gpu.rs：NVML／DRM sysfs）
                ── 「選擇資料夾…」invoke("plugin:dialog|open")   ─┘                         └─ Mutex<du::Cache>（du.rs：資料夾大小）
+Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widget.rs：讀 widget.json＋取樣兩次 → stdout JSON（不啟動 Tauri）
 ```
 
 ---
@@ -32,7 +33,7 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 
 ### Cargo.toml、build.rs、tauri.conf.json、capabilities/default.json
 
-- 依賴：`tauri` 2（`devtools` feature）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
+- 依賴：`tauri` 2（`devtools` feature）、`serde_json`（`--widget` 輸出與 widget.json）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
 - 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.3.5，對應 tag `v0.3.5`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js，改版時一併更新。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
@@ -55,7 +56,10 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `elevate(action)` | `null` 或錯誤字串 | 以 `pkexec /bin/sh -c` 執行寫死的 root 指令（`elevate_script`，只接受 `rapl`／`modules`，其他值不執行），效果只到重開機；在 `spawn_blocking` 執行緒等待 polkit 密碼視窗。`rapl`：把 `/sys/class/powercap/intel-rapl:*/energy_uj` 改為呼叫者主要群組（`id -gn $PKEXEC_UID`）可讀、`0440`，不開放給所有使用者（PLATYPUS 側通道，CVE-2020-8694）；`modules`：`modprobe drivetemp` 與 `modprobe it87 ignore_resource_conflict=1`，任一失敗即回傳失敗。結束碼 126／127 →「已取消或授權失敗」 |
 | `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時攔截 inspector 的 `attach` 訊號並回傳 `true` 取消嵌入 App，改由 `inspector_window` 把檢查器的 view 放進自建的 GTK 視窗「ResourceWatch 檢查器」；已開啟時只把視窗帶到前面，關閉視窗會一併關閉檢查器，反之亦然；`tauri` 啟用 `devtools` feature，release 版也可用） |
 | `set_dev_mode(on)` | — | 切換 WebKit `enable-developer-extras`：關閉時右鍵沒有「檢查元素」、也開不了檢查器 |
+| `get_widget_config()` | `widget::Config` | 讀桌面小工具設定（`widget::load`） |
+| `set_widget_config(cfg)` | `widget::Config` 或錯誤字串 | 整理後寫入 widget.json，回傳實際存入的值 |
 
+`main()` 第一個參數為 `--widget` 時直接執行 `widget::run()` 後結束，不建立 Tauri／GTK／WebKit。
 `Monitor` 與 `du::Cache` 各放一個 `Mutex` 由 Tauri 管理（`lock` 在鎖中毒時沿用內部值）。
 啟動時偵測到 NVIDIA 專有驅動（`/proc/driver/nvidia`）且使用者沒有自行設定時，設 `WEBKIT_DISABLE_DMABUF_RENDERER=1`：WebKitGTK 的 DMA-BUF 渲染在 X11 會空白、在 Wayland 縮放會落後。
 
@@ -124,6 +128,14 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
   CPU 功耗：`/sys/class/powercap/intel-rapl:*`（`Monitor.rapl` 保存各區域上次的 `energy_uj`），功耗＝差值／經過秒數（µJ → W），計數器歸零時以 `energy_delta` 加上 `max_energy_range_uj`；第一次取樣不輸出。以 chip `intel-rapl`、device 為 CPU 型號、label 為區域名稱（`package-0`／`core`／`dram`／`uncore`）、kind `power` 加入 sensors；`energy_uj` 讀不到時 `raplLocked` 為 `true`。溫度的 `crit` 取 `tempN_crit`，沒有時 `tempN_max`，超出 0–150 °C 視為無效（nvme 會回報 65261 °C）。`device`（`sensor_device`）：`coretemp`／`k10temp`／`zenpower`／`cpu_thermal` → `clean_cpu_name` 後的 CPU 型號（`/proc/cpuinfo` 只讀一次，`OnceLock`）；
   `nvme`／`drivetemp` → `<hwmon>/device/model`（`_` 換空格，沒有時為「硬碟」）；`acpitz` → 主機板（ACPI）；`it8*`／`nct*` → 主機板；`amdgpu`／`radeon`／`nouveau`／`i915`／`xe` → 顯示卡；其他沿用 chip 名稱。`chip` 保留給 CPU 溫度判斷。
   NVIDIA 的溫度不在 hwmon：`nvml_sensors` 把 NVML 顯示卡（`Gpu.nvml`）的溫度（「核心」）、風扇 %（`percent`）、功耗（`power`，W）以 chip `nvidia`、device 為顯示卡型號附加在最後；讀不到的項目略過。
+
+### src/widget.rs
+
+桌面小工具（Plasma plasmoid）的設定與資料來源。
+- 設定檔：`$XDG_CONFIG_HOME/resourcewatch/widget.json`（沒有該變數時 `~/.config`）。`Config { items, interval, nic }`：`items` 為卡片順序（`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval` 為更新秒數、`nic` 為網路卡介面（null＝有預設閘道者）。
+  缺欄位用預設值（`cpu`、`mem`、`net`，2 秒，自動），JSON 壞掉或檔案不存在時整份用預設；讀寫都經 `clean`：去掉未知與重複的項目、`interval` 限制在 2–60（每次執行本身約需 1 秒）。`save` 自動建立資料夾。
+- `run()`（`resourcewatch --widget`）：新建 `Monitor`，取樣一次、等 1 秒再取樣（速率需要兩次讀數，不保存狀態檔），印出一行 `{ "config": Config, "snapshot": Snapshot }`，`Snapshot` 與 `snapshot` 指令相同。
+- 單元測試：設定解析（壞 JSON、空物件、未知／重複項目、間隔下限）。
 
 ### src/du.rs
 

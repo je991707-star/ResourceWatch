@@ -25,11 +25,11 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - [x] ✅ 本計畫存為 `docs/Widget_Plan.md`，commit。
 
 ## Phase 1：後端 CLI 與設定檔（src-tauri/src/main.rs、Cargo.toml）
-- [ ] `main()` 開頭偵測 `--widget`：不啟動 Tauri，`sys::Monitor` 取樣兩次，`serde_json` 印 `{ config, snapshot }` 後結束（Cargo.toml 明列 `serde_json`）。確認此路徑不初始化 GTK／WebKit。
-- [ ] 新指令 `get_widget_config`／`set_widget_config(cfg)`：讀寫 `$XDG_CONFIG_HOME/resourcewatch/widget.json`（預設 `~/.config`），壞檔或缺檔回預設值。
-- [ ] 設定欄位：`items`（有序陣列：`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval`（秒）、`nic`（null＝自動，同儀表板邏輯）。
-- [ ] 單元測試：設定檔解析（缺欄位、壞 JSON → 預設）。
-- [ ] 更新 Architecture（main.rs 章節；開頭「沒有設定檔」改為只有 widget.json），commit。
+- [x] ✅ `main()` 開頭偵測 `--widget`：不啟動 Tauri，`sys::Monitor` 取樣兩次，`serde_json` 印 `{ config, snapshot }` 後結束（Cargo.toml 明列 `serde_json`）。確認此路徑不初始化 GTK／WebKit。
+- [x] ✅ 新指令 `get_widget_config`／`set_widget_config(cfg)`：讀寫 `$XDG_CONFIG_HOME/resourcewatch/widget.json`（預設 `~/.config`），壞檔或缺檔回預設值。
+- [x] ✅ 設定欄位：`items`（有序陣列：`cpu`／`mem`／`gpu`／`net`／`disk`／`temp`）、`interval`（秒）、`nic`（null＝自動，同儀表板邏輯）。
+- [x] ✅ 單元測試：設定檔解析（缺欄位、壞 JSON → 預設）。
+- [x] ✅ 更新 Architecture（main.rs 章節；開頭「沒有設定檔」改為只有 widget.json），commit。
 - 驗收：`resourcewatch --widget | jq` 有 config、速率非 null；執行時間約 1 秒出頭。
 
 ## Phase 2：ResourceWatch 設定頁（frontend/app.js、style.css）

@@ -2,6 +2,7 @@ mod du;
 mod gpu;
 mod icons;
 mod sys;
+mod widget;
 
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -133,6 +134,17 @@ mod tests {
 }
 
 #[tauri::command]
+fn get_widget_config() -> widget::Config {
+    widget::load()
+}
+
+/// Returns the config as saved (unknown items dropped, interval clamped).
+#[tauri::command]
+fn set_widget_config(cfg: widget::Config) -> Result<widget::Config, String> {
+    widget::save(cfg)
+}
+
+#[tauri::command]
 fn dir_children(path: String, cache: DirCache) -> Vec<du::Entry> {
     lock(&cache).children(&path)
 }
@@ -192,6 +204,9 @@ fn inspector_window(i: &webkit2gtk::WebInspector) {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--widget") {
+        return widget::run();
+    }
     // NVIDIA proprietary driver: WebKitGTK's DMA-BUF renderer leaves the window blank on X11
     // and lags behind resizes on Wayland. Set before any thread starts.
     if std::path::Path::new("/proc/driver/nvidia").exists()
@@ -230,7 +245,9 @@ fn main() {
             dir_children,
             app_icons,
             open_devtools,
-            set_dev_mode
+            set_dev_mode,
+            get_widget_config,
+            set_widget_config
         ])
         .run(tauri::generate_context!())
         .expect("failed to start ResourceWatch");
