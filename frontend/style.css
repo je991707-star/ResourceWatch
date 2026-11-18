@@ -298,11 +298,16 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; }
 
 /* storage analyzer */
-.du-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.du-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 20px; }
 .du-head .folder { width: 44px; font-size: 38px; color: var(--blue); }
-.du-head .path { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.du-head .path { display: flex; flex-direction: column; min-width: 0; flex: 1 1 240px; }
 .du-head .path b { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .du-head .path span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.du-head .path p { margin: 0; font-size: 13px; }
+.du-head .path p i { font-style: normal; white-space: nowrap; } /* stats wrap between items, never inside one */
+/* buttons move to their own line as a group when the window is too narrow */
+.du-actions { display: flex; gap: 14px; min-width: 0; margin-left: auto; }
+.du-actions .btn { white-space: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: var(--field); color: var(--text); font: inherit; font-size: 14px; padding: 8px 14px; cursor: pointer; }
 .btn:hover { background: var(--sel); }
 .btn:disabled { opacity: .5; cursor: default; }
@@ -310,7 +315,10 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .pick-disk { position: relative; max-width: 320px; }
 .pick-disk select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font: inherit; }
 .pick-disk:has(select:disabled) { opacity: .5; }
-.du { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+/* side by side when both fit, otherwise the file list drops below at full width */
+.du { display: flex; flex-wrap: wrap; gap: 22px; align-items: start; }
+.du > :first-child { flex: 999 1 420px; min-width: 0; }
+.du > :last-child { flex: 1 1 340px; min-width: 0; }
 .levels { display: grid; grid-template-columns: 110px 1fr; gap: 0 14px; align-items: center; }
 .lvl-name { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 13px; text-align: center; overflow: hidden; }
 .lvl-name .i { width: auto; font-size: 38px; color: var(--blue); }
@@ -336,7 +344,7 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .blk.rest { cursor: default; background: var(--gray); }
 .s0 { background: #4fc95e; } .s1 { background: #4ccfae; } .s2 { background: #44bcd0; } .s3 { background: #3fa3e0; } .s4 { background: #3a80ea; }
 .s5 { background: #7d63e6; } .s6 { background: #a656dc; } .s7 { background: #c84fb8; } .s8 { background: #d84a82; } .s9 { background: #e2575a; }
-.scale { display: flex; flex-direction: column; gap: 4px; width: 280px; margin: 24px 0 0 auto; font-size: 11px; color: var(--muted); }
+.scale { display: flex; flex-direction: column; gap: 4px; width: min(280px, 100%); margin: 24px 0 0 auto; font-size: 11px; color: var(--muted); }
 .scale div { display: flex; height: 14px; border-radius: 4px; overflow: hidden; }
 .scale div i { flex: 1; }
 .scale p { display: flex; justify-content: space-between; margin: 0; }
