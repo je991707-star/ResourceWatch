@@ -28,8 +28,8 @@ PlasmoidItem {
         if (s.gpus.length) push("gpu", s.gpus[0].usage);
         const n = Fmt.nic(s, cfg.nic);
         if (n) { push("rx", n.rxBps); push("tx", n.txBps); }
-        push("r", s.disks.reduce((a, d) => a + (d.readBps ?? 0), 0));
-        push("w", s.disks.reduce((a, d) => a + (d.writeBps ?? 0), 0));
+        push("r", Fmt.sum(s.disks, "readBps"));
+        push("w", Fmt.sum(s.disks, "writeBps"));
         hist = h;
     }
 
@@ -68,15 +68,19 @@ PlasmoidItem {
 
         Repeater {
             model: root.snap ? root.cfg.items : []
-            Card {
+            Loader {
                 required property string modelData
-                theme: colors
-                title: Fmt.TITLES[modelData]
-                Repeater {
-                    model: Fmt.lines(modelData, root.snap, root.cfg)
-                    Text { required property string modelData; text: modelData; color: colors.text; elide: Text.ElideRight; Layout.fillWidth: true }
-                }
+                Layout.fillWidth: true
+                sourceComponent: ({ cpu: cpu, mem: mem, gpu: gpu, net: net, disk: disk, temp: temps })[modelData] ?? null
             }
         }
     }
+
+    // Inline components so the cards bind to this file's snap/hist/cfg.
+    Component { id: cpu; CpuCard { theme: colors; snap: root.snap; hist: root.hist } }
+    Component { id: mem; MemCard { theme: colors; snap: root.snap } }
+    Component { id: gpu; GpuCard { theme: colors; snap: root.snap; hist: root.hist } }
+    Component { id: net; NetCard { theme: colors; snap: root.snap; hist: root.hist; cfg: root.cfg } }
+    Component { id: disk; DiskCard { theme: colors; snap: root.snap; hist: root.hist } }
+    Component { id: temps; TempCard { theme: colors; snap: root.snap } }
 }

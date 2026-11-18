@@ -180,8 +180,8 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 
 - `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
-- 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總）。
-- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面為直向 `ColumnLayout`（寬 300、最小 220、卡片間距 12），依 `cfg.items` 順序以 `Repeater` 產生卡片，內容目前為 `Fmt.lines` 的文字列。
+- 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
+- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面為直向 `ColumnLayout`（寬 300、最小 220、卡片間距 12），依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
 
 ### contents/ui/Theme.qml
 
@@ -189,12 +189,32 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 
 ### contents/ui/Card.qml
 
-儀表板卡片：圓角 16、無邊框、`theme.card` 底色，內距上 14／其他 18，標題（15 px 粗體）與內容間距 10；`default property` 讓子元件放進內容欄。
+儀表板卡片：圓角 16、無邊框、`theme.card` 底色，內距上 14／其他 18，標題列（15 px 粗體，過長截斷）右端可放 muted 小字 `extra`（溫度、總量、網卡名稱），標題與內容、內容各區塊之間距 10；`default property` 讓子元件放進內容欄。
+
+### contents/ui/CpuCard.qml、MemCard.qml、GpuCard.qml、NetCard.qml、DiskCard.qml、TempCard.qml
+
+各自繼承 `Card`，屬性 `snap`（必要）、`hist`、`cfg`（只有網路卡用）。
+- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；下方藍色曲線（`hist.cpu`）。
+- 記憶體：`extra` 為總量；大字為使用率、其下「N 已使用」；堆疊條：應用程式（used，黃）、快取（藍）、可用（total − used − cached，綠）；圖例四列（含 SWAP 已用／總量，沒有 SWAP 時隱藏）。
+- 顯示卡：只看第一張；標題為型號、`extra` 為溫度；左為青色使用率圓環（中間百分比），右為顯示記憶體／編碼器／解碼器三條細條（`Legend` 加 5 px `StackBar`）；下方青色曲線。沒有顯示卡時顯示「沒有顯示卡」。
+- 網路：`Fmt.nic(snap, cfg.nic)` 選介面，`extra` 為介面名；兩欄大字下載（藍點）／上傳（桃紅點）；下方 `Mirror` 上傳在上、下載在下。
+- 磁碟：兩欄大字為所有硬碟讀取（桃紅）／寫入（藍）加總，`Mirror` 讀取在上；其下每顆有掛載的硬碟一列型號（`_` 換空格）與「已用 / 總量」，配黃色細用量條。
+- 溫度：`Fmt.temps` 前 8 個裝置，名稱 muted、數值靠右；達到 `crit` 時紅色粗體。
+
+### contents/ui/Chart.qml、Mirror.qml、StackBar.qml、Ring.qml、Big.qml、Legend.qml
+
+對應 app.js 的繪圖函式，皆以 `Canvas` 繪製，資料或寬度改變時 `requestPaint`。
+- `Chart`：面積曲線，固定 60 格、最新點在右緣，`null` 斷線；背景頂端與中間虛線、底部實線（`grid` 色）；線寬 1.5、面積 25% 透明；`max` 預設 100。
+- `Mirror`：上下對稱條狀圖，60 格、間隔 1 px，上下各自依序列最大值（至少 1）縮放，0 畫成 1 px 短條。
+- `StackBar`：以圓角矩形 `clip` 的軌道（`color`）上依序畫各段（`segments: [{ value, color }]`，對 `total` 的比例）——圓角用 clip 路徑而不是 Rectangle，各段才不會在兩端露出直角。
+- `Ring`：圓環，圓頭線端，從 12 點鐘方向順時針，`value` 0–100。
+- `Big`：彩色圓點＋22 px 粗體數值，其下 12 px muted 說明；內部兩列都 `Layout.fillWidth`，否則欄的最大寬度被限制為內容寬，兩個 `Big` 並排時無法平分。
+- `Legend`：（可選彩色圓點）標籤靠左 muted、數值靠右，12 px。
 
 ### contents/ui/fmt.js
 
 `.pragma library`，與 app.js 同邏輯的 `bytes`／`rate`／`pct`／`ratio`；`temp` 固定 °C（App 的 °C／°F 存在 WebView localStorage，小工具讀不到）。
-`nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度；`TITLES` 為卡片標題；`lines(key, s, cfg)` 為各卡片的文字列（處理器使用率與溫度、記憶體已用／總量、第一張顯示卡、網路上下行、所有硬碟讀寫加總、前 4 個裝置溫度）。
+`nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度（`{ device, value, crit }`）；`sum(list, key)`：各硬碟某欄位的加總，全部缺值時為 null。
 
 ## frontend/
 

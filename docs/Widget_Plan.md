@@ -47,14 +47,14 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收（系統沒有 plasmoidviewer，改為 kpackagetool6 安裝後加到桌面測試）： 顯示數值且每 N 秒更新、項目增刪排序會反映。
 
 ## Phase 4：卡片視覺（儀表板風格）
-- [ ] `CpuCard`：大字 %、迷你面積曲線（Canvas）、溫度。
-- [ ] `MemCard`：%、堆疊條（應用程式黃／快取藍／可用綠）。
-- [ ] `GpuCard`：圓環＋使用率、VRAM、溫度。
-- [ ] `NetCard`：↓藍／↑桃紅兩欄速率＋上下對稱小條狀圖。
-- [ ] `DiskCard`：讀寫速率＋用量條。
-- [ ] `TempCard`：依裝置分組的前幾個溫度。
-- [ ] 更新 Architecture，commit。
-- 驗收：plasmoidviewer 深／淺色截圖比對儀表板卡片樣式。
+- [x] ✅ `CpuCard`：大字 %、迷你面積曲線（Canvas）、溫度。
+- [x] ✅ `MemCard`：%、堆疊條（應用程式黃／快取藍／可用綠）。
+- [x] ✅ `GpuCard`：圓環＋使用率、VRAM、溫度。
+- [x] ✅ `NetCard`：↓藍／↑桃紅兩欄速率＋上下對稱小條狀圖。
+- [x] ✅ `DiskCard`：讀寫速率＋用量條。
+- [x] ✅ `TempCard`：依裝置分組的前幾個溫度。
+- [x] ✅ 更新 Architecture，commit。
+- 驗收：以 `qml`（offscreen）載入六張卡片與真實 `--widget` 資料截圖比對（淺色）；桌面上需重啟 plasmashell 才會載入新版 QML。
 
 ## Phase 5：安裝與收尾（install.sh、版本）
 - [ ] 修正 install.sh 舊版 widget 偵測：`grep -q "$ID"` 會誤中新 id `io.github.local.resourcewatch.widget`，改為整行比對。
