@@ -33,3 +33,11 @@ function temps(s) {
     }
     return out;
 }
+// Compact rate for the panel: "980B", "1.4K", "12M" (per second implied).
+function short(b) {
+    if (b == null) return "--";
+    const u = ["B", "K", "M", "G"];
+    let i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1024; i++; }
+    return (i && b < 10 ? b.toFixed(1) : b.toFixed(0)) + u[i];
+}

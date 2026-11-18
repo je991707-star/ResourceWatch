@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
+import org.kde.kirigami as Kirigami
 import "fmt.js" as Fmt
 
 PlasmoidItem {
@@ -25,6 +26,14 @@ PlasmoidItem {
     // card under the pointer when Plasma's context menu opened, for its "close card" entry
     property string menuKey: ""
     onContextualActionsAboutToShow: menuKey = fullRepresentationItem?.cardUnderPointer() ?? ""
+    // In a panel: compact items, a click opens only that item's card (popupKey) in the popup
+    readonly property bool inPanel: Plasmoid.formFactor === PlasmaCore.Types.Horizontal || Plasmoid.formFactor === PlasmaCore.Types.Vertical
+    property string popupKey: ""
+    function togglePopup(key) {
+        if (expanded && popupKey === key) { expanded = false; return; }
+        popupKey = key;
+        expanded = true;
+    }
     readonly property var titles: ({ app: "ResourceWatch", cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
 
     Plasmoid.contextualActions: [
@@ -39,8 +48,8 @@ PlasmoidItem {
 
     Theme { id: colors; cardOpacity: (root.cfg.opacity ?? 100) / 100 }
 
-    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
-    preferredRepresentation: fullRepresentation
+    Plasmoid.backgroundHints: inPanel ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
+    preferredRepresentation: inPanel ? compactRepresentation : fullRepresentation
 
     // Move the whole widget with a plain press on a card's title row or the gaps, while a long press on a
     // card's content reorders cards: the desktop wraps each widget in a containmentlayoutmanager
@@ -54,6 +63,7 @@ PlasmoidItem {
         return p;
     }
     function allowDrag() {
+        if (inPanel) return; // desktop only
         const c = container();
         if (c) c.editModeCondition = Plasmoid.immutable ? 0 /* Locked */ : overBody || dragKey ? 1 /* Manual */ : 3 /* AfterPress */;
     }
@@ -88,6 +98,7 @@ PlasmoidItem {
         const h = Object.assign({}, hist); // a new object so bindings on `hist` update
         const push = (key, v) => { h[key] = (h[key] ?? []).concat([v]).slice(-60); };
         push("cpu", s.cpu.usage);
+        push("mem", Fmt.ratio(s.mem.used, s.mem.total));
         if (s.gpus.length) push("gpu", s.gpus[0].usage);
         const n = Fmt.nic(s, cfg.nic);
         if (n) { push("rx", n.rxBps); push("tx", n.txBps); }
@@ -126,13 +137,55 @@ PlasmoidItem {
         }
     }
 
+    compactRepresentation: Item {
+        id: compact
+        readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+        Layout.minimumWidth: vertical ? -1 : grid.implicitWidth
+        Layout.preferredWidth: vertical ? -1 : grid.implicitWidth
+        Layout.minimumHeight: vertical ? grid.implicitHeight : -1
+        Layout.preferredHeight: vertical ? grid.implicitHeight : -1
+        GridLayout {
+            id: grid
+            anchors.fill: parent
+            flow: compact.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+            rows: compact.vertical ? -1 : 1
+            columns: compact.vertical ? 1 : -1
+            rowSpacing: 6
+            columnSpacing: 10
+            Repeater {
+                model: root.snap ? root.cfg.items : []
+                PanelItem {
+                    required property string modelData
+                    key: modelData
+                    theme: colors
+                    snap: root.snap
+                    hist: root.hist
+                    cfg: root.cfg
+                    vertical: compact.vertical
+                    Layout.fillHeight: !compact.vertical
+                    Layout.fillWidth: compact.vertical
+                    onClicked: root.togglePopup(modelData)
+                }
+            }
+        }
+        // before the first sample (or on an error) just the app icon; a click shows the status card
+        Kirigami.Icon {
+            anchors.fill: parent
+            visible: !root.snap
+            source: "io.github.local.resourcewatch"
+            MouseArea { anchors.fill: parent; onClicked: root.togglePopup("") }
+        }
+    }
+
     // Fixed layout: two columns of 282 px cards (item i goes to column i % 2, so the default six are
     // three on the left, three on the right). Minimum = maximum = the content size, so the desktop's
     // resize handles cannot change it; the size follows the content when cards are added or removed.
     fullRepresentation: Item {
         id: full
         readonly property int cardWidth: 282
-        readonly property int cols: 2
+        // in a panel's popup: one column with only the clicked item's card, no app card, no reordering
+        readonly property bool single: root.inPanel
+        readonly property int cols: single ? 1 : 2
         property point dragFrom
         property real dragDx: 0
         property real dragDy: 0
@@ -171,7 +224,7 @@ PlasmoidItem {
         // card is read from the hover position when the menu is about to show (contextualActionsAboutToShow)
         HoverHandler { id: hover }
         function cardUnderPointer() { return hover.hovered ? cardAt(hover.point.position) : ""; }
-        function holdStart(key, p) { dragFrom = p; dragDx = 0; dragDy = 0; root.dragKey = key; dropIndex = -1; }
+        function holdStart(key, p) { if (single) return; dragFrom = p; dragDx = 0; dragDy = 0; root.dragKey = key; dropIndex = -1; }
         function holdMove(p) { dragDx = p.x - dragFrom.x; dragDy = p.y - dragFrom.y; dropIndex = slotAt(p); }
         // dropping on another slot swaps the two cards; the order is saved through `--widget-order`
         function holdEnd(p) {
@@ -228,13 +281,13 @@ PlasmoidItem {
                             readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
                             theme: colors
                             readonly property bool isApp: true
-                            visible: root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
+                            visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
                             Layout.fillWidth: true
                             Layout.preferredHeight: gap
                         }
                         Repeater {
                             id: cardRep
-                            model: root.snap ? root.cfg.items.filter((_, i) => i % full.cols === col) : []
+                            model: !root.snap ? [] : full.single ? (root.popupKey ? [root.popupKey] : []) : root.cfg.items.filter((_, i) => i % full.cols === col)
                             Loader {
                                 id: ld
                                 required property string modelData

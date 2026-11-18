@@ -175,7 +175,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 
 ## widget/
 
-KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widget`，`FormFactors: desktop`），以 `kpackagetool6 -t Plasma/Applet` 安裝到 `~/.local/share/plasma/plasmoids/`。純 QML，沒有編譯步驟；資料全部來自 `resourcewatch --widget`（見 src/widget.rs），不必開著主程式。
+KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，`FormFactors: desktop`——指桌機平台，可放在桌面也可放進面板），以 `kpackagetool6 -t Plasma/Applet` 安裝到 `~/.local/share/plasma/plasmoids/`。純 QML，沒有編譯步驟；資料全部來自 `resourcewatch --widget`（見 src/widget.rs），不必開著主程式。
 
 ### metadata.json
 
@@ -185,13 +185,21 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 
 - `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
-- 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
+- 放在面板（`inPanel`：`Plasmoid.formFactor` 為 Horizontal／Vertical）：`preferredRepresentation` 改為 `compactRepresentation`、背景用 Plasma 預設；`compactRepresentation` 以 `GridLayout`（水平面板一列、垂直面板一欄，間距 10／6）依 `cfg.items` 排出 `PanelItem`，點一項呼叫 `togglePopup(key)`：記下 `popupKey` 並展開，再點同一項收合；第一次取得資料前只顯示 App 圖示。彈出視窗沿用 `fullRepresentation`，`single` 為 true 時只有一欄、只放 `popupKey` 那張卡片，不顯示 App 格子、不能長按重排。`allowDrag` 在面板中不動作（容器的編輯模式只對桌面）。設定（項目、順序、間隔、網卡）與桌面版共用同一份 widget.json。
+- 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`mem`（使用率 %，面板迷你圖用）、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
 - `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／網路／溫度，右三：顯示卡／磁碟／記憶體；main.qml 的預設 `cfg` 與後端預設相同），各欄靠上、卡片高度依內容。
   處理器所在欄的最上方有 `AppCard`（App 圖示與名稱），高度＝另一欄卡片總高 − 本欄卡片總高 − 間距，讓兩欄底部對齊；各欄的 `cardsHeight` 只加總 `Repeater` 產生的卡片（不含 `AppCard`），避免高度互相依賴；差距小於 48 或 `cfg.app` 為 false 時不顯示。處理器被拖到另一欄時跟著移過去。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
 
 - 移動整個小工具：桌面把每個小工具包在 containmentlayoutmanager 的 `ItemContainer` 裡，其 `editModeCondition` 決定按下時是否開始移動，而容器比卡片先收到按下事件。`allowDrag` 沿 `parent` 往上找到有 `editModeCondition` 的容器，依滑鼠位置切換：在卡片標題列或卡片之間的空白時為 `AfterPress`（按下即可拖動，同時出現縮放／設定／移除把手，點別處結束），滑鼠在卡片內容區（`overBody`）或正在拖曳卡片（`dragKey`）時為 `Manual`（不移動，讓卡片收到長按）；小工具被鎖定（`Plasmoid.immutable`）時為 `Locked`。在 `onParentChanged`、`overBody`／`dragKey`／`immutable` 改變時重設（會蓋掉桌面原本的繫結，所以鎖定狀態要自己處理）。
 - 重新排列卡片：`Card` 回報內容區的滑鼠停留（`bodyHovered`）與長按 400 ms 後的拖曳（`holdStarted`／`holdMoved`／`holdEnded`）；每個 `Loader` 以 `Connections` 轉給 `full` 的 `holdStart`／`holdMove`／`holdEnd`（座標換成 `full` 的座標）。拖曳中的卡片以 `Translate` 跟著滑鼠、放大 1.04、`z` 與所在欄提高到上層；`slotAt` 依 x 決定欄、依該欄各卡片的底部決定列（超過最後一張為該欄的空格），換算成 `cfg.items` 索引（超出時為最後一個），目標卡片半透明。放開時與目標交換位置（同一格或取消不動），`setOrder` 立即更新 `cfg.items`，並以第二個 executable `DataSource`（`saver`）執行 `resourcewatch --widget-order …` 存檔（`setApp` 同理執行 `--widget-app`，共用 `save`）；存檔前已開始的 `--widget` 會印出舊值，所以 `pending` 保留小工具自己改過的欄位，蓋過輸出中的舊值，直到輸出一致為止；存檔失敗時清空 `pending` 並顯示錯誤。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
 - 關閉卡片：`Plasmoid.contextualActions` 在 Plasma 的右鍵選單加一項「關閉「<卡片標題>」卡片」（`window-close` 圖示，標題對照 `titles`）。桌面容器會先攔下右鍵按下事件並開啟選單，小工具收不到，所以改在 `contextualActionsAboutToShow` 時以 `full` 上 `HoverHandler` 的游標位置經 `cardAt` 找出卡片存進 `menuKey`（`cardAt` 也認得 App 格子，回傳 `app`）；游標在卡片間空白、或只剩一張卡片時不顯示此項。選取後一般卡片以 `setOrder` 從 `cfg.items` 移除、App 格子以 `setApp(false)` 隱藏，都寫回 widget.json，可在 ResourceWatch 設定頁重新加入／顯示。
+
+### contents/ui/PanelItem.qml
+
+面板中的一項（iStat Menus 風格）：Plasma 圖示（`cpu`／`memory`／`video-display`／`network-wired`／`drive-harddisk`／`temperature-normal`）、數值與迷你圖，整項可點擊（`clicked` 訊號）。
+- 數值：處理器／記憶體／顯示卡為使用率 %，溫度為 CPU 溫度；網路為兩行「↓下載」「↑上傳」、磁碟為兩行「R 讀取」「W 寫入」（`Fmt.short`）。文字色跟隨面板（`Kirigami.Theme.textColor`），字級依面板厚度（單行 42%、兩行各 30%），數值欄以 `TextMetrics` 量最寬的樣本（`100%`／`↓9.9M`／`100 °C`）固定寬度，數字變動時不會左右跳動。
+- 迷你圖寬 32、高為厚度 60%：處理器（藍）、記憶體（黃）、顯示卡（青）為無格線的 `Chart`；網路與磁碟為 `Mirror`（上傳／讀取桃紅在上）；溫度沒有圖。
+- 垂直面板只顯示圖示與第一個數值，上下排列（寬度放不下迷你圖）。
 
 ### contents/ui/AppCard.qml
 
@@ -229,7 +237,7 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 ### contents/ui/fmt.js
 
 `.pragma library`，與 app.js 同邏輯的 `bytes`／`rate`／`pct`／`ratio`；`temp` 固定 °C（App 的 °C／°F 存在 WebView localStorage，小工具讀不到）。
-`nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度（`{ device, value, crit }`）；`sum(list, key)`：各硬碟某欄位的加總，全部缺值時為 null。
+`nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度（`{ device, value, crit }`）；`sum(list, key)`：各硬碟某欄位的加總，全部缺值時為 null；`short(b)`：面板用的精簡速率（B／K／M／G，以 1000 為進位門檻、1024 為除數，個位數時一位小數）。
 
 ## frontend/
 
