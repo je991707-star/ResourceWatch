@@ -493,7 +493,7 @@ const PAGES = {
       row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
       row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
       row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
-    ].join(''))}${card('關於', `<div class="about">ResourceWatch 0.3.3 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
+    ].join(''))}${card('關於', `<div class="about">ResourceWatch 0.3.4 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
   }],
 
