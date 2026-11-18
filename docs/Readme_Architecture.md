@@ -188,11 +188,13 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
   - 顯示卡卡片：只有一張，第一列晶片圖示、型號（過長截斷）與 ‹ ›（多張顯示卡時切換，預設第一張），右側溫度；第二列左為使用率環，右為顯示記憶體／編碼器／解碼器三條使用率；分隔線下為使用率曲線。
   - 設定：主題（跟隨系統／深色／淺色）、更新間隔（0.5／1／2／5 秒，改變時重設計時器；歷史保留 120 筆：條狀圖顯示全部，曲線顯示最後 60 筆）、溫度單位（°C／°F，所有溫度都經 `temp()` 換算）、
     儀表板網路卡（自動＝有預設閘道者，或指定介面）、開發者模式（開啟後顯示「開啟檢查器」按鈕，並可用 F12／Ctrl+Shift+I 呼叫 `open_devtools`；關閉時不攔截按鍵。開發者模式下左下角多一個暫停鈕（或 F8）：暫停時 `tick` 與 `pollProcs` 直接返回、畫面不重繪，檢查器的元素樹不會被重建，切頁與點擊仍正常；關閉開發者模式即解除暫停。`applyPrefs` 每次都以 `set_dev_mode` 同步，啟動時也會關掉 wry 預設開啟的 developer extras）；「關於」顯示版本、系統與 Font Awesome 授權。
-  - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的顯示位址（IPv4 帶 `/前綴`）、大字速率與累計（有 speed 時附頻寬使用率 %＝位元速率／連線速度）、上傳在上／下載在下的大條狀圖；
-    Wi-Fi 連線中先有一區 `wifiDetails`：SSID、BSSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代；
-    其後分隔線下 `nicDetails` 以 `kv` 列驅動程式、MTU、IPv6、DNS（多筆換行，`.kv b.multi`）、封包、錯誤、丟棄（↓ 接收／↑ 傳送；錯誤與丟棄非 0 時紅字 `.kv b.bad`）。`kv` 的每組可帶第三個值作為數值的 class。
-    網卡卡片之後是「TCP」卡（`tcpCard`，第一次取回前不顯示）：`kv` 列已建立、監聽、TIME_WAIT、CLOSE_WAIT、連線中（SYN_SENT＋SYN_RECV）、關閉中（FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與重傳率（兩次輪詢間，取到小數 2 位）；
-    再來是「連線」卡（`connCard`）：說明只列出目前使用者的程序，`.procs` 斑馬紋表格每個程序一列：應用圖示與名稱（提示含 PID）、遠端位址（去重後前 3 個＋「+N」，提示列出全部）、已連線數（有遠端者）、監聽數；依已連線、監聽、名稱排序。
+  - 網路：每張網卡一張卡，標題為介面名稱與網卡型號（過長截斷），右側為連線速度與雙工（如「1 Gb/s 全雙工」；Wi-Fi 連線中改顯示 SSID 與 dBm）及綠／紅點連線狀態；連線中的依序為：
+    位址列 `addrBlock(n, dns)`（`.addr` 三欄：IPv4 帶 `/前綴` 與 MAC、預設閘道、DNS（逗號串接，提示逐行列出））、大字速率與累計（有 speed 時附頻寬使用率 %＝位元速率／連線速度）與上傳在上／下載在下的大條狀圖、
+    分隔線下的 `.details` 欄位格（`auto-fit` 每欄至少 240 px）：Wi-Fi 連線中第一欄為 `wifiDetails`（SSID、訊號（dBm 與 NetworkManager 換算的 %＝2×(dBm+100)，限 0–100）、頻段（由頻率算 2.4／5／6 GHz 與頻道號）與頻寬、收／發連線速率、Wi-Fi 世代、BSSID），
+    接著 `nicDetails` 的「介面」（驅動程式、MTU、每個 IPv6 一列）與「統計」（封包／錯誤／丟棄 × 接收／傳送的小表格，錯誤與丟棄非 0 時紅字）。
+    這些清單用 `lv(title, items)`：`.cap` 小標題加 `.lv` 表格，標籤靠左（muted，`th:first-child` 縮到內容寬）、數值靠右單行截斷（提示為完整值），每列第三個值可作為數值的 class。
+    網卡卡片之後是「連線」卡（`connCard`）：標題右側小字「程序清單僅含目前使用者」（提示說明其他使用者需管理員權限、TCP 狀態為全系統）；最上方 `tcpStats` 為一排 `.stats` 數字（第一次取回前不顯示）：已建立、監聽、TIME_WAIT、CLOSE_WAIT、連線中（SYN_SENT＋SYN_RECV）、關閉中（FIN_WAIT1／2、LAST_ACK、CLOSING、CLOSE）與 TCP 重傳率（兩次輪詢間，取到小數 2 位）；
+    分隔線下為 `.procs` 斑馬紋表格，每個程序一列：應用圖示與名稱（提示含 PID）、遠端位址（去重後前 3 個＋「+N」，提示列出全部）、已連線數（有遠端者）、監聽數；依已連線、監聽、名稱排序。
   - 感測器：依張數平均分欄（`evenCols`：欄數比照 `.masonry`，由 `#content` 內寬算出最多 3 欄、每欄至少 330 px、間距 24；張數平均分配、前面的欄多放餘數，例如 6 張為 3:3 或 2:2:2；`.cols`／`.col` 為 flex；視窗縮放時在感測器頁重繪），所有磁碟（`sensorIcon` 為 `storage` 的 nvme／drivetemp）合併成一張「磁碟」卡排在最後，每顆一段（`h3.sub` 圖示＋型號，第二顆起以 `.sect` 分隔線隔開），讓硬碟排在一起；依 `device` 分組（`sensorGroups`，與儀表板共用），卡片標題為類型圖示（`sensorIcon`：處理器晶片、硬碟、顯示卡（含 `nvidia`）`fa-display`、其他為主機板 `fa-server`）與裝置名稱（過長截斷）；
     項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」；RAPL 區域 `package-N`／`core`／`dram`／`uncore` → 封裝／核心／記憶體／內顯功耗，與 CPU 溫度同一張卡。頁首提示（`.hint`）：需要時顯示「載入需要管理員權限的感測器」（`.hint > span` 佔滿一行），下方為按鈕（`data-elevate`）——沒有 `it8*`／`nct*` 晶片、或有 `sd*` 硬碟但沒有 `drivetemp` 時顯示「更多感測器」→ `elevate("modules")`；`raplLocked` 時顯示「CPU功耗」→ `elevate("rapl")`；兩者都不需要時整列不顯示。`elev` 記錄執行中的動作（按鈕停用、顯示「等待授權…」）與上次錯誤（`.hint.err` 紅字）；成功後新數值由下一次快照帶出。App 不自動提權，開機自動載入仍依 `docs/Sensors_Improvement.md` 手動設定。同型號的兩顆硬碟會併在同一張卡。
     卡片內容由 `sensorBody` 產生：有名稱的讀數依種類分段（`KIND_NAME`：溫度／風扇（含 %）／電壓／功耗，只有一種時不顯示分段標題）；沒有名稱的（`tempN`／`inN`／`powerN`）與 0 rpm 的風扇（多半是沒接的接口）收進 `<details class="raw">`「其他讀數（N）」，預設收合，展開狀態以裝置名稱存在 `rawOpen`（每秒重繪仍保留；點 `summary[data-raw]` 時取消瀏覽器預設切換、改由狀態重繪）。整張卡都沒有名稱時（例如 ACPI 溫度區）全部直接顯示。

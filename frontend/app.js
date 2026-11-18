@@ -54,7 +54,7 @@ function duration(s) {
 const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
-  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi',
+  pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi', dns: 'fa-solid fa-server',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
   display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
 };
@@ -124,7 +124,7 @@ function ring(rings, size, text) {
 }
 
 const card = (title, body, extra = '') => `<section class="card">${title ? `<h2>${title}${extra}</h2>` : ''}${body}</section>`;
-const kv = (pairs) => `<div class="kv">${pairs.map(([k, v, cls]) => `<div><span>${k}</span><b${cls ? ` class="${cls}"` : ''}>${esc(v)}</b></div>`).join('')}</div>`;
+const kv = (pairs) => `<div class="kv">${pairs.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
 const legend = (items) => `<div class="legend">${items.map(([cls, k, v]) => `<div><span><i class="dot ${cls}"></i>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
 const cap = (a, b) => `<div class="cap"><span>${a}</span><span>${b}</span></div>`;
 const more = (pg, t) => `<a class="more" data-goto="${pg}">${t}</a>`;
@@ -198,15 +198,18 @@ function memCard(s) {
     <div class="sect"><table class="zebra procs"><thead><tr><th>名稱</th><th class="num">記憶體</th></tr></thead>${rows || '<tr><td class="muted">讀取程序中…</td></tr>'}</table></div>${more('apps', '顯示應用程式…')}`, spec);
 }
 
-// Link details below the rates; error/drop counters turn red once non-zero.
-function nicDetails(n, dns) {
-  const pair = (rx, tx) => [`↓ ${rx.toLocaleString()}　↑ ${tx.toLocaleString()}`, rx + tx ? 'bad' : ''];
-  return `<div class="sect">${kv([
-    ['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'],
-    ['IPv6', n.ipv6.join('\n') || '--', 'multi'], ['DNS', dns.join('\n') || '--', 'multi'],
-    ['封包', `↓ ${n.rxPackets.toLocaleString()}　↑ ${n.txPackets.toLocaleString()}`, ''],
-    ['錯誤', ...pair(n.rxErrors, n.txErrors)], ['丟棄', ...pair(n.rxDropped, n.txDropped)],
-  ])}</div>`;
+// Titled label/value list; a row's third item is a class for the value.
+const lv = (title, items) => `<div>${cap(title, '')}<table class="lv">${items.map(([k, v, cls]) =>
+  `<tr><th>${k}</th><td class="${cls ?? ''}" title="${esc(v)}">${esc(v)}</td></tr>`).join('')}</table></div>`;
+
+// Interface facts and rx/tx counters side by side; error/drop counters turn red once non-zero.
+function nicDetails(n) {
+  const c = (v, warn) => `<td class="num${warn && v ? ' bad' : ''}">${v.toLocaleString()}</td>`;
+  const row = (k, rx, tx, warn) => `<tr><th>${k}</th>${c(rx, warn)}${c(tx, warn)}</tr>`;
+  return `${lv('介面', [['驅動程式', n.driver ?? '--'], ['MTU', n.mtu ?? '--'],
+    ...(n.ipv6.length ? n.ipv6 : ['--']).map((a, i) => [i ? '' : 'IPv6', a])])}
+    <div>${cap('統計', '')}<table class="lv"><thead><tr><th></th><th class="num">接收</th><th class="num">傳送</th></tr></thead>
+      <tbody>${row('封包', n.rxPackets, n.txPackets)}${row('錯誤', n.rxErrors, n.txErrors, true)}${row('丟棄', n.rxDropped, n.txDropped, true)}</tbody></table></div>`;
 }
 
 // Wi-Fi channel number from the center frequency (MHz).
@@ -214,26 +217,25 @@ const wifiChannel = (f) => (f === 2484 ? 14 : f < 2500 ? (f - 2407) / 5 : f < 59
 const wifiBand = (f) => (f < 2500 ? '2.4 GHz' : f < 5925 ? '5 GHz' : '6 GHz');
 
 function wifiDetails(w) {
-  const mb = (v) => (v == null ? '--' : `${v} Mb/s`);
-  return `<div class="sect">${kv([
-    ['SSID', w.ssid || '（隱藏）'], ['BSSID', w.bssid],
+  const mb = (v) => (v == null ? '--' : `${v}`);
+  return lv('Wi-Fi', [
+    ['SSID', w.ssid || '（隱藏）'],
     // NetworkManager's mapping: -100 dBm → 0%, -50 dBm → 100%
     ['訊號', w.signal == null ? '--' : `${w.signal} dBm · ${Math.max(0, Math.min(100, 2 * (w.signal + 100)))}%`],
     ['頻段', w.freq ? [wifiBand(w.freq), `頻道 ${wifiChannel(Math.round(w.freq))}`, w.width && `${w.width} MHz`].filter(Boolean).join(' · ') : '--'],
-    ['連線速率', `↓ ${mb(w.rxRate)}　↑ ${mb(w.txRate)}`], ['標準', w.generation ? `Wi-Fi ${w.generation}` : '--'],
-  ])}</div>`;
+    ['速率', `↓ ${mb(w.rxRate)} ↑ ${mb(w.txRate)} Mb/s`], ['標準', w.generation ? `Wi-Fi ${w.generation}` : '--'], ['BSSID', w.bssid],
+  ]);
 }
 
-// System-wide TCP socket states and the retransmitted share of sent segments.
-function tcpCard() {
+// System-wide TCP socket states and the retransmitted share of sent segments, as a strip of figures.
+function tcpStats() {
   if (!tcp) return '';
   const st = tcp.states, n = (...ks) => ks.reduce((a, k) => a + (st[k] ?? 0), 0);
-  return card('TCP', kv([
-    ['已建立', n('established')], ['監聽', n('listen')],
-    ['TIME_WAIT', n('time_wait')], ['CLOSE_WAIT', n('close_wait')],
-    ['連線中（SYN）', n('syn_sent', 'syn_recv')], ['關閉中', n('fin_wait1', 'fin_wait2', 'last_ack', 'closing', 'close')],
-    ['重傳率', tcp.retrans == null ? '--' : `${tcp.retrans.toFixed(2)}%`],
-  ]));
+  return `<div class="stats">${[
+    ['已建立', n('established')], ['監聽', n('listen')], ['TIME_WAIT', n('time_wait')], ['CLOSE_WAIT', n('close_wait')],
+    ['連線中', n('syn_sent', 'syn_recv')], ['關閉中', n('fin_wait1', 'fin_wait2', 'last_ack', 'closing', 'close')],
+    ['TCP 重傳率', tcp.retrans == null ? '--' : `${tcp.retrans.toFixed(2)}%`],
+  ].map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`;
 }
 
 // One row per process: remote peers (deduplicated, first 3 + count) and socket counts.
@@ -252,15 +254,16 @@ function connCard() {
     return `<tr><td class="grow" title="${esc(`${g.name}（PID ${g.pid}）`)}">${appIcon(g.name)}${esc(g.name)}</td>
       <td class="grow muted" title="${esc(r.join('\n'))}">${esc(shown || '--')}</td><td class="num">${g.open}</td><td class="num">${g.listen}</td></tr>`;
   }).join('');
-  return card('連線', `<p class="hint">只列出目前使用者的程序（其他使用者與系統服務的 socket 需要管理員權限）</p>
-    <table class="zebra procs"><thead><tr><th>名稱</th><th>遠端</th><th class="num">已連線</th><th class="num">監聽</th></tr></thead>
-    <tbody>${rows || '<tr><td class="muted">沒有連線</td></tr>'}</tbody></table>`);
+  const note = '<i class="spacer"></i><span class="spec" title="其他使用者與系統服務的 socket 需要管理員權限；上方 TCP 狀態為全系統">程序清單僅含目前使用者</span>';
+  return card('連線', `${tcpStats()}<div class="sect"><table class="zebra procs"><thead><tr><th>名稱</th><th>遠端</th><th class="num">已連線</th><th class="num">監聽</th></tr></thead>
+    <tbody>${rows || '<tr><td class="muted">沒有連線</td></tr>'}</tbody></table></div>`, note);
 }
 
-function addrBlock(n) {
+function addrBlock(n, dns) {
   return `<div class="addr">
     <div>${icon('pc')}<p><span>${esc(n.ip ? `${n.ip}/${n.prefix}` : '--')}</span><span class="muted sm">${esc(n.mac || '--')}</span></p></div>
-    <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div></div>`;
+    <div>${icon('router')}<p><span>${esc(n.gateway ?? '--')}</span><span class="muted sm">預設閘道</span></p></div>
+    <div>${icon('dns')}<p><span title="${esc(dns.join('\n'))}">${esc(dns.join(', ') || '--')}</span><span class="muted sm">DNS</span></p></div></div>`;
 }
 
 const peak = (k) => Math.max(0, ...(hist[k] ?? []).filter((v) => v != null));
@@ -464,7 +467,7 @@ const PAGES = {
   }],
 
   net: ['網路', (s) => {
-    if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${tcpCard()}${connCard()}</div>`;
+    if (!s.net.length) return `<div class="stack">${card('網路', '<div class="empty">沒有實體網路介面</div>')}${connCard()}</div>`;
     return `<div class="stack">${s.net.map((n) => {
       const title = `${esc(n.name)}${n.model ? `<span class="spec ell" title="${esc(n.model)}">${esc(n.model)}</span>` : ''}`;
       const link = n.wifi ? `<span class="spec">${esc(n.wifi.ssid)}${n.wifi.signal != null ? ` · ${n.wifi.signal} dBm` : ''}</span>` : n.speed ? `<span class="spec">${n.speed >= 1000 ? `${n.speed / 1000} Gb/s` : `${n.speed} Mb/s`}${{ full: ' 全雙工', half: ' 半雙工' }[n.duplex] ?? ''}</span>` : '';
@@ -472,11 +475,11 @@ const PAGES = {
       // share of link capacity; speed is Mb/s, rates are bytes/s
       const use = (bps) => (n.speed && bps != null ? ` · ${pct((bps * 8) / (n.speed * 1e4))}` : '');
       if (!n.up) return `<section class="card iface down"><h2>${title}${dot}</h2></section>`;
-      return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n)}<div class="speeds"><div>
+      return `<section class="card iface"><h2>${title}${dot}</h2>${addrBlock(n, s.dns)}<div class="speeds"><div>
           <div class="rate">${icon('down')}<b><i class="dot c-blue"></i>${rate(n.rxBps)}</b><span class="muted">${bytes(n.rxTotal)}${use(n.rxBps)}</span></div>
           <div class="rate">${icon('up')}<b><i class="dot c-magenta"></i>${rate(n.txBps)}</b><span class="muted">${bytes(n.txTotal)}${use(n.txBps)}</span></div></div>
-        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div>${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n, s.dns)}</section>`;
-    }).join('')}${tcpCard()}${connCard()}</div>`;
+        <div>${cap('速度', '')}${mirror({ data: hist[`tx:${n.name}`], cls: 'c-magenta' }, { data: hist[`rx:${n.name}`], cls: 'c-blue' }, true)}</div></div><div class="sect details">${n.wifi ? wifiDetails(n.wifi) : ''}${nicDetails(n)}</div></section>`;
+    }).join('')}${connCard()}</div>`;
   }],
 
   sensors: ['感測器', (s) => {
