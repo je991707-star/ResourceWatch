@@ -48,8 +48,9 @@ frontend/app.js ── 每 1 秒 invoke("snapshot")                 ─┐
 | `connections` | `{ list: Conn[], tcpStates: { 狀態: 數量 }, outSegs, retransSegs }`；`Conn`＝`{ pid, name, proto: "tcp"\|"udp", local, remote, state }` | `tcpStates` 為全系統（本網路命名空間所有 socket，含 inode 0）TCP 各狀態數；`outSegs`／`retransSegs` 為 `/proc/net/snmp` 的累計值；`list` 為讀得到 `/proc/<pid>/fd` 的程序（自己的）所持有的 socket；`remote` 在監聽／未連線時為 null；`state` 為小寫 TCP 狀態名，未連線的 UDP 為 `"listen"`；在 `spawn_blocking` 執行緒執行 |
 | `system_info` | `SystemInfo` | 不變的資料（主機、發行版、桌面環境、CPU、記憶體規格、家目錄、發行版 logo） |
 | `app_icons(names)` | `{ 名稱: { icon, name } 或 null }` | 程序名稱或 desktop id → 應用圖示 data URL（找不到圖示檔時 `icon` 為 null）與 `.desktop` 名稱（`icons.rs`）；第一次呼叫要建立索引，所以在 `spawn_blocking` 執行緒執行 |
-| `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache` |
-| `scan_progress()` | `u64` | 執行中的掃描目前走訪到的項目數（`du::PROGRESS`） |
+| `scan_dir(path)` | `Scan` 或錯誤字串 | 驗證路徑後在 `spawn_blocking` 執行緒掃描整棵樹（視窗不會卡住），結果取代 `du::Cache`；執行緒數：路徑在傳統硬碟上（`sys::rotational`）用 2 個（再多會讓磁頭在各執行緒的資料夾間來回尋軌），否則每個 CPU 一個 |
+| `scan_progress()` | `Progress { items, top }` | 執行中的掃描目前走訪到的項目數，與根目錄各項目到目前為止累計的大小（大到小） |
+| `scan_cancel()` | — | 要求中止執行中的掃描；`scan_dir` 回傳「已取消掃描」，快取維持上一次的結果 |
 | `dir_children(path)` | `Entry[]` | 從快取列出一層，大到小排序 |
 | `elevate(action)` | `null` 或錯誤字串 | 以 `pkexec /bin/sh -c` 執行寫死的 root 指令（`elevate_script`，只接受 `rapl`／`modules`，其他值不執行），效果只到重開機；在 `spawn_blocking` 執行緒等待 polkit 密碼視窗。`rapl`：把 `/sys/class/powercap/intel-rapl:*/energy_uj` 改為呼叫者主要群組（`id -gn $PKEXEC_UID`）可讀、`0440`，不開放給所有使用者（PLATYPUS 側通道，CVE-2020-8694）；`modules`：`modprobe drivetemp` 與 `modprobe it87 ignore_resource_conflict=1`，任一失敗即回傳失敗。結束碼 126／127 →「已取消或授權失敗」 |
 | `open_devtools` | — | 以獨立視窗開啟 WebKit 檢查器（`setup` 時攔截 inspector 的 `attach` 訊號並回傳 `true` 取消嵌入 App，改由 `inspector_window` 把檢查器的 view 放進自建的 GTK 視窗「ResourceWatch 檢查器」；已開啟時只把視窗帶到前面，關閉視窗會一併關閉檢查器，反之亦然；`tauri` 啟用 `devtools` feature，release 版也可用） |
@@ -111,6 +112,7 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
   取「檔案系統內路徑最淺」者，同深度取最短掛載點（Bazzite 上根分割區顯示為 `/var`）；容量用 `statvfs`（used＝blocks−bfree）。
 - 檔案系統 → 實體硬碟（`disk_of`）：裝置路徑先 `canonicalize`（`/dev/mapper/…` → `/dev/dm-0`），dm／md 沿 `/sys/block/<n>/slaves` 往下找到分割區，
   分割區再由 `/sys/class/block/<n>` 連結的上一層目錄得到硬碟名稱；整顆硬碟直接格式化時就是它本身。
+- `rotational(path)`：在完整的 mountinfo 中找包含該路徑、掛載點最長的那筆（同長度取後面的，疊在上面的掛載），經 `disk_of` 讀 `/sys/block/<disk>/queue/rotational`，為 1 表示傳統硬碟；找不到時當成非傳統硬碟。
 - 發行版 logo（`distro_logo`）：os-release `LOGO` 是圖示名稱，在 `/usr/share/icons/hicolor`（3 層內）與 `/usr/share/pixmaps` 找 PNG／SVG，
   優先順序：同名 → `<LOGO>-icon` → 其他以 `<LOGO>` 開頭（排除 `white` 版）；同順位 SVG 優先，其次尺寸最大的 PNG。讀檔（< 1 MB）轉成 `data:` URL（CSP 只允許 'self' 與 data: 圖片）。找不到為 `null`。
 - 程序名稱可能含空白與括號，以第一個 `(` 到最後一個 `)` 截取。
@@ -125,11 +127,14 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 
 ### src/du.rs
 
-資料夾空間分析。`scan(path)`：路徑必須是絕對路徑且為資料夾（否則回傳中文錯誤訊息），遞迴走訪一次，記錄每個資料夾的總大小到 `Cache`（`HashMap<PathBuf, u64>`）。
+資料夾空間分析。`scan(path)`：路徑必須是絕對路徑且為資料夾（否則回傳中文錯誤訊息），走訪一次，記錄每個資料夾的總大小到 `Cache`（`HashMap<PathBuf, u64>`）。
+- 多執行緒：`scan(path, threads)` 先在呼叫端讀根目錄一層，其子資料夾放進共用堆疊；`threads` 個工作執行緒（`thread::scope`）從堆疊取資料夾、讀一層（`read_level`）、把子資料夾放回堆疊，各自記下每個資料夾「自己的檔案大小」。堆疊空且沒有執行緒在忙時結束（`Condvar` 叫醒等待者）。最後依路徑深度由深到淺，把每個資料夾的總和加進上一層，得到各資料夾總大小——結果與執行緒數無關（有單元測試比對 1 與 4 個執行緒）。
+- 即時進度：`ITEMS`（`AtomicU64`）為已走訪項目數；`TOP`（`Mutex<Vec<Entry>>`）為根目錄的各項目，執行緒每讀完一個資料夾，就把它的檔案大小加到所屬的根目錄項目（路徑去掉根目錄後的第一段）。兩者在每次掃描開始時歸零，`progress()` 回傳排序後的副本。
+- 取消：`cancel()` 設定 `CANCEL`，執行緒之後取出的資料夾都不讀、直接丟掉，堆疊很快清空，`scan` 回傳錯誤。
 - 大小為實際佔用（`st_blocks × 512`，同 `du`，稀疏檔不會被高估）；不跟隨符號連結；不進入其他檔案系統（`st_dev` 不同的資料夾算 0）；讀不到的資料夾視為空的，不中斷掃描。
   硬連結會重複計算。
 - 每個資料夾的項目先依 inode 編號排序再逐一 stat（同 coreutils `du`）：傳統硬碟上會依序讀 inode 表，不必來回尋軌。
-- `Scan { path, size, items }`：`items` 為走訪到的項目數（檔案＋資料夾＋連結）；走訪中即時累加在 `PROGRESS`（`AtomicU64`，每次掃描開始歸零）。
+- `Scan { path, size, items }`：`items` 為走訪到的項目數（檔案＋資料夾＋連結）。
 - `children(dir)` → `Entry { name, path, size, dir }[]`，大到小、同大小依名稱；資料夾大小取自快取（不在快取內為 0），檔案即時讀 metadata。
 - 單元測試在暫存目錄建立樹（含符號連結）驗證大小、排序、項目數與路徑驗證。
 
@@ -201,7 +206,7 @@ App 不連網，所以字型與 CSS 內建在前端目錄，CSP `'self'` 即可�
     項目名稱經 `sensorLabel`（`SENSOR_LABEL` 正規式對照）翻譯：`Package id 0` → 處理器封裝、`Core N` → 核心 N、`Tctl`／`Tdie` → 處理器、`TccdN` → CCD N、`Composite` → 整體、`Sensor N` → 感測點 N、`edge`／`junction`／`mem` → 核心／熱點／顯示記憶體、無 label 的 `tempN`／`fanN`／`inN` → 溫度／風扇／電壓 N，其他原樣顯示。數值依 `kind` 格式化（`fmtSensor`：溫度經 `temp()`、rpm、%、V 取兩位、W 取一位小數），數值格由 `sensorTd` 產生：有 `crit` 時滑鼠提示臨界溫度，達到臨界值時加 `.hot`（紅色粗體）。`powerN` 無 label 時顯示「功耗 N」；RAPL 區域 `package-N`／`core`／`dram`／`uncore` → 封裝／核心／記憶體／內顯功耗，與 CPU 溫度同一張卡。頁首提示（`.hint`）：需要時顯示「載入需要管理員權限的感測器」（`.hint > span` 佔滿一行），下方為按鈕（`data-elevate`）——沒有 `it8*`／`nct*` 晶片、或有 `sd*` 硬碟但沒有 `drivetemp` 時顯示「更多感測器」→ `elevate("modules")`；`raplLocked` 時顯示「CPU功耗」→ `elevate("rapl")`；兩者都不需要時整列不顯示。`elev` 記錄執行中的動作（按鈕停用、顯示「等待授權…」）與上次錯誤（`.hint.err` 紅字）；成功後新數值由下一次快照帶出。App 不自動提權，開機自動載入仍依 `docs/Sensors_Improvement.md` 手動設定。同型號的兩顆硬碟會併在同一張卡。
     卡片內容由 `sensorBody` 產生：有名稱的讀數依種類分段（`KIND_NAME`：溫度／風扇（含 %）／電壓／功耗，只有一種時不顯示分段標題）；沒有名稱的（`tempN`／`inN`／`powerN`）與 0 rpm 的風扇（多半是沒接的接口）收進 `<details class="raw">`「其他讀數（N）」，預設收合，展開狀態以裝置名稱存在 `rawOpen`（每秒重繪仍保留；點 `summary[data-raw]` 時取消瀏覽器預設切換、改由狀態重繪）。整張卡都沒有名稱時（例如 ACPI 溫度區）全部直接顯示。
   - 儲存：第一次進入時掃描家目錄（`SystemInfo.home`）。上方路徑、項目數、總大小、「選擇磁碟…」下拉選單（`label.btn.pick-disk` 外觀與其他按鈕相同，透明的 `select[data-du=disk]` 疊在上面開系統選單；選項為 `snap.disks` 各硬碟的掛載點，排除 `/boot`、`/efi` 開頭的啟動磁區，顯示「型號 · 掛載點」；`#content` 的 `change` 事件選了就掃描該掛載點，掃描不跨檔案系統，所以只算這個分割區）、「選擇資料夾…」（`plugin:dialog|open`，`directory: true`）與重新掃描。
-    `du.path` 為目前掃描的路徑：開始掃描時立刻清掉舊結果（`root`、`levels`），標題改為新的磁碟／路徑，不會在長時間掃描中顯示上一顆硬碟；掃描中每次輪詢呼叫 `scan_progress` 並重繪，副標顯示「掃描中… 已掃描 N 項」。
+    `du.path` 為目前掃描的路徑：開始掃描時立刻清掉舊結果（`root`、`levels`），標題改為新的磁碟／路徑，不會在長時間掃描中顯示上一顆硬碟；掃描中每 0.5 秒呼叫 `scan_progress`（與快照輪詢無關，暫停也照常），副標顯示「掃描中… 已掃描 N 項」，並以 `top` 當第一層畫出色塊與清單（大小隨掃描成長）；掃描中點色塊或清單不會展開（快取仍是上一次的），重新掃描按鈕換成取消按鈕（`data-du=cancel` → `scan_cancel`）。取消或失敗時清掉不完整的第一層，只顯示錯誤訊息。
     掃描路徑是某個掛載點（`snap.mounts` 找得到）時：標題改為硬碟圖示與型號，下方第一行為掛載路徑，第二行為「N 項 · 已用 · 總容量 · 可用」（每行單行、過長截斷，滑鼠提示有全文），磁碟按鈕只顯示型號（選單選項仍為「型號 · 掛載點」以區分同一顆硬碟的分割區）；左欄名稱下方標示總容量；色塊條只畫掃描到的項目，不放可用空間或無法讀取的部分（會把資料夾擠成細條）。
     每一層一列色塊（前 40 項，其餘合併為灰色「其他」），點色塊選取並展開下一層（後面的層會被截掉）；右側清單為最後一層的內容（前 200 項），點資料夾往下一層。寬度小於 40 px 的色塊不顯示名稱（滑鼠提示仍有）。
 - 繪圖：`chart`（處理器、顯示卡；SVG `viewBox 0 0 59 100`、背景三條線：頂端（上限）長虛線、中間（一半）短虛線、底部（0）實線；`preserveAspectRatio="none"`、`non-scaling-stroke`，最新點在右緣、`null` 斷線；半透明面積上再畫一條線，0 的位置在 y=99，全為 0 的序列仍看得到底線）、

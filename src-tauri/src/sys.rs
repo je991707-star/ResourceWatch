@@ -853,6 +853,23 @@ fn parse_mounts(text: &str) -> Vec<(String, String)> {
     out
 }
 
+/// Whether `path` lives on a spinning disk: deepest mount containing it → its physical disk's `queue/rotational`.
+pub fn rotational(path: &Path) -> bool {
+    let info = read("/proc/self/mountinfo");
+    let dev = info
+        .lines()
+        .filter_map(|l| {
+            let (left, right) = l.split_once(" - ")?;
+            let mnt = left.split_whitespace().nth(4)?.replace("\\040", " ");
+            let dev = right.split_whitespace().nth(1)?;
+            path.starts_with(&mnt).then(|| (mnt.len(), dev.to_string()))
+        })
+        .max_by_key(|m| m.0) // last wins on ties: a later mount stacks on top
+        .map(|m| m.1);
+    dev.and_then(|d| disk_of(&d))
+        .is_some_and(|d| read(format!("/sys/block/{d}/queue/rotational")).trim() == "1")
+}
+
 /// `/dev/nvme0n1p3`, `/dev/mapper/luks-…` → the physical disk (`nvme0n1`) under it.
 fn disk_of(dev: &str) -> Option<String> {
     let real = fs::canonicalize(dev).ok()?;

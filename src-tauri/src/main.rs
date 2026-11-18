@@ -38,16 +38,29 @@ fn system_info() -> sys::SystemInfo {
 }
 
 #[tauri::command]
-fn scan_progress() -> u64 {
-    du::PROGRESS.load(std::sync::atomic::Ordering::Relaxed)
+fn scan_progress() -> du::Progress {
+    du::progress()
 }
 
-/// Walks the whole tree on a blocking thread so the window stays responsive.
+#[tauri::command]
+fn scan_cancel() {
+    du::cancel()
+}
+
+/// Walks the whole tree on blocking threads so the window stays responsive. A spinning disk gets two workers
+/// (more would make the head seek between their folders), anything else one per CPU.
 #[tauri::command]
 async fn scan_dir(path: String, cache: DirCache<'_>) -> Result<du::Scan, String> {
-    let (c, scan) = tauri::async_runtime::spawn_blocking(move || du::scan(&path))
-        .await
-        .map_err(|e| e.to_string())??;
+    let (c, scan) = tauri::async_runtime::spawn_blocking(move || {
+        let threads = if sys::rotational(std::path::Path::new(&path)) {
+            2
+        } else {
+            std::thread::available_parallelism().map_or(4, |n| n.get())
+        };
+        du::scan(&path, threads)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     *lock(&cache) = c;
     Ok(scan)
 }
@@ -212,6 +225,7 @@ fn main() {
             system_info,
             scan_dir,
             scan_progress,
+            scan_cancel,
             elevate,
             dir_children,
             app_icons,

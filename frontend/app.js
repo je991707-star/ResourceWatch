@@ -55,7 +55,7 @@ const ICON = {
   dash: 'fa-solid fa-gauge-high', apps: 'fa-solid fa-layer-group', storage: 'fa-solid fa-hard-drive', net: 'fa-solid fa-globe',
   sensors: 'fa-solid fa-temperature-half', moon: 'fa-solid fa-moon', sun: 'fa-solid fa-sun', auto: 'fa-solid fa-circle-half-stroke',
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi', dns: 'fa-solid fa-server',
-  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
+  folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', cancel: 'fa-solid fa-xmark', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
   display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
@@ -553,7 +553,8 @@ function storagePage() {
         .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
         .map((m) => `<option value="${esc(m)}"${m === mnt?.mount ? ' selected' : ''}>${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
-      <button class="btn" data-du="rescan"${du.busy || !du.path ? ' disabled' : ''}>${icon('refresh')}</button></div></div>`;
+      ${du.busy ? `<button class="btn" data-du="cancel" title="取消掃描">${icon('cancel')}</button>`
+        : `<button class="btn" data-du="rescan" title="重新掃描"${du.path ? '' : ' disabled'}>${icon('refresh')}</button>`}</div></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;
   const rows = du.levels.map((lv, i) => {
     const shown = lv.children.filter((c) => c.size > 0).slice(0, 40);
@@ -582,13 +583,24 @@ async function duScan(path) {
   // Drop the old result right away so a long scan never shows the previous disk.
   Object.assign(du, { path, root: null, levels: [], busy: true, progress: 0, err: null });
   render();
+  const name = path.split('/').filter(Boolean).at(-1) ?? '/';
+  // While the backend walks, draw the first level from the sizes found so far.
+  const poll = setInterval(async () => {
+    const p = await invoke('scan_progress');
+    if (!du.busy) return;
+    du.progress = p.items;
+    du.levels = [{ path, name, children: p.top, sel: null }];
+    if (page === 'storage') render();
+  }, 500);
   try {
     du.root = await invoke('scan_dir', { path });
     du.levels = [];
     await duOpen(du.root.path, du.root.path.split('/').filter(Boolean).at(-1) ?? '/', 0);
   } catch (e) {
     du.err = String(e);
+    du.levels = []; // partial sizes: the cache behind them is still the previous scan's
   }
+  clearInterval(poll);
   du.busy = false;
   render();
 }
@@ -597,6 +609,8 @@ async function duClick(t) {
   const blk = t.closest('.blk[data-lvl]');
   const row = t.closest('tr.dir');
   const btn = t.closest('[data-du]');
+  if (btn?.dataset.du === 'cancel') return invoke('scan_cancel');
+  if (du.busy) return; // partial results: nothing to open until the scan finishes
   if (btn?.dataset.du === 'rescan') return duScan(du.path);
   if (btn?.dataset.du === 'pick') {
     const dir = await invoke('plugin:dialog|open', { options: { directory: true, defaultPath: du.path ?? info?.home } }).catch((e) => { du.err = String(e); return null; });
@@ -735,7 +749,7 @@ async function tick() {
     snap = await invoke('snapshot');
     record(snap);
     // The analyzer and the process table only change on their own events.
-    if (page === 'storage' && du.busy) { du.progress = await invoke('scan_progress'); render(); } else if (page === 'storage' || page === 'apps') hostBar(); else render();
+    if (page === 'storage' || page === 'apps') hostBar(); else render();
   } catch (e) {
     console.error(e);
   }
