@@ -496,6 +496,7 @@ function widgetCard(s, row) {
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
     row('網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
     row('ResourceWatch 格子', '處理器上方的圖示與名稱', seg('app', [[true, '顯示'], [false, '隱藏']])),
+    row('卡片透明度', '只影響卡片底色，文字與圖表不透明', seg('opacity', [100, 80, 60, 40, 20, 0].map((v) => [v, `${100 - v}%`]))),
     wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
   ].join(''));
 }
@@ -508,6 +509,7 @@ async function setWidget(act, val) {
   else if (act === 'interval') c.interval = +val;
   else if (act === 'nic') c.nic = val || null;
   else if (act === 'app') c.app = val === 'true';
+  else if (act === 'opacity') c.opacity = +val;
   try { wcfg = await invoke('set_widget_config', { cfg: c }); wErr = ''; } catch (e) { wErr = `儲存失敗：${e}`; }
   render();
 }

@@ -10,7 +10,7 @@ PlasmoidItem {
 
     // ~/.local/bin is not always on plasmashell's PATH
     readonly property string cmd: 'PATH="$HOME/.local/bin:$PATH" resourcewatch --widget'
-    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null, app: true })
+    property var cfg: ({ items: ["cpu", "gpu", "net", "disk", "temp", "mem"], interval: 2, nic: null, app: true, opacity: 100 })
     property var snap: null
     property string cpuModel: ""
     property string error: ""
@@ -37,7 +37,7 @@ PlasmoidItem {
         }
     ]
 
-    Theme { id: colors }
+    Theme { id: colors; cardOpacity: (root.cfg.opacity ?? 100) / 100 }
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     preferredRepresentation: fullRepresentation

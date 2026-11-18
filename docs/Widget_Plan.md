@@ -76,6 +76,7 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - [x] ✅ 預設排列改為左：處理器／網路／溫度，右：顯示卡／磁碟／記憶體。
 - [x] ✅ 處理器上方加 App 圖示與名稱的格子，高度依兩欄差距自動計算。
 - [x] ✅ 卡片右鍵選單加上「關閉此卡片」（含 ResourceWatch 格子；隱藏後可在設定頁重新顯示）。
+- [x] ✅ 卡片透明度設定（設定頁，只影響卡片底色）。
 - [x] ✅ 預設顯示全部六項。
 - [x] ✅ 按下即可拖動（改桌面容器的 `editModeCondition` 為 AfterPress，鎖定時不可拖）。
 

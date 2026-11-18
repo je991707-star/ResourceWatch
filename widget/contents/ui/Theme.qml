@@ -3,8 +3,10 @@ import org.kde.kirigami as Kirigami
 
 // Same tokens as frontend/style.css; dark or light follows the Plasma color scheme.
 QtObject {
+    // card background opacity 0–1 (widget.json `opacity`); only the background, text and charts stay opaque
+    property real cardOpacity: 1
     readonly property bool dark: Kirigami.ColorUtils.brightnessForColor(Kirigami.Theme.backgroundColor) === Kirigami.ColorUtils.Dark
-    readonly property color card: dark ? "#353537" : "#fbfbfc"
+    readonly property color card: Qt.alpha(dark ? "#353537" : "#fbfbfc", cardOpacity)
     readonly property color field: dark ? "#444447" : "#efeff2"
     readonly property color line: dark ? "#454548" : "#d9d9de"
     readonly property color text: dark ? "#f2f2f4" : "#1d1d1f"
