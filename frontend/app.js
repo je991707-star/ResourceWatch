@@ -543,8 +543,9 @@ const sizeClass = (b) => `s${SIZE_STEPS.filter((t) => b >= t).length}`;
 function storagePage() {
   const head = `<div class="du-head">${icon('folder', 'folder')}<div class="path"><b>${esc(du.root?.path ?? '尚未選擇資料夾')}</b>
       <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}` : ''}</span></div>
-      <select class="btn" data-du="disk"${du.busy ? ' disabled' : ''}><option value="">選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts.map((m) =>
-        `<option value="${esc(m)}">${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select>
+      <label class="btn pick-disk">${icon('storage')}選擇磁碟…<select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled selected>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
+        .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
+        .map((m) => `<option value="${esc(m)}">${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
       <button class="btn" data-du="rescan"${du.busy || !du.root ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;

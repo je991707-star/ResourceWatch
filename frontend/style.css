@@ -305,6 +305,10 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .btn { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: var(--field); color: var(--text); font: inherit; font-size: 14px; padding: 8px 14px; cursor: pointer; }
 .btn:hover { background: var(--sel); }
 .btn:disabled { opacity: .5; cursor: default; }
+/* native <select> laid invisibly over a .btn so it looks like the other buttons but keeps the system menu */
+.pick-disk { position: relative; }
+.pick-disk select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font: inherit; }
+.pick-disk:has(select:disabled) { opacity: .5; }
 .du { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
 .levels { display: grid; grid-template-columns: 110px 1fr; gap: 0 14px; align-items: center; }
 .lvl-name { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 13px; text-align: center; overflow: hidden; }
