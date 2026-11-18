@@ -72,16 +72,18 @@ PlasmoidItem {
         }
     }
 
-    // Cards are a fixed 282 px wide (narrower only when the widget is) and stack from the top in as many
-    // columns as the width fits (item i goes to column i % n, like the dashboard's columns); extra width stays empty. The minimum height stays small: tying it to the content (one tall column)
-    // left the desktop no valid position or size, so every move/resize handle turned red.
+    // Fixed layout: two columns of 282 px cards (item i goes to column i % 2, so the default six are
+    // three on the left, three on the right). Minimum = maximum = the content size, so the desktop's
+    // resize handles cannot change it; the size follows the content when cards are added or removed.
     fullRepresentation: Item {
         id: full
         readonly property int cardWidth: 282
-        readonly property int cols: Math.max(1, Math.floor((width + 12) / (cardWidth + 12)))
-        Layout.preferredWidth: cardWidth * 2 + 12 // two columns
-        Layout.minimumWidth: 220
-        Layout.minimumHeight: 120
+        readonly property int cols: 2
+        Layout.minimumWidth: cards.implicitWidth
+        Layout.maximumWidth: cards.implicitWidth
+        Layout.preferredWidth: cards.implicitWidth
+        Layout.minimumHeight: cards.implicitHeight
+        Layout.maximumHeight: cards.implicitHeight
         Layout.preferredHeight: cards.implicitHeight
 
         ColumnLayout {
@@ -103,7 +105,7 @@ PlasmoidItem {
                     ColumnLayout {
                         required property int index
                         readonly property int col: index
-                        Layout.preferredWidth: Math.min(full.cardWidth, full.width)
+                        Layout.preferredWidth: full.cardWidth
                         Layout.alignment: Qt.AlignTop
                         spacing: 12
                         Repeater {

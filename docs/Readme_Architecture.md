@@ -183,7 +183,7 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 - `P5Support.DataSource`（`executable` 引擎）每 `cfg.interval` 秒以 shell 執行 `PATH="$HOME/.local/bin:$PATH" resourcewatch --widget`（plasmashell 的 PATH 不一定有 `~/.local/bin`）；`onNewData` 解析 stdout 的 `{ config, snapshot }`，設定直接取自輸出，所以 App 設定頁一改，下一次執行就生效。
   結束碼 127 顯示「找不到 resourcewatch，請先執行 install.sh」，其他非 0 顯示 stderr，JSON 解析失敗顯示「無法解析 resourcewatch 輸出」；第一次取得資料前顯示「讀取中…」。
 - 歷史 `hist`：`record` 每次建立新物件（讓繫結更新），各序列保留 60 點：`cpu`、`gpu`（第一張）、`rx`／`tx`（`Fmt.nic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總，`Fmt.sum`）。
-- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面從頂端往下排，卡片固定寬 282（`cardWidth`；小工具比它窄時才跟著縮），欄數＝寬度能放下幾欄（間距 12，至少 1 欄；預設寬 576 為兩欄、最小 220），多出的寬度留白、不把卡片撐寬；第 i 個項目放在第 i % 欄數 欄（同儀表板分欄），各欄靠上；`Layout.preferredHeight` 為內容高度，`Layout.minimumHeight` 固定 120——若最小高度等於內容高度（一欄時很高），桌面找不到合法的位置與大小，移動與四個方向的縮放把手都會變紅、無法操作。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
+- `backgroundHints: NoBackground`、`preferredRepresentation: fullRepresentation`：不用 Plasma 的面板背景，直接畫卡片；版面固定兩欄、每張卡片寬 282（`cardWidth`）、間距 12，第 i 個項目放在第 i % 2 欄（預設六項為左三：處理器／顯示卡／磁碟，右三：記憶體／網路／溫度），各欄靠上、卡片高度依內容。小工具的最小＝最大＝偏好尺寸＝內容大小（`Layout.minimum/maximum/preferredWidth/Height`），桌面的縮放把手無法改變大小，增減項目時跟著內容變。依 `cfg.items` 順序以 `Repeater` 產生 `Loader`，`sourceComponent` 對到檔案底部的六個 inline `Component`（`CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`／`TempCard`）——卡片是其他檔案的型別，看不到 main.qml 的 id，用 inline Component 才能把 `root.snap`／`hist`／`cfg` 以繫結傳入、每次更新自動重畫。
 
 - 拖動：桌面把每個小工具包在 containmentlayoutmanager 的 `ItemContainer` 裡，其 `editModeCondition` 預設為長按（`AfterPressAndHold`）才進入可拖動的編輯狀態。`allowDrag` 沿 `parent` 往上找到有 `editModeCondition` 的容器，改成 `AfterPress`（按下就能拖，同時出現縮放／設定／移除把手，點別處結束）；小工具被鎖定（`Plasmoid.immutable`）時設為 `Locked`。在 `onParentChanged` 與 `immutable` 改變時重設（會蓋掉桌面原本的繫結，所以鎖定狀態要自己處理）。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
 
@@ -198,14 +198,14 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 ### contents/ui/CpuCard.qml、MemCard.qml、GpuCard.qml、NetCard.qml、DiskCard.qml、TempCard.qml
 
 各自繼承 `Card`，屬性 `snap`（必要）、`hist`、`cfg`（只有網路卡用）。
-- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；下方藍色曲線（`hist.cpu`）。
+- 處理器：`extra` 為 CPU 溫度；兩欄大字（`uniformCellSizes` 平分）：使用率（藍點）、平均頻率（GHz）；其下各執行緒使用率直條（`Cores`）；最下方藍色曲線（`hist.cpu`）。
 - 記憶體：`extra` 為總量；大字為使用率、其下「N 已使用」；堆疊條：應用程式（used，黃）、快取（藍）、可用（total − used − cached，綠）；圖例四列（含 SWAP 已用／總量，沒有 SWAP 時隱藏）。
 - 顯示卡：只看第一張；標題為型號、`extra` 為溫度；左為青色使用率圓環（中間百分比），右為顯示記憶體／編碼器／解碼器三條細條（`Legend` 加 5 px `StackBar`）；下方青色曲線。沒有顯示卡時顯示「沒有顯示卡」。
 - 網路：`Fmt.nic(snap, cfg.nic)` 選介面，`extra` 為介面名；兩欄大字下載（藍點）／上傳（桃紅點）；下方 `Mirror` 上傳在上、下載在下。
 - 磁碟：兩欄大字為所有硬碟讀取（桃紅）／寫入（藍）加總，`Mirror` 讀取在上；其下每顆有掛載的硬碟一列型號（`_` 換空格）與「已用 / 總量」，配黃色細用量條。
 - 溫度：`Fmt.temps` 前 8 個裝置，名稱 muted、數值靠右；達到 `crit` 時紅色粗體。
 
-### contents/ui/Chart.qml、Mirror.qml、StackBar.qml、Ring.qml、Big.qml、Legend.qml
+### contents/ui/Chart.qml、Mirror.qml、StackBar.qml、Ring.qml、Big.qml、Legend.qml、Cores.qml
 
 對應 app.js 的繪圖函式，皆以 `Canvas` 繪製，資料或寬度改變時 `requestPaint`。
 - `Chart`：面積曲線，固定 60 格、最新點在右緣，`null` 斷線；背景頂端與中間虛線、底部實線（`grid` 色）；線寬 1.5、面積 25% 透明；`max` 預設 100。
@@ -214,6 +214,7 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 - `Ring`：圓環，圓頭線端，從 12 點鐘方向順時針，`value` 0–100。
 - `Big`：彩色圓點＋22 px 粗體數值，其下 12 px muted 說明；內部兩列都 `Layout.fillWidth`，否則欄的最大寬度被限制為內容寬，兩個 `Big` 並排時無法平分。
 - `Legend`：（可選彩色圓點）標籤靠左 muted、數值靠右，12 px。
+- `Cores`（Cores.qml）：各執行緒使用率直條，同儀表板 `.cores`：高 54、間距 3、最小寬 2、上方圓角 3、靠底對齊，高度＝max(使用率, 3)%；高度以 `Layout.preferredHeight` 指定（Layout 會覆寫自己的 implicitHeight）。
 
 ### contents/ui/fmt.js
 
