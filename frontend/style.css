@@ -306,7 +306,7 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .btn:hover { background: var(--sel); }
 .btn:disabled { opacity: .5; cursor: default; }
 /* native <select> laid invisibly over a .btn so it looks like the other buttons but keeps the system menu */
-.pick-disk { position: relative; }
+.pick-disk { position: relative; max-width: 320px; }
 .pick-disk select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font: inherit; }
 .pick-disk:has(select:disabled) { opacity: .5; }
 .du { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
@@ -333,6 +333,8 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .blk:hover { opacity: 1; }
 .blk.sel { opacity: 1; box-shadow: inset 0 0 0 3px var(--yellow); border-radius: 4px; }
 .blk.rest { cursor: default; background: var(--gray); }
+.blk.free { cursor: default; background: var(--field); color: var(--muted); }
+.blk.free span { text-shadow: none; }
 .s0 { background: #4fc95e; } .s1 { background: #4ccfae; } .s2 { background: #44bcd0; } .s3 { background: #3fa3e0; } .s4 { background: #3a80ea; }
 .s5 { background: #7d63e6; } .s6 { background: #a656dc; } .s7 { background: #c84fb8; } .s8 { background: #d84a82; } .s9 { background: #e2575a; }
 .scale { display: flex; flex-direction: column; gap: 4px; width: 280px; margin: 24px 0 0 auto; font-size: 11px; color: var(--muted); }

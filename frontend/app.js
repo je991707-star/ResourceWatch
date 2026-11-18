@@ -541,11 +541,16 @@ const SIZE_STEPS = [1e8, 2.5e8, 5e8, 1e9, 2.5e9, 5e9, 1e10, 2e10, 5e10];
 const sizeClass = (b) => `s${SIZE_STEPS.filter((t) => b >= t).length}`;
 
 function storagePage() {
-  const head = `<div class="du-head">${icon('folder', 'folder')}<div class="path"><b>${esc(du.root?.path ?? '尚未選擇資料夾')}</b>
-      <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}` : ''}</span></div>
-      <label class="btn pick-disk">${icon('storage')}選擇磁碟…<select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled selected>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
+  // A scanned mount point gets its disk's name and the filesystem's capacity.
+  const mnt = snap.mounts.find((m) => m.mount === du.root?.path);
+  const dsk = mnt && snap.disks.find((d) => d.mounts.includes(mnt.mount));
+  const title = dsk ? `${diskName(dsk)} · ${mnt.mount}` : null;
+  const cap = mnt ? ` · 總容量 ${bytes(mnt.total)}，可用 ${bytes(mnt.total - mnt.used)}` : '';
+  const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b>${esc(title ?? du.root?.path ?? '尚未選擇資料夾')}</b>
+      <span class="muted">${du.busy ? '掃描中…' : du.root ? `項目：${du.root.items.toLocaleString()} · ${bytes(du.root.size)}${cap}` : ''}</span></div>
+      <label class="btn pick-disk">${icon('storage')}<span class="ell">${esc(title ?? '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
         .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
-        .map((m) => `<option value="${esc(m)}">${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
+        .map((m) => `<option value="${esc(m)}"${m === mnt?.mount ? ' selected' : ''}>${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
       <button class="btn" data-du="rescan"${du.busy || !du.root ? ' disabled' : ''}>${icon('refresh')}</button></div>`;
   if (!du.levels.length) return `${head}${du.err ? `<div class="err">${esc(du.err)}</div>` : ''}`;
@@ -553,8 +558,13 @@ function storagePage() {
     const shown = lv.children.filter((c) => c.size > 0).slice(0, 40);
     const rest = lv.children.slice(shown.length).reduce((t, c) => t + c.size, 0);
     const blocks = shown.map((c, j) => `<div class="blk ${sizeClass(c.size)}${lv.sel === j ? ' sel' : ''}" data-grow="${c.size}" data-lvl="${i}" data-idx="${j}" title="${esc(c.name)} · ${bytes(c.size)}"><span>${esc(c.name)}</span></div>`).join('');
-    const restBlk = rest > 0 ? `<div class="blk rest" data-grow="${rest}" title="其他 · ${bytes(rest)}"><span>其他</span></div>` : '';
-    return `${i ? '<div class="down-arrow">▼</div><div></div>' : ''}<div class="lvl-name">${icon('folder')}<span>${esc(lv.name)}</span></div>
+    let restBlk = rest > 0 ? `<div class="blk rest" data-grow="${rest}" title="其他 · ${bytes(rest)}"><span>其他</span></div>` : '';
+    if (i === 0 && mnt) { // whole strip = filesystem capacity
+      const hidden = mnt.used - du.root.size, free = mnt.total - mnt.used;
+      if (hidden > 0) restBlk += `<div class="blk rest" data-grow="${hidden}" title="系統／無法讀取 · ${bytes(hidden)}"><span>系統／無法讀取</span></div>`;
+      if (free > 0) restBlk += `<div class="blk free" data-grow="${free}" title="可用空間 · ${bytes(free)}"><span>可用 ${bytes(free)}</span></div>`;
+    }
+    return `${i ? '<div class="down-arrow">▼</div><div></div>' : ''}<div class="lvl-name">${icon(i === 0 && dsk ? 'storage' : 'folder')}<span>${esc(lv.name)}</span>${i === 0 && mnt ? `<small class="muted">總容量 ${bytes(mnt.total)}</small>` : ''}</div>
       <div class="strip">${blocks}${restBlk || (blocks ? '' : '<div class="empty">空資料夾</div>')}</div>`;
   }).join('');
   const cur = du.levels.at(-1);
