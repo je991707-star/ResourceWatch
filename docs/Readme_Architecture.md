@@ -190,6 +190,7 @@ KDE Plasma 6 桌面小工具（plasmoid，id `io.github.local.resourcewatch.widg
 
 - 移動整個小工具：桌面把每個小工具包在 containmentlayoutmanager 的 `ItemContainer` 裡，其 `editModeCondition` 決定按下時是否開始移動，而容器比卡片先收到按下事件。`allowDrag` 沿 `parent` 往上找到有 `editModeCondition` 的容器，依滑鼠位置切換：在卡片標題列或卡片之間的空白時為 `AfterPress`（按下即可拖動，同時出現縮放／設定／移除把手，點別處結束），滑鼠在卡片內容區（`overBody`）或正在拖曳卡片（`dragKey`）時為 `Manual`（不移動，讓卡片收到長按）；小工具被鎖定（`Plasmoid.immutable`）時為 `Locked`。在 `onParentChanged`、`overBody`／`dragKey`／`immutable` 改變時重設（會蓋掉桌面原本的繫結，所以鎖定狀態要自己處理）。
 - 重新排列卡片：`Card` 回報內容區的滑鼠停留（`bodyHovered`）與長按 400 ms 後的拖曳（`holdStarted`／`holdMoved`／`holdEnded`）；每個 `Loader` 以 `Connections` 轉給 `full` 的 `holdStart`／`holdMove`／`holdEnd`（座標換成 `full` 的座標）。拖曳中的卡片以 `Translate` 跟著滑鼠、放大 1.04、`z` 與所在欄提高到上層；`slotAt` 依 x 決定欄、依該欄各卡片的底部決定列（超過最後一張為該欄的空格），換算成 `cfg.items` 索引（超出時為最後一個），目標卡片半透明。放開時與目標交換位置（同一格或取消不動），`setOrder` 立即更新 `cfg.items`，並以第二個 executable `DataSource`（`saver`）執行 `resourcewatch --widget-order …` 存檔；存檔前已開始的 `--widget` 會印出舊順序，所以 `pendingItems` 保留新順序，直到輸出的順序一致為止；存檔失敗時顯示錯誤。這是私有 API，未來 Plasma 改名時找不到容器就什麼都不做，仍可長按拖動。
+- 關閉卡片：`Plasmoid.contextualActions` 在 Plasma 的右鍵選單加一項「關閉「<卡片標題>」卡片」（`window-close` 圖示，標題對照 `titles`）。`full` 上的被動 `PointHandler`（右鍵）在按下時以 `cardAt` 找出游標下的卡片存進 `menuKey`，不攔截事件，Plasma 仍照常開啟選單；游標在卡片間空白或 App 卡片上、或只剩一張卡片時不顯示此項。選取後以 `setOrder` 把該項目從 `cfg.items` 移除並寫回 widget.json，可在 ResourceWatch 設定頁重新加入。
 
 ### contents/ui/AppCard.qml
 

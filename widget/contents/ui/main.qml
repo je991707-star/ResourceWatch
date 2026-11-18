@@ -21,6 +21,19 @@ PlasmoidItem {
     property string dragKey: ""
     // order saved by a drag but not yet seen in `--widget` output (a run already under way prints the old one)
     property var pendingItems: null
+    // card under the pointer at the last right press, for the "close card" entry in Plasma's context menu
+    property string menuKey: ""
+    readonly property var titles: ({ cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
+
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: "關閉「" + (root.titles[root.menuKey] ?? "") + "」卡片"
+            icon.name: "window-close"
+            // keep at least one card; it comes back from ResourceWatch's settings page
+            visible: root.menuKey !== "" && root.cfg.items.length > 1
+            onTriggered: root.setOrder(root.cfg.items.filter(k => k !== root.menuKey))
+        }
+    ]
 
     Theme { id: colors }
 
@@ -134,6 +147,22 @@ PlasmoidItem {
                 if (l && p.y < top + l.y + l.height) { row = r; break; }
             }
             return Math.min(row * cols + col, items.length - 1);
+        }
+        // key of the card containing `p` (full's coordinates), "" for the gaps and the app card
+        function cardAt(p) {
+            for (let c = 0; c < columns.count; c++) {
+                const column = columns.itemAt(c);
+                for (const l of column.children.filter(ch => ch.modelData !== undefined)) {
+                    const q = l.mapFromItem(full, p.x, p.y);
+                    if (q.x >= 0 && q.y >= 0 && q.x < l.width && q.y < l.height) return l.modelData;
+                }
+            }
+            return "";
+        }
+        // passive: Plasma still opens its context menu, which then shows the close entry for this card
+        PointHandler {
+            acceptedButtons: Qt.RightButton
+            onActiveChanged: if (active) root.menuKey = full.cardAt(point.position)
         }
         function holdStart(key, p) { dragFrom = p; dragDx = 0; dragDy = 0; root.dragKey = key; dropIndex = -1; }
         function holdMove(p) { dragDx = p.x - dragFrom.x; dragDy = p.y - dragFrom.y; dropIndex = slotAt(p); }
