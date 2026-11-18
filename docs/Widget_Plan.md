@@ -57,11 +57,11 @@ plasmoid (QML) ── P5Support.DataSource{engine:"executable"} 每 N 秒 ──
 - 驗收：以 `qml`（offscreen）載入六張卡片與真實 `--widget` 資料截圖比對（淺色）；桌面上需重啟 plasmashell 才會載入新版 QML。
 
 ## Phase 5：安裝與收尾（install.sh、版本）
-- [ ] 修正 install.sh 舊版 widget 偵測：`grep -q "$ID"` 會誤中新 id `io.github.local.resourcewatch.widget`，改為整行比對。
-- [ ] `install`：`kpackagetool6 -t Plasma/Applet -i widget/`（已安裝則 `-u`）；`uninstall`：`-r io.github.local.resourcewatch.widget`；無 `kpackagetool6` 時略過並提示。
-- [ ] 更新 Architecture（install.sh），bump 版本（Cargo.toml＋app.js「關於」），commit。
+- [x] ✅ 修正 install.sh 舊版 widget 偵測：`grep -q "$ID"` 會誤中新 id `io.github.local.resourcewatch.widget`，改為整行比對。
+- [x] ✅ `install`：`kpackagetool6 -t Plasma/Applet -i widget/`（已安裝則 `-u`）；`uninstall`：`-r io.github.local.resourcewatch.widget`；無 `kpackagetool6` 時略過並提示。
+- [x] ✅ 更新 Architecture（install.sh），bump 版本（Cargo.toml＋app.js「關於」），commit。
 - 驗收：`./install.sh` → 桌面新增小工具正常運作；`./install.sh uninstall` 清乾淨。
-- [ ] 回頭重讀 `docs/Widget_Plan.md`，確認全部 ✅、無新增任務。
+- [x] ✅ 回頭重讀 `docs/Widget_Plan.md`，確認全部 ✅、無新增任務。
 
 ## 每個 Phase 通用驗證
 `cargo test`、`cargo tauri build --no-bundle` 無錯（程式執行中先 `pkill -x resourcewatch`）。

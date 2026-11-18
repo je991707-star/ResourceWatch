@@ -27,7 +27,9 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
 - `install`（預設）：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內 `cargo tauri build --no-bundle`，否則用主機的 cargo-tauri；
   先 `pkill -x resourcewatch`，再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到 `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、
   啟動器到 `~/.local/share/applications/resourcewatch.desktop`（檔名須等於 Wayland app_id，也就是執行檔名，KWin 才找得到圖示）。
-- `uninstall`：刪除上述檔案。
+  有 `kpackagetool6`（KDE Plasma 6）時安裝 `widget/` 桌面小工具（`io.github.local.resourcewatch.widget`）：已安裝則 `--upgrade` 並提示 plasmashell 會快取舊版 QML，需重新登入或 `systemctl --user restart plasma-plasmashell`；沒有 `kpackagetool6` 時略過並提示。
+  舊版 Plasma Widget（id `io.github.local.resourcewatch`，v0.0.5）仍在時提示移除指令；`has_applet` 以整行比對清單，因為舊 id 是新 id 的前綴。
+- `uninstall`：刪除上述檔案、移除桌面小工具，並刪除小工具設定資料夾 `${XDG_CONFIG_HOME:-~/.config}/resourcewatch`。
 
 ## src-tauri/
 
@@ -35,7 +37,7 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
 
 - 依賴：`tauri` 2（`devtools` feature）、`serde_json`（`--widget` 輸出與 widget.json）、`webkit2gtk`、`gtk`（皆與 Tauri 內部同一版本，用來切換 developer extras 與自建檢查器視窗）、`serde`、`libc`（`statvfs`、`sysconf`、`getifaddrs`）、`libloading`（執行期載入 NVML，沒有 NVIDIA 驅動也能啟動）、
   `tauri-plugin-dialog`（儲存頁「選擇資料夾…」的系統資料夾選擇視窗）。
-- 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.3.5，對應 tag `v0.3.5`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js，改版時一併更新。
+- 版本：只寫在 `src-tauri/Cargo.toml`（目前 0.4.0，對應 tag `v0.4.0`）；`tauri.conf.json` 不設 `version`，Tauri 會沿用 Cargo 的版本。設定頁「關於」的版本字串在 app.js、桌面小工具版本在 `widget/metadata.json`，改版時一併更新。
 - 視窗：系統標題列、不透明、1100×720（最小 720×480）、置中。`withGlobalTauri` 讓前端用 `window.__TAURI__.core.invoke`。
 - CSP：`script-src 'self'; style-src 'self' 'unsafe-inline'`——腳本只能來自 App 本身；`style-src` 允許內嵌樣式，是為了讓開發者模式的檢查器能新增 CSS（Style Attribute 與「+」新規則都是內嵌樣式）。程式碼本身仍不在 HTML 寫 `style` 屬性：長條、環形圖、曲線都用 SVG 屬性畫；資料夾色塊的比例寬度與 CPU 核心直條高度在 `render` 之後以 CSSOM（`el.style.flexGrow`、`el.style.height`）設定。
 - capabilities：`core:default`＋`dialog:allow-open`，沒有 fs／shell／http 外掛。

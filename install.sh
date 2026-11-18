@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 使用者空間安裝／更新／解除安裝 ResourceWatch；不需要 sudo、不分層、不重開機。
 # 用法：./install.sh [install|uninstall]
-#   install：建置 release 執行檔（有 distrobox 容器 resourcewatch-dev 時在容器內建置），安裝到 ~/.local
+#   install：建置 release 執行檔（有 distrobox 容器 resourcewatch-dev 時在容器內建置），安裝到 ~/.local；
+#            有 kpackagetool6（KDE Plasma 6）時一併安裝桌面小工具
 set -euo pipefail
 ID="io.github.local.resourcewatch"
 BOX="${RESOURCEWATCH_BOX:-resourcewatch-dev}"
@@ -11,6 +12,10 @@ BIN="$HOME/.local/bin/resourcewatch"
 DESKTOP="$HOME/.local/share/applications/resourcewatch.desktop"
 OLD_DESKTOP="$HOME/.local/share/applications/$ID.desktop" # 舊版啟動器
 ICON="$HOME/.local/share/icons/hicolor/128x128/apps/$ID.png"
+WIDGET="$ID.widget"
+
+# 整行比對：舊版 id 是新版 id 的前綴
+has_applet() { kpackagetool6 --type Plasma/Applet --list 2>/dev/null | grep -qx "$1"; }
 
 build() {
     local cmd="cd '$ROOT/src-tauri' && cargo tauri build --no-bundle"
@@ -49,14 +54,29 @@ StartupNotify=true
 EOF
         update-desktop-database "$(dirname "$DESKTOP")" 2>/dev/null || true
         echo "已安裝：$BIN"
-        if command -v kpackagetool6 >/dev/null 2>&1 &&
-            kpackagetool6 --type Plasma/Applet --list 2>/dev/null | grep -q "$ID"; then
-            echo "偵測到舊版 Plasma Widget（v0.0.5）仍在系統中；不再需要時可移除："
-            echo "  kpackagetool6 --type Plasma/Applet --remove $ID"
+        if command -v kpackagetool6 >/dev/null 2>&1; then
+            if has_applet "$WIDGET"; then
+                kpackagetool6 --type Plasma/Applet --upgrade "$ROOT/widget" >/dev/null
+                echo "已更新桌面小工具；plasmashell 會快取舊版，重新登入或執行 systemctl --user restart plasma-plasmashell 後生效。"
+            else
+                kpackagetool6 --type Plasma/Applet --install "$ROOT/widget" >/dev/null
+                echo "已安裝桌面小工具：右鍵桌面 → 新增或管理小工具 → ResourceWatch"
+            fi
+            if has_applet "$ID"; then
+                echo "偵測到舊版 Plasma Widget（v0.0.5）仍在系統中；不再需要時可移除："
+                echo "  kpackagetool6 --type Plasma/Applet --remove $ID"
+            fi
+        else
+            echo "沒有 kpackagetool6（非 KDE Plasma 6），略過桌面小工具。"
         fi
         ;;
     uninstall)
         rm -f "$BIN" "$DESKTOP" "$OLD_DESKTOP" "$ICON"
+        if command -v kpackagetool6 >/dev/null 2>&1 && has_applet "$WIDGET"; then
+            kpackagetool6 --type Plasma/Applet --remove "$WIDGET" >/dev/null
+        fi
+        # 小工具設定（設定頁寫入）
+        rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/resourcewatch"
         echo "已解除安裝。"
         ;;
     *)
