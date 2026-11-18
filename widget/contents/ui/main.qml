@@ -73,13 +73,14 @@ PlasmoidItem {
     }
 
     // Cards stack from the top in as many 280 px columns as the width fits (item i goes to column i % n,
-    // like the dashboard's columns); the minimum height makes the desktop grow the widget to fit them.
+    // like the dashboard's columns). The minimum height stays small: tying it to the content (one tall column)
+    // left the desktop no valid position or size, so every move/resize handle turned red.
     fullRepresentation: Item {
         id: full
         readonly property int cols: Math.max(1, Math.floor((width + 12) / (280 + 12)))
         Layout.preferredWidth: 592 // two columns
         Layout.minimumWidth: 220
-        Layout.minimumHeight: cards.implicitHeight
+        Layout.minimumHeight: 120
         Layout.preferredHeight: cards.implicitHeight
 
         ColumnLayout {
