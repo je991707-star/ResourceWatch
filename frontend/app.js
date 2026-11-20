@@ -19,7 +19,7 @@ const pick = { nic: null, gpu: null, io: null };
 let netBase = {};
 try { netBase = JSON.parse(store('rw-netbase') || '{}'); } catch { /* corrupt → none */ }
 const sinceBase = (n, k) => { const b = netBase[n.name]?.[k] ?? 0; return n[k] >= b ? n[k] - b : n[k]; };
-const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '', dev: '' };
+const DEFAULTS = { theme: 'system', interval: 1000, unit: 'c', nic: '', gpu: '0', dev: '' };
 let prefs = { ...DEFAULTS };
 
 const $ = (s) => document.querySelector(s);
@@ -134,6 +134,8 @@ function memParts(m) {
   const app = Math.max(m.total - m.free - m.cached, 0);
   return [['c-yellow', '應用程式', app], ['c-blue', '快取', m.cached], ['c-green', '可用', m.free]];
 }
+// dashboard GPU: the card's ‹ › choice, else the settings default (index; clamped when a GPU disappears)
+const gpuIndex = (s) => Math.max(0, Math.min(+(pick.gpu ?? prefs.gpu) || 0, s.gpus.length - 1));
 const primaryNet = (s) => s.net.find((n) => n.name === prefs.nic) ?? s.net.find((n) => n.gateway) ?? s.net.find((n) => n.up) ?? s.net[0];
 const diskName = (d) => (d.model || d.name).replace(/_/g, ' '); // NVMe models use _ for spaces
 // Process name / desktop id → { icon: data: URL | null, name: .desktop Name | null }; null while loading
@@ -164,7 +166,7 @@ function record(s) {
 function summaryCard(s) {
   const m = s.mem, disks = s.disks.filter((x) => x.total);
   sumDisk = Math.min(sumDisk, Math.max(disks.length - 1, 0));
-  const d = disks[sumDisk], gpu = s.gpus[0]?.usage;
+  const d = disks[sumDisk], gpu = s.gpus[gpuIndex(s)]?.usage;
   const parts = memParts(m);
   const gauge = ring([
     parts.slice(0, 2).map(([cls, , v]) => [ratio(v, m.total), cls]),
@@ -328,7 +330,7 @@ function disksCard(s) {
 function gpuCard(s) {
   if (!s.gpus.length) return card('顯示卡', '<div class="empty">未偵測到可讀取的顯示卡</div>');
   const meter = (k, v, p, cls) => `<div><span>${k}</span><b>${esc(v)}</b>${bar([[p, cls]])}</div>`;
-  const i = Math.min(+pick.gpu || 0, s.gpus.length - 1), g = s.gpus[i];
+  const i = gpuIndex(s), g = s.gpus[i];
   return card('顯示卡', `<h3 class="sub">${icon('gpu')}<span class="ell" title="${esc(g.name)}">${esc(g.name)}</span>${flipper('gpu', s.gpus.map((_, k) => String(k)), i)}<i class="spacer"></i><span class="muted sm">${temp(g.temp)}</span></h3>
       <div class="gpu-row">${ring([[[g.usage, 'c-blue']]], 96, pct(g.usage))}<div class="meters">
         ${meter('顯示記憶體', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`, ratio(g.memUsed, g.memTotal), 'c-yellow')}
@@ -548,6 +550,7 @@ const PAGES = {
       row('更新間隔', `曲線保留最近 ${N} 筆`, seg('interval', [[500, '0.5 秒'], [1000, '1 秒'], [2000, '2 秒'], [5000, '5 秒']])),
       row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
       row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+      ...(s.gpus.length ? [row('儀表板顯示卡', '', seg('gpu', s.gpus.map((g, i) => [String(i), g.name || `GPU ${i}`])))] : []),
       row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
     ].join(''))}${widgetCard(s, row)}${card('關於', `<div class="about">ResourceWatch 0.4.1 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
@@ -723,7 +726,7 @@ try { prefs = { ...DEFAULTS, ...JSON.parse(store('rw-prefs') || '{}') }; } catch
 let timer = null;
 function setPref(key, val) {
   prefs[key] = key === 'interval' ? +val : val;
-  if (key === 'nic') pick.nic = null; // a new default replaces the card's ‹ › choice
+  if (key === 'nic' || key === 'gpu') pick[key] = null; // a new default replaces the card's ‹ › choice
   store('rw-prefs', JSON.stringify(prefs));
   applyPrefs();
   render();
