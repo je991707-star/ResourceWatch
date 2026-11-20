@@ -512,7 +512,7 @@ function widgetCard(s, row) {
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
     row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'nic', wcfg.nic, nicOpts(s))),
     s.gpus.length ? row('顯示卡', '', dropdown('w', 'gpu', wcfg.gpu ?? 0, gpuOpts(s))) : '',
-    row('ResourceWatch 格子', '處理器上方的圖示與名稱', seg('app', [[true, '顯示'], [false, '隱藏']])),
+    row('音樂播放格子', '處理器上方的播放中媒體', seg('app', [[true, '顯示'], [false, '隱藏']])),
     row('卡片透明度', '只影響卡片底色，文字與圖表不透明', (() => {
       const t = Math.round((100 - (wcfg.opacity ?? 100)) / (W_MAX_TRANS / 100) / 5) * 5;
       return `<div class="set-ctl"><input type="range" class="wrange" data-wrange min="0" max="100" step="5" value="${t}"><span class="wrange-val">${t}%</span></div>`;

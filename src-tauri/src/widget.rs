@@ -24,7 +24,7 @@ pub struct Config {
     pub panel_nic: Option<String>,
     #[serde(rename = "panelGpu")]
     pub panel_gpu: u32,
-    /// The app icon/name card above the CPU card.
+    /// The now-playing (media) card above the CPU card; the key stays `app`.
     pub app: bool,
     /// Items shown when the widget sits in a panel, in order, independent of the desktop cards; values from `PANEL_ITEMS`.
     pub panel: Vec<String>,
@@ -102,7 +102,7 @@ pub fn set_order(list: &str) -> Result<(), String> {
     save(cfg).map(|_| ())
 }
 
-/// `resourcewatch --widget-app on|off`: the widget's right-click menu closes the app card.
+/// `resourcewatch --widget-app on|off`: the widget's right-click menu closes the media card.
 pub fn set_app(on: &str) -> Result<(), String> {
     let mut cfg = load();
     cfg.app = match on {

@@ -20,7 +20,7 @@ PlasmoidItem {
     // card reordering: the pointer is over a card's content area / the key of the card being dragged
     property bool overBody: false
     property string dragKey: ""
-    // config fields saved from the widget (order, app card) but not yet seen in `--widget` output
+    // config fields saved from the widget (order, media card) but not yet seen in `--widget` output
     // (a run already under way prints the old values); they override the output until it matches
     property var pending: ({})
     // card under the pointer when Plasma's context menu opened, for its "close card" entry
@@ -38,7 +38,7 @@ PlasmoidItem {
         popupKey = key;
         expanded = true;
     }
-    readonly property var titles: ({ app: "ResourceWatch", cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
+    readonly property var titles: ({ app: "音樂播放", cpu: "處理器", mem: "記憶體", gpu: "顯示卡", net: "網路", disk: "磁碟", temp: "溫度" })
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -215,7 +215,7 @@ PlasmoidItem {
     fullRepresentation: Item {
         id: full
         readonly property int cardWidth: 282
-        // in a panel's popup: one column with only the clicked item's card, no app card, no reordering
+        // in a panel's popup: one column with only the clicked item's card, no media card, no reordering
         readonly property bool single: root.inPanel
         readonly property int cols: single ? 1 : 2
         property point dragFrom
@@ -241,7 +241,7 @@ PlasmoidItem {
             }
             return Math.min(row * cols + col, items.length - 1);
         }
-        // key of the card containing `p` (full's coordinates), "" for the gaps and the app card
+        // key of the card containing `p` (full's coordinates), "" for the gaps and the media card
         function cardAt(p) {
             for (let c = 0; c < columns.count; c++) {
                 const column = columns.itemAt(c);
@@ -300,20 +300,20 @@ PlasmoidItem {
                         Layout.preferredWidth: full.cardWidth
                         Layout.alignment: Qt.AlignTop
                         spacing: 12
-                        // height of this column's cards alone (without the app card), so the app card can size
+                        // height of this column's cards alone (without the media card), so the media card can size
                         // itself from the difference without depending on its own height
                         readonly property real cardsHeight: {
                             let h = 0;
                             for (let i = 0; i < cardRep.count; i++) h += cardRep.itemAt(i)?.implicitHeight ?? 0;
                             return h + Math.max(0, cardRep.count - 1) * spacing;
                         }
-                        // App icon and name above the CPU card, filling what the other column is taller by
-                        AppCard {
+                        // now playing above the CPU card, filling what the other column is taller by
+                        MediaCard {
                             readonly property var other: columns.count > 1 ? columns.itemAt(1 - col) : null
                             readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
                             theme: colors
                             readonly property bool isApp: true
-                            visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 48
+                            visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 72
                             Layout.fillWidth: true
                             Layout.preferredHeight: gap
                         }
