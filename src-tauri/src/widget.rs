@@ -17,6 +17,13 @@ pub struct Config {
     pub interval: u32,
     /// Interface for the network card; None = the one with the default gateway.
     pub nic: Option<String>,
+    /// Index of the GPU on the GPU card (clamped to the last GPU when shown).
+    pub gpu: u32,
+    /// Interface and GPU for the panel items and their popup cards, chosen apart from the desktop's.
+    #[serde(rename = "panelNic")]
+    pub panel_nic: Option<String>,
+    #[serde(rename = "panelGpu")]
+    pub panel_gpu: u32,
     /// The app icon/name card above the CPU card.
     pub app: bool,
     /// Items shown when the widget sits in a panel, in order, independent of the desktop cards; values from `PANEL_ITEMS`.
@@ -32,6 +39,9 @@ impl Default for Config {
             items: ["cpu", "gpu", "net", "disk", "temp", "mem"].map(String::from).to_vec(),
             interval: 2,
             nic: None,
+            gpu: 0,
+            panel_nic: None,
+            panel_gpu: 0,
             app: true,
             opacity: 100,
             panel: PANEL_ITEMS.map(String::from).to_vec(),
@@ -125,6 +135,8 @@ mod tests {
         assert_eq!(c.interval, 2);
         assert_eq!(c.nic, None);
         assert_eq!(parse(r#"{"nic":"eth0","interval":5}"#).nic.as_deref(), Some("eth0"));
+        let p = parse(r#"{"gpu":1,"panelGpu":2,"panelNic":"wlan0"}"#);
+        assert_eq!((p.gpu, p.panel_gpu, p.panel_nic.as_deref()), (1, 2, Some("wlan0")));
         assert_eq!(parse(r#"{"interval":5}"#).interval, 5);
         assert!(parse("{}").app);
         assert!(!parse(r#"{"app":false}"#).app);

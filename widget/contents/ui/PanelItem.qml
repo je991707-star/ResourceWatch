@@ -12,12 +12,13 @@ Item {
     required property Theme theme
     property var snap
     property var hist
-    property var cfg
+    property var nic: null
+    property var gpu: null
     property bool vertical: false
     signal clicked()
 
-    readonly property var n: key === "net" ? Fmt.nic(snap, cfg.nic) ?? null : null
-    readonly property var g: snap.gpus[0] ?? null
+    readonly property var n: key === "net" ? nic : null
+    readonly property var g: gpu
     readonly property string icon: ({ net: "network-wired", disk: "drive-harddisk" })[key] ?? ""
     readonly property var lines: {
         switch (key) {

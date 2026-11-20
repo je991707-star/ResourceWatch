@@ -491,6 +491,15 @@ const W_MAX_TRANS = 40;
 let wSliding = false;
 // panel chip being dragged in the settings: { key, x, el, moved }; `moved` suppresses the click that follows
 let wDrag = null;
+// settings dropdown (the .pick native-select button); data-<attr>-sel, not data-<attr>, so clicking it is not a click action
+const dropdown = (attr, key, cur, opts) => {
+  const sel = opts.find(([v]) => String(v) === String(cur ?? '')) ?? opts[0];
+  return `<label class="btn pick"><span class="ell">${esc(sel[1])}</span>${icon('open')}<select data-${attr}-sel="${key}">${opts.map(([v, t]) =>
+    `<option value="${esc(v)}"${v === sel[0] ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+};
+const nicOpts = (s) => [['', '自動'], ...s.net.map((n) => [n.name, n.name])];
+const gpuOpts = (s) => s.gpus.map((g, i) => [String(i), g.name || `GPU ${i}`]);
+
 function widgetCard(s, row) {
   if (!wcfg) return card('桌面小工具', `<div class="empty">${esc(wErr || '讀取設定中…')}</div>`);
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
@@ -504,7 +513,8 @@ function widgetCard(s, row) {
     row('顯示項目', '依順序排列卡片', ''),
     `<ul class="witems">${on || '<li class="muted">未選擇任何項目</li>'}</ul>${off ? `<div class="wadd">${off}</div>` : ''}`,
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
-    row('網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
+    row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'nic', wcfg.nic, nicOpts(s))),
+    s.gpus.length ? row('顯示卡', '', dropdown('w', 'gpu', wcfg.gpu ?? 0, gpuOpts(s))) : '',
     row('ResourceWatch 格子', '處理器上方的圖示與名稱', seg('app', [[true, '顯示'], [false, '隱藏']])),
     row('卡片透明度', '只影響卡片底色，文字與圖表不透明', (() => {
       const t = Math.round((100 - (wcfg.opacity ?? 100)) / (W_MAX_TRANS / 100) / 5) * 5;
@@ -515,6 +525,8 @@ function widgetCard(s, row) {
     `<p class="hint">把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片</p>`,
     row('顯示項目', '點擊切換顯示／隱藏，拖動調整順序', `<div class="seg wchips">${panelChips().map((k) =>
       `<button data-w="panel" data-val="${k}" data-wchip="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k][0]}</button>`).join('')}</div>`),
+    row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'panelNic', wcfg.panelNic, nicOpts(s))),
+    s.gpus.length ? row('顯示卡', '', dropdown('w', 'panelGpu', wcfg.panelGpu ?? 0, gpuOpts(s))) : '',
   ].join(''));
 }
 // shown items in panel order, then the hidden ones
@@ -526,7 +538,8 @@ async function setWidget(act, val) {
   else if (act === 'del') c.items.splice(i, 1);
   else if (act === 'up' || act === 'down') { const j = act === 'up' ? i - 1 : i + 1; [c.items[i], c.items[j]] = [c.items[j], c.items[i]]; }
   else if (act === 'interval') c.interval = +val;
-  else if (act === 'nic') c.nic = val || null;
+  else if (act === 'nic' || act === 'panelNic') c[act] = val || null;
+  else if (act === 'gpu' || act === 'panelGpu') c[act] = +val;
   else if (act === 'app') c.app = val === 'true';
   else if (act === 'panel') { const p = c.panel ?? [...PANEL_ITEMS]; c.panel = p.includes(val) ? p.filter((k) => k !== val) : [...p, val]; }
   else if (act === 'panelOrder') c.panel = val;
@@ -549,8 +562,8 @@ const PAGES = {
       row('主題', '', seg('theme', [['system', '跟隨系統'], ['dark', '深色'], ['light', '淺色']])),
       row('更新間隔', `曲線保留最近 ${N} 筆`, seg('interval', [[500, '0.5 秒'], [1000, '1 秒'], [2000, '2 秒'], [5000, '5 秒']])),
       row('溫度單位', '', seg('unit', [['c', '°C'], ['f', '°F']])),
-      row('儀表板網路卡', '自動：有預設閘道的網卡', seg('nic', [['', '自動'], ...s.net.map((n) => [n.name, n.name])])),
-      ...(s.gpus.length ? [row('儀表板顯示卡', '', seg('gpu', s.gpus.map((g, i) => [String(i), g.name || `GPU ${i}`])))] : []),
+      row('儀表板網路卡', '自動：有預設閘道的網卡', dropdown('pref', 'nic', prefs.nic, nicOpts(s))),
+      s.gpus.length ? row('儀表板顯示卡', '', dropdown('pref', 'gpu', prefs.gpu, gpuOpts(s))) : '',
       row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
     ].join(''))}${widgetCard(s, row)}${card('關於', `<div class="about">ResourceWatch 0.4.1 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
@@ -608,7 +621,7 @@ function storagePage() {
     : du.root ? [`${du.root.items.toLocaleString()} 項`, `已用 ${bytes(du.root.size)}`, ...(mnt ? [`總容量 ${bytes(mnt.total)}`, `可用 ${bytes(mnt.total - mnt.used)}`] : [])] : [];
   const head = `<div class="du-head">${icon(dsk ? 'storage' : 'folder', 'folder')}<div class="path"><b title="${esc(title)}">${esc(title)}</b>
       ${dsk ? `<span title="${esc(mnt.mount)}">${esc(mnt.mount)}</span>` : ''}<p class="muted">${stats.map((t) => `<i>${t}</i>`).join(' · ')}</p></div>
-      <div class="du-actions"><label class="btn pick-disk">${icon('storage')}<span class="ell">${esc(dsk ? diskName(dsk) : '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
+      <div class="du-actions"><label class="btn pick">${icon('storage')}<span class="ell">${esc(dsk ? diskName(dsk) : '選擇磁碟…')}</span><select data-du="disk"${du.busy ? ' disabled' : ''}><option value="" disabled${dsk ? '' : ' selected'}>選擇磁碟…</option>${snap.disks.flatMap((d) => d.mounts
         .filter((m) => !/^\/(boot|efi)(\/|$)/.test(m)) // boot partitions aren't worth analyzing
         .map((m) => `<option value="${esc(m)}"${m === mnt?.mount ? ' selected' : ''}>${esc(diskName(d))} · ${esc(m)}</option>`)).join('')}</select></label>
       <button class="btn" data-du="pick"${du.busy ? ' disabled' : ''}>${icon('pick')}選擇資料夾…</button>
@@ -757,6 +770,8 @@ $('#pages').addEventListener('click', (e) => { const b = e.target.closest('[data
 
 $('#content').addEventListener('change', (e) => {
   if (e.target.dataset.du === 'disk' && e.target.value) duScan(e.target.value);
+  if (e.target.dataset.prefSel) setPref(e.target.dataset.prefSel, e.target.value);
+  if (e.target.dataset.wSel) setWidget(e.target.dataset.wSel, e.target.value);
   if (e.target.matches('[data-wrange]')) { wSliding = false; setWidget('opacity', 100 - (+e.target.value * W_MAX_TRANS) / 100); }
 });
 $('#content').addEventListener('pointerdown', (e) => {
@@ -852,7 +867,8 @@ async function tick() {
     snap = await invoke('snapshot');
     record(snap);
     // The analyzer and the process table only change on their own events.
-    if (page === 'storage' || page === 'apps' || wSliding) hostBar(); else render();
+    // an open dropdown would close if the page were redrawn under it
+    if (page === 'storage' || page === 'apps' || wSliding || document.activeElement?.matches('#content select')) hostBar(); else render();
   } catch (e) {
     console.error(e);
   }

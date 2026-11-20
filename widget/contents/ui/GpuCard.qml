@@ -6,7 +6,7 @@ Card {
     id: c
     property var snap
     property var hist
-    readonly property var g: snap.gpus[0] ?? null
+    property var g: null
     title: "顯示卡"
     subtitle: g ? g.name : ""
     extra: g ? Fmt.temp(g.temp) : ""

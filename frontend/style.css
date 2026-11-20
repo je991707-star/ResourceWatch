@@ -312,9 +312,9 @@ i.app-ic { font-size: 15px; line-height: 18px; text-align: center; color: var(--
 .btn:hover { background: var(--sel); }
 .btn:disabled { opacity: .5; cursor: default; }
 /* native <select> laid invisibly over a .btn so it looks like the other buttons but keeps the system menu */
-.pick-disk { position: relative; max-width: 320px; }
-.pick-disk select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font: inherit; }
-.pick-disk:has(select:disabled) { opacity: .5; }
+.pick { position: relative; max-width: 320px; }
+.pick select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font: inherit; }
+.pick:has(select:disabled) { opacity: .5; }
 /* side by side when both fit, otherwise the file list drops below at full width */
 .du { display: flex; flex-wrap: wrap; gap: 22px; align-items: start; }
 .du > :first-child { flex: 999 1 420px; min-width: 0; }

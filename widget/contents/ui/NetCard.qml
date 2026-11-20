@@ -6,8 +6,7 @@ Card {
     id: c
     property var snap
     property var hist
-    property var cfg
-    readonly property var n: Fmt.nic(snap, cfg.nic) ?? null
+    property var n: null
     title: "網路"
     extra: n ? n.name : ""
     subtitle: n ? "本機 IPv4 " + (n.ip ? n.ip + "/" + n.prefix : "--") : ""
