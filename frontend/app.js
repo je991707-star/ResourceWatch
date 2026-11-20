@@ -57,7 +57,7 @@ const ICON = {
   pc: 'fa-solid fa-desktop', router: 'fa-solid fa-network-wired', down: 'fa-solid fa-arrow-down', up: 'fa-solid fa-arrow-up', eth: 'fa-solid fa-ethernet', wifi: 'fa-solid fa-wifi', dns: 'fa-solid fa-server',
   folder: 'fa-solid fa-folder', pick: 'fa-solid fa-folder-open', file: 'fa-regular fa-file', refresh: 'fa-solid fa-rotate-right', cancel: 'fa-solid fa-xmark', gpu: 'fa-solid fa-microchip', app: 'fa-regular fa-window-maximize', reset: 'fa-solid fa-rotate-left',
   display: 'fa-solid fa-display', board: 'fa-solid fa-server', leaf: 'fa-solid fa-leaf', open: 'fa-solid fa-chevron-down', closed: 'fa-solid fa-chevron-right',
-  mem: 'fa-solid fa-memory', add: 'fa-solid fa-plus',
+  mem: 'fa-solid fa-memory',
 };
 const icon = (name, cls = '') => `<i class="i ${ICON[name]} ${cls}"></i>`;
 // os-release ID → Font Awesome brand, used when the distro ships no logo file
@@ -483,7 +483,7 @@ function appsPage() {
 // Desktop widget (Plasma): its config lives in widget.json, read by `resourcewatch --widget`.
 // what the panel can show, default order (same as widget.rs PANEL_ITEMS)
 const PANEL_ITEMS = ['cpu', 'gpu', 'mem', 'net', 'disk'];
-const WIDGET_ITEMS = { cpu: ['處理器', 'gpu'], mem: ['記憶體', 'mem'], gpu: ['顯示卡', 'display'], net: ['網路', 'net'], disk: ['磁碟', 'storage'], temp: ['溫度', 'sensors'] };
+const WIDGET_ITEMS = { cpu: '處理器', mem: '記憶體', gpu: '顯示卡', net: '網路', disk: '磁碟', temp: '溫度' };
 let wcfg = null, wErr = '';
 // the opacity slider's 0–100% (5% steps) maps onto 0–40% real transparency, i.e. opacity 100–60 in 2% steps
 const W_MAX_TRANS = 40;
@@ -503,15 +503,12 @@ const gpuOpts = (s) => s.gpus.map((g, i) => [String(i), g.name || `GPU ${i}`]);
 function widgetCard(s, row) {
   if (!wcfg) return card('桌面小工具', `<div class="empty">${esc(wErr || '讀取設定中…')}</div>`);
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
-  const btn = (act, k, ic, title, off) => `<button class="btn icon" data-w="${act}" data-val="${k}" title="${title}"${off ? ' disabled' : ''}>${icon(ic)}</button>`;
-  const on = wcfg.items.map((k, i) => `<li>${icon(WIDGET_ITEMS[k][1])}<span>${WIDGET_ITEMS[k][0]}</span>
-    ${btn('up', k, 'up', '上移', !i)}${btn('down', k, 'down', '下移', i === wcfg.items.length - 1)}${btn('del', k, 'cancel', '移除')}</li>`).join('');
-  const off = Object.keys(WIDGET_ITEMS).filter((k) => !wcfg.items.includes(k))
-    .map((k) => `<button class="btn" data-w="add" data-val="${k}">${icon('add')}${WIDGET_ITEMS[k][0]}</button>`).join('');
+  // shown cards in their order, then the hidden ones; the order itself is changed by long-pressing cards on the widget
+  const chips = [...wcfg.items, ...Object.keys(WIDGET_ITEMS).filter((k) => !wcfg.items.includes(k))];
   return card('桌面小工具', [
     `<p class="hint">右鍵桌面 → 新增或管理小工具 → ResourceWatch</p>`,
-    row('顯示項目', '依順序排列卡片', ''),
-    `<ul class="witems">${on || '<li class="muted">未選擇任何項目</li>'}</ul>${off ? `<div class="wadd">${off}</div>` : ''}`,
+    row('顯示項目', '點擊切換顯示／隱藏，在小工具上長按卡片調整位置', `<div class="seg">${chips.map((k) =>
+      `<button data-w="item" data-val="${k}" class="${wcfg.items.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k]}</button>`).join('')}</div>`),
     row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
     row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'nic', wcfg.nic, nicOpts(s))),
     s.gpus.length ? row('顯示卡', '', dropdown('w', 'gpu', wcfg.gpu ?? 0, gpuOpts(s))) : '',
@@ -524,7 +521,7 @@ function widgetCard(s, row) {
   ].join('')) + card('面板小工具', [
     `<p class="hint">把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片</p>`,
     row('顯示項目', '點擊切換顯示／隱藏，拖動調整順序', `<div class="seg wchips">${panelChips().map((k) =>
-      `<button data-w="panel" data-val="${k}" data-wchip="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k][0]}</button>`).join('')}</div>`),
+      `<button data-w="panel" data-val="${k}" data-wchip="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k]}</button>`).join('')}</div>`),
     row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'panelNic', wcfg.panelNic, nicOpts(s))),
     s.gpus.length ? row('顯示卡', '', dropdown('w', 'panelGpu', wcfg.panelGpu ?? 0, gpuOpts(s))) : '',
   ].join(''));
@@ -533,10 +530,7 @@ function widgetCard(s, row) {
 const panelChips = () => { const p = wcfg.panel ?? PANEL_ITEMS; return [...p, ...PANEL_ITEMS.filter((k) => !p.includes(k))]; };
 async function setWidget(act, val) {
   const c = { ...wcfg, items: [...wcfg.items] };
-  const i = c.items.indexOf(val);
-  if (act === 'add') c.items.push(val);
-  else if (act === 'del') c.items.splice(i, 1);
-  else if (act === 'up' || act === 'down') { const j = act === 'up' ? i - 1 : i + 1; [c.items[i], c.items[j]] = [c.items[j], c.items[i]]; }
+  if (act === 'item') c.items = c.items.includes(val) ? c.items.filter((k) => k !== val) : [...c.items, val];
   else if (act === 'interval') c.interval = +val;
   else if (act === 'nic' || act === 'panelNic') c[act] = val || null;
   else if (act === 'gpu' || act === 'panelGpu') c[act] = +val;
