@@ -65,9 +65,9 @@ GNOME Shell 擴充功能（gnome/）
 - [x] ✅ 巢狀 Shell 截圖與 Plasma 版比對，commit。
 
 ## Phase 5：安裝、文件
-- [ ] `install.sh`：偵測到 `gnome-extensions` 時，把 `gnome/`（不含 `dev/`）複製到 `~/.local/share/gnome-shell/extensions/<uuid>/` 並 `gnome-extensions enable <uuid>`；提示 Wayland 下新安裝或更新的擴充功能要重新登入才會載入。`uninstall` 一併移除。
-- [ ] README：安裝需求與功能介紹加入 GNOME 頂欄與截圖。
-- [ ] 更新 Architecture（install.sh、gnome/），commit。
+- [x] ✅ `install.sh`：偵測到 `gnome-extensions` 時，把 `gnome/`（不含 `dev/`）複製到 `~/.local/share/gnome-shell/extensions/<uuid>/` 並 `gnome-extensions enable <uuid>`；提示 Wayland 下新安裝或更新的擴充功能要重新登入才會載入。`uninstall` 一併移除。
+- [x] ✅ README：安裝需求與功能介紹加入 GNOME 頂欄與截圖。
+- [x] ✅ 更新 Architecture（install.sh、gnome/），commit。
 - [ ] （選擇性）上架 extensions.gnome.org：擴充功能本身不含執行檔，需註明須另外安裝 ResourceWatch。
 
 ---

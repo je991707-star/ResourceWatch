@@ -1,11 +1,11 @@
 # ResourceWatch
 
-**Linux 系統資源監控** · Rust + Tauri 2 · KDE Plasma 6 桌面／面板小工具 · MIT License
+**Linux 系統資源監控** · Rust + Tauri 2 · KDE Plasma 6 桌面／面板小工具 · GNOME 頂欄 · MIT License
 
 ## 1. 簡介
 
 ResourceWatch 是儀表板式的 Linux 系統監控程式，即時顯示 CPU、記憶體、顯示卡、磁碟、網路、感測器與程序，並內建資料夾空間分析。
-同一個執行檔也提供 KDE Plasma 6 小工具的資料，小工具可以放在桌面或面板上，不必開著主程式。
+同一個執行檔也提供小工具的資料：KDE Plasma 6 可以放在桌面或面板上，GNOME 則顯示在頂欄，都不必開著主程式。
 
 ![儀表板](docs/screenshots/dashboard.png)
 
@@ -22,8 +22,9 @@ ResourceWatch 是儀表板式的 Linux 系統監控程式，即時顯示 CPU、�
 | --- | --- |
 | 作業系統 | Linux（x86_64） |
 | App | WebKitGTK 4.1（大多數桌面發行版已內建） |
-| 桌面／面板小工具 | **KDE Plasma 6.0 以上**（需要 `kpackagetool6`）；其他桌面環境只能使用 App |
-| 音樂播放格子 | 支援 MPRIS 的播放器（大多數音樂 App、瀏覽器都支援） |
+| 桌面／面板小工具 | **KDE Plasma 6.0 以上**（需要 `kpackagetool6`） |
+| 頂欄擴充功能 | **GNOME 46 以上**（需要 `gnome-extensions`）；其他桌面環境只能使用 App |
+| 音樂播放格子（Plasma） | 支援 MPRIS 的播放器（大多數音樂 App、瀏覽器都支援） |
 | 感測器頁的「載入更多感測器」 | polkit（`pkexec`），按下按鈕時才會要求授權 |
 | NVIDIA 顯示卡資料 | NVIDIA 專有驅動（提供 `libnvidia-ml.so.1`）；沒有時只是不顯示 NVIDIA 資料 |
 | Wi-Fi 詳細資訊 | `iw`（沒有時只是不顯示訊號與頻段） |
@@ -59,6 +60,7 @@ cd ResourceWatch
 | 執行檔 | `~/.local/bin/resourcewatch` |
 | 應用程式選單啟動器與圖示 | `~/.local/share/applications/`、`~/.local/share/icons/` |
 | Plasma 小工具（有 KDE Plasma 6 時） | `~/.local/share/plasma/plasmoids/` |
+| GNOME 頂欄擴充功能（有 GNOME 時） | `~/.local/share/gnome-shell/extensions/` |
 
 - 有 distrobox 容器 `resourcewatch-dev` 時在容器內建置（可用環境變數 `RESOURCEWATCH_BOX` 指定其他容器），否則用主機的 `cargo tauri`。
 - 更新：拉取新版後再執行一次 `./install.sh`。更新小工具後 Plasma 會沿用快取的舊版，需重新登入或執行：
@@ -66,6 +68,8 @@ cd ResourceWatch
   ```bash
   systemctl --user restart plasma-plasmashell
   ```
+
+- GNOME：新安裝或更新擴充功能後需重新登入（Wayland 無法即時載入擴充功能），之後可在「擴充功能」App 開關。
 
 - 解除安裝（同時刪除小工具設定 `~/.config/resourcewatch`）：
 
@@ -121,6 +125,14 @@ cd ResourceWatch
 
 面板的顯示項目、順序、網路卡與顯示卡都和桌面版分開設定；項目順序在設定頁拖動按鈕調整。
 
+### GNOME 頂欄
+
+GNOME 沒有桌面小工具，改以頂欄擴充功能提供和面板小工具相同的項目；點一下彈出該項的卡片，卡片跟隨 GNOME 的淺色／深色樣式。
+
+<img src="docs/screenshots/gnome.png" alt="GNOME 頂欄" width="560">
+
+顯示項目、順序、網路卡、顯示卡與更新間隔在 App 設定頁的「頂欄」卡片設定（在 GNOME 下，設定頁只會顯示這張卡片）。
+
 ## 5. 開發
 
 ```bash
@@ -130,7 +142,8 @@ cargo tauri build --no-bundle      # release 執行檔 → ../target/release/res
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-- 前端在 `frontend/`，是不需打包工具的純 HTML／CSS／JS；小工具在 `widget/`，純 QML，沒有編譯步驟。
+- 前端在 `frontend/`，是不需打包工具的純 HTML／CSS／JS；Plasma 小工具在 `widget/`（純 QML），GNOME 擴充功能在 `gnome/`（GJS），都沒有編譯步驟。
+- GNOME 擴充功能可在 distrobox 容器裡以隔離的無頭 GNOME Shell 測試，見 `gnome/dev/nested.sh`。
 - 小工具的資料來自 `resourcewatch --widget`：輸出一次 JSON（設定與快照），不會開視窗。
 - 在沒有整合 NVIDIA 驅動的容器內執行時讀不到 NVIDIA 顯示卡，請在主機上執行。
 

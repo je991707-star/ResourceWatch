@@ -29,7 +29,8 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
   啟動器到 `~/.local/share/applications/resourcewatch.desktop`（檔名須等於 Wayland app_id，也就是執行檔名，KWin 才找得到圖示）。
   有 `kpackagetool6`（KDE Plasma 6）時安裝 `widget/` 桌面小工具（`io.github.local.resourcewatch.widget`）：已安裝則 `--upgrade` 並提示 plasmashell 會快取舊版 QML，需重新登入或 `systemctl --user restart plasma-plasmashell`；沒有 `kpackagetool6` 時略過並提示。
   舊版 Plasma Widget（id `io.github.local.resourcewatch`，v0.0.5）仍在時提示移除指令；`has_applet` 以整行比對清單，因為舊 id 是新 id 的前綴。
-- `uninstall`：刪除上述檔案、移除桌面小工具，並刪除小工具設定資料夾 `${XDG_CONFIG_HOME:-~/.config}/resourcewatch`。
+  有 `gnome-extensions`（GNOME）時執行 `install_gnome`：把 `gnome/`（不含測試用的 `dev/`）複製到 `${XDG_DATA_HOME:-~/.local/share}/gnome-shell/extensions/resourcewatch@je991707-star.github.io/`（先刪除舊版），再 `gnome-extensions enable`；Wayland 的 Shell 要重新登入才認得新裝的擴充功能，此時 enable 會失敗，改把 uuid 附加到 `org.gnome.shell enabled-extensions`（已在清單中就不動、保留其他項目），提示重新登入後生效。兩者都沒有時才提示略過小工具。
+- `uninstall`：刪除上述檔案、移除桌面小工具與 GNOME 擴充功能（`uninstall_gnome`：`gnome-extensions disable` 後刪除資料夾），並刪除小工具設定資料夾 `${XDG_CONFIG_HOME:-~/.config}/resourcewatch`。
 
 ## src-tauri/
 
