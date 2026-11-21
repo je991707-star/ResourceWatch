@@ -36,7 +36,9 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             // left column cpu/net/temp, right column gpu/disk/mem (item i goes to column i % 2)
-            items: ["cpu", "gpu", "net", "disk", "temp", "mem"].map(String::from).to_vec(),
+            items: ["cpu", "gpu", "net", "disk", "temp", "mem"]
+                .map(String::from)
+                .to_vec(),
             interval: 2,
             nic: None,
             gpu: 0,
@@ -53,11 +55,19 @@ impl Config {
     /// Drops unknown and repeated items and keeps the interval at least 2 s.
     fn clean(mut self) -> Self {
         let mut seen = Vec::new();
-        self.items
-            .retain(|i| ITEMS.contains(&i.as_str()) && !seen.contains(i) && { seen.push(i.clone()); true });
+        self.items.retain(|i| {
+            ITEMS.contains(&i.as_str()) && !seen.contains(i) && {
+                seen.push(i.clone());
+                true
+            }
+        });
         let mut seen = Vec::new();
-        self.panel
-            .retain(|i| PANEL_ITEMS.contains(&i.as_str()) && !seen.contains(i) && { seen.push(i.clone()); true });
+        self.panel.retain(|i| {
+            PANEL_ITEMS.contains(&i.as_str()) && !seen.contains(i) && {
+                seen.push(i.clone());
+                true
+            }
+        });
         self.interval = self.interval.clamp(2, 60);
         self.opacity = self.opacity.clamp(60, 100);
         self
@@ -74,7 +84,9 @@ fn path() -> Option<PathBuf> {
 
 /// Missing fields take their defaults; unreadable JSON gives the whole default.
 fn parse(s: &str) -> Config {
-    serde_json::from_str::<Config>(s).unwrap_or_default().clean()
+    serde_json::from_str::<Config>(s)
+        .unwrap_or_default()
+        .clean()
 }
 
 pub fn load() -> Config {
@@ -134,9 +146,15 @@ mod tests {
         assert_eq!(c.items, ["temp", "cpu"]);
         assert_eq!(c.interval, 2);
         assert_eq!(c.nic, None);
-        assert_eq!(parse(r#"{"nic":"eth0","interval":5}"#).nic.as_deref(), Some("eth0"));
+        assert_eq!(
+            parse(r#"{"nic":"eth0","interval":5}"#).nic.as_deref(),
+            Some("eth0")
+        );
         let p = parse(r#"{"gpu":1,"panelGpu":2,"panelNic":"wlan0"}"#);
-        assert_eq!((p.gpu, p.panel_gpu, p.panel_nic.as_deref()), (1, 2, Some("wlan0")));
+        assert_eq!(
+            (p.gpu, p.panel_gpu, p.panel_nic.as_deref()),
+            (1, 2, Some("wlan0"))
+        );
         assert_eq!(parse(r#"{"interval":5}"#).interval, 5);
         assert!(parse("{}").app);
         assert!(!parse(r#"{"app":false}"#).app);
@@ -144,6 +162,9 @@ mod tests {
         assert_eq!(parse(r#"{"opacity":250}"#).opacity, 100);
         assert_eq!(parse(r#"{"opacity":10}"#).opacity, 60);
         assert_eq!(parse("{}").panel, PANEL_ITEMS);
-        assert_eq!(parse(r#"{"panel":["net","temp","cpu","net"]}"#).panel, ["net", "cpu"]);
+        assert_eq!(
+            parse(r#"{"panel":["net","temp","cpu","net"]}"#).panel,
+            ["net", "cpu"]
+        );
     }
 }

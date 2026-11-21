@@ -217,9 +217,12 @@ impl Nvml {
     }
 }
 
+/// (client id, PCI address, [(engine, busy ns)])
+type Client = (u64, String, Vec<(String, u64)>);
+
 /// One DRM client's fdinfo → (client id, PCI address, [(engine, busy ns)]); None when it has no
 /// `drm-engine-*` ns counters (NVIDIA's proprietary driver, xe's cycle counters).
-fn parse_fdinfo(text: &str) -> Option<(u64, String, Vec<(String, u64)>)> {
+fn parse_fdinfo(text: &str) -> Option<Client> {
     let (mut id, mut pdev, mut eng) = (None, None, Vec::new());
     for l in text.lines() {
         let Some((k, v)) = l.split_once(':') else {
@@ -240,6 +243,43 @@ fn parse_fdinfo(text: &str) -> Option<(u64, String, Vec<(String, u64)>)> {
         }
     }
     (!eng.is_empty()).then_some((id?, pdev?, eng))
+}
+
+/// DRM clients `pid` has open, one per /dev/dri fd with engine counters (see `parse_fdinfo`).
+fn drm_clients(pid: u32) -> Vec<Client> {
+    fs::read_dir(format!("/proc/{pid}/fd"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|fd| fs::read_link(fd.path()).is_ok_and(|l| l.starts_with("/dev/dri/")))
+        .filter_map(|fd| {
+            let name = fd.file_name();
+            parse_fdinfo(
+                &fs::read_to_string(format!("/proc/{pid}/fdinfo/{}", name.to_string_lossy()))
+                    .ok()?,
+            )
+        })
+        .collect()
+}
+
+type Counters = HashMap<(String, u64, String), u64>;
+
+/// (PCI address, client id, engine) busy ns at two times `secs` apart → per PCI address, the
+/// busiest engine's share (%) summed over clients present at both times, capped at 100.
+fn busiest(prev: &Counters, cur: &Counters, secs: f64) -> HashMap<String, f64> {
+    let mut engines: HashMap<(&str, &str), f64> = HashMap::new();
+    for (k, ns) in cur {
+        if let Some(p) = prev.get(k) {
+            *engines.entry((&k.0, &k.2)).or_default() +=
+                ns.saturating_sub(*p) as f64 / (secs * 1e9) * 100.0;
+        }
+    }
+    let mut out = HashMap::new();
+    for ((pdev, _), v) in engines {
+        let m = out.entry(pdev.to_string()).or_insert(0.0_f64);
+        *m = m.max(v.min(100.0));
+    }
+    out
 }
 
 /// amdgpu / i915 engine name → Task Manager style label.
@@ -263,6 +303,8 @@ pub struct Gpus {
     nvml_seen: u64,
     /// (PCI address, client id, engine) → busy ns at the last call.
     drm_prev: HashMap<(String, u64, String), u64>,
+    /// Same counters over every readable process, for `fdinfo_busy`, with the time they were read.
+    busy_prev: Option<(std::time::Instant, Counters)>,
 }
 
 impl Gpus {
@@ -299,6 +341,7 @@ impl Gpus {
             drm,
             nvml_seen: 0,
             drm_prev: HashMap::new(),
+            busy_prev: None,
         }
     }
 
@@ -331,21 +374,7 @@ impl Gpus {
         });
         let mut prev = HashMap::new();
         for &pid in own {
-            let fds = fs::read_dir(format!("/proc/{pid}/fd"))
-                .into_iter()
-                .flatten()
-                .flatten();
-            for fd in fds {
-                if !fs::read_link(fd.path()).is_ok_and(|l| l.starts_with("/dev/dri/")) {
-                    continue;
-                }
-                let info = fs::read_to_string(format!(
-                    "/proc/{pid}/fdinfo/{}",
-                    fd.file_name().to_string_lossy()
-                ));
-                let Some((id, pdev, eng)) = info.ok().as_deref().and_then(parse_fdinfo) else {
-                    continue;
-                };
+            for (id, pdev, eng) in drm_clients(pid) {
                 let Some(gi) = self.drm.iter().position(|d| d.2 == pdev) else {
                     continue;
                 };
@@ -372,10 +401,42 @@ impl Gpus {
         (out, all)
     }
 
-    pub fn sample(&self) -> Vec<Gpu> {
+    /// Busiest engine per PCI address (%) since the last call, summed over every DRM client whose
+    /// fdinfo we can read (our own processes, which on a desktop includes the compositor);
+    /// None on the first call.
+    fn fdinfo_busy(&mut self) -> Option<HashMap<String, f64>> {
+        let now = std::time::Instant::now();
+        let mut cur = HashMap::new();
+        let pids = fs::read_dir("/proc").into_iter().flatten().flatten();
+        for pid in pids.filter_map(|e| e.file_name().to_str()?.parse().ok()) {
+            for (id, pdev, eng) in drm_clients(pid) {
+                for (e, ns) in eng {
+                    // a client shared by several fds/processes is counted once
+                    cur.insert((pdev.clone(), id, e), ns);
+                }
+            }
+        }
+        let (t, prev) = self.busy_prev.replace((now, cur))?;
+        let secs = now.duration_since(t).as_secs_f64();
+        Some(busiest(&prev, &self.busy_prev.as_ref()?.1, secs))
+    }
+
+    pub fn sample(&mut self) -> Vec<Gpu> {
         let num = |p: std::path::PathBuf| fs::read_to_string(p).ok()?.trim().parse::<f64>().ok();
+        // gpu_busy_percent is missing on i915 and returns EOPNOTSUPP on amdgpu's legacy (SI/CIK)
+        // power management; those two drivers report engine busy ns in fdinfo instead
+        let fdinfo_driver = |dev: &PathBuf| {
+            fs::read_link(dev.join("driver"))
+                .is_ok_and(|d| d.ends_with("amdgpu") || d.ends_with("i915"))
+        };
+        let busy = self
+            .drm
+            .iter()
+            .any(|(_, dev, _)| num(dev.join("gpu_busy_percent")).is_none() && fdinfo_driver(dev))
+            .then(|| self.fdinfo_busy())
+            .flatten();
         let mut out = self.nvml.as_ref().map(Nvml::sample).unwrap_or_default();
-        out.extend(self.drm.iter().map(|(name, dev, _)| {
+        out.extend(self.drm.iter().map(|(name, dev, pci)| {
             let temp = fs::read_dir(dev.join("hwmon"))
                 .into_iter()
                 .flatten()
@@ -384,7 +445,11 @@ impl Gpus {
                 .map(|t| t / 1000.0);
             Gpu {
                 name: name.clone(),
-                usage: num(dev.join("gpu_busy_percent")),
+                usage: num(dev.join("gpu_busy_percent")).or_else(|| {
+                    // no client on this GPU in the interval: idle
+                    let b = busy.as_ref().filter(|_| fdinfo_driver(dev))?;
+                    Some(b.get(pci).copied().unwrap_or(0.0))
+                }),
                 mem_used: num(dev.join("mem_info_vram_used")).map(|v| v as u64),
                 mem_total: num(dev.join("mem_info_vram_total")).map(|v| v as u64),
                 temp,
@@ -402,6 +467,21 @@ impl Gpus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn busiest_engine() {
+        let k = |c: u64, e: &str| ("0000:00:01.0".to_string(), c, e.to_string());
+        let prev = Counters::from([(k(1, "gfx"), 0), (k(2, "gfx"), 0), (k(1, "compute"), 0)]);
+        // two clients' gfx add up (30 % + 20 %); compute 10 %; client 3 is new and skipped
+        let cur = Counters::from([
+            (k(1, "gfx"), 300_000_000),
+            (k(2, "gfx"), 200_000_000),
+            (k(1, "compute"), 100_000_000),
+            (k(3, "gfx"), 900_000_000),
+        ]);
+        assert_eq!(busiest(&prev, &cur, 1.0)["0000:00:01.0"], 50.0);
+        assert_eq!(busiest(&prev, &cur, 0.1)["0000:00:01.0"], 100.0);
+    }
 
     #[test]
     fn fdinfo() {

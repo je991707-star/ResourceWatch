@@ -209,7 +209,11 @@ fn main() {
         Some("--widget") => return widget::run(),
         Some(flag @ ("--widget-order" | "--widget-app")) => {
             let arg = args.get(2).map_or("", String::as_str);
-            let r = if flag == "--widget-order" { widget::set_order(arg) } else { widget::set_app(arg) };
+            let r = if flag == "--widget-order" {
+                widget::set_order(arg)
+            } else {
+                widget::set_app(arg)
+            };
             if let Err(e) = r {
                 eprintln!("{e}");
                 std::process::exit(1);
