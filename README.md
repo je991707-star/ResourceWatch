@@ -31,7 +31,7 @@ ResourceWatch 是儀表板式的 Linux 系統監控程式，即時顯示 CPU、�
 
 ### 建置
 
-目前沒有預先編譯的版本，安裝時會從原始碼建置，需要：
+使用預先編譯版時不需要。從原始碼安裝時需要：
 
 - Rust stable 與 tauri-cli 2（`cargo install tauri-cli --version "^2"`）
 - WebKitGTK 4.1 等開發套件，各發行版的套件名稱見 [Tauri 的系統需求](https://v2.tauri.app/start/prerequisites/#linux)
@@ -47,13 +47,23 @@ distrobox enter resourcewatch-dev -- bash -lc '
 
 ## 3. 安裝方式
 
+### 預先編譯版（不需建置工具）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/je991707-star/ResourceWatch/main/install.sh | bash
+```
+
+下載 GitHub 最新 Release 的預先編譯包並安裝，需要 glibc 2.39 以上（Ubuntu 24.04、Fedora 40 以後）。
+
+### 從原始碼建置
+
 ```bash
 git clone https://github.com/je991707-star/ResourceWatch.git
 cd ResourceWatch
 ./install.sh
 ```
 
-`install.sh` 會建置 release 版，並安裝到使用者目錄：
+`install.sh` 會建置 release 版（找不到建置工具時改用預先編譯版），並安裝到使用者目錄：
 
 | 檔案 | 位置 |
 | --- | --- |
@@ -63,7 +73,7 @@ cd ResourceWatch
 | GNOME 頂欄擴充功能（有 GNOME 時） | `~/.local/share/gnome-shell/extensions/` |
 
 - 有 distrobox 容器 `resourcewatch-dev` 時在容器內建置（可用環境變數 `RESOURCEWATCH_BOX` 指定其他容器），否則用主機的 `cargo tauri`。
-- 更新：拉取新版後再執行一次 `./install.sh`。更新小工具後 Plasma 會沿用快取的舊版，需重新登入或執行：
+- 更新：再執行一次安裝指令（原始碼安裝則先拉取新版）。更新小工具後 Plasma 會沿用快取的舊版，需重新登入或執行：
 
   ```bash
   systemctl --user restart plasma-plasmashell
@@ -75,6 +85,8 @@ cd ResourceWatch
 
   ```bash
   ./install.sh uninstall
+  # 或
+  curl -fsSL https://raw.githubusercontent.com/je991707-star/ResourceWatch/main/install.sh | bash -s uninstall
   ```
 
 ## 4. 功能介紹

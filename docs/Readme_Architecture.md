@@ -24,13 +24,17 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
 ## install.sh
 
 使用者空間安裝／解除安裝，不需要 sudo（適用 Bazzite 等不可變系統）。
-- `install`（預設）：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內 `cargo tauri build --no-bundle`，否則用主機的 cargo-tauri；
-  先 `pkill -x resourcewatch`，再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到 `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、
+- `install`（預設）：依 `$ROOT`（腳本所在目錄；經管線執行時為目前目錄）判斷來源：
+  - 原始碼目錄（有 `src-tauri/Cargo.toml`）且 `can_build`：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內 `cargo tauri build --no-bundle`，否則用主機的 cargo-tauri；
+  - 解開的預先編譯包（有 `target/release/resourcewatch`、沒有 `Cargo.toml`）：不建置，直接安裝包內的檔案；
+  - 其他情況（原始碼目錄但沒有容器與 cargo-tauri，或以 `curl -fsSL …/install.sh | bash` 執行而沒有任何檔案）：`download_install` 以 curl 下載 `$PKG_URL`（預設 GitHub 最新 Release 的 `resourcewatch-x86_64-linux.tar.gz`，可用 `RESOURCEWATCH_PKG_URL` 覆寫，測試時可指向 `file://`）到 `mktemp -d`，解開後執行包內的 `install.sh install`，讓執行檔與小工具同一版本；暫存資料夾由 EXIT trap 刪除。
+  安裝時  先 `pkill -x resourcewatch`，再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到 `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、
   啟動器到 `~/.local/share/applications/resourcewatch.desktop`（檔名須等於 Wayland app_id，也就是執行檔名，KWin 才找得到圖示）。
   有 `kpackagetool6`（KDE Plasma 6）時安裝 `widget/` 桌面小工具（`io.github.local.resourcewatch.widget`）：已安裝則 `--upgrade` 並提示 plasmashell 會快取舊版 QML，需重新登入或 `systemctl --user restart plasma-plasmashell`；沒有 `kpackagetool6` 時略過並提示。
   舊版 Plasma Widget（id `io.github.local.resourcewatch`，v0.0.5）仍在時提示移除指令；`has_applet` 以整行比對清單，因為舊 id 是新 id 的前綴。
   有 `gnome-extensions`（GNOME）時執行 `install_gnome`：把 `gnome/`（不含測試用的 `dev/`）複製到 `${XDG_DATA_HOME:-~/.local/share}/gnome-shell/extensions/resourcewatch@je991707-star.github.io/`（先刪除舊版），再 `gnome-extensions enable`；Wayland 的 Shell 要重新登入才認得新裝的擴充功能，此時 enable 會失敗，改把 uuid 附加到 `org.gnome.shell enabled-extensions`（已在清單中就不動、保留其他項目），提示重新登入後生效。兩者都沒有時才提示略過小工具。
-- `uninstall`：刪除上述檔案、移除桌面小工具與 GNOME 擴充功能（`uninstall_gnome`：`gnome-extensions disable` 後刪除資料夾），並刪除小工具設定資料夾 `${XDG_CONFIG_HOME:-~/.config}/resourcewatch`。
+- `package`：建置後把執行檔、`src-tauri/icons/128x128.png`、`widget/`、`gnome/`（不含 `dev/`）、`install.sh`、`LICENSE`、`README.md` 以和原始碼相同的相對路徑放進 `target/pkg/resourcewatch/`，打包成 `target/resourcewatch-x86_64-linux.tar.gz`（上傳到 GitHub Release 的檔案；檔名不含版本，`releases/latest/download/` 才能固定網址）。執行檔在 Fedora 容器內建置，需要 glibc 2.39 以上。
+- `uninstall`：不需要任何檔案，可經管線執行（`… | bash -s uninstall`）；刪除上述檔案、移除桌面小工具與 GNOME 擴充功能（`uninstall_gnome`：`gnome-extensions disable` 後刪除資料夾），並刪除小工具設定資料夾 `${XDG_CONFIG_HOME:-~/.config}/resourcewatch`。
 
 ## src-tauri/
 
