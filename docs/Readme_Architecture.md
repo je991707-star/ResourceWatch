@@ -207,11 +207,11 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 
 ### contents/ui/MediaCard.qml
 
-與卡片相同底色與圓角，以鎖定畫面播放器的樣式顯示播放中的媒體。資料來自 Plasma 媒體控制器同一套 MPRIS 模組 `org.kde.plasma.private.mpris`（私有 API）的 `Mpris2Model.currentPlayer`；沒有播放器、或播放器沒有曲名（例如閒置的 KDE Connect 手機）時（`active` 為 false）置中顯示淡化的 `media-default-album` 圖示與「沒有播放中的媒體」。內距 16，由上而下：
-- 第一列：44 px 圓角 8 的專輯圖（`Kirigami.ShadowedImage`，`color` 設透明——預設白底會蓋住佔位底色；沒有 `artUrl` 或載入失敗時顯示 `media-default-album`）、粗體 14 px 曲名與其下 muted 12 px 演出者（沒有時隱藏），靠右上為播放器圖示（`iconName`，16 px）。
-- 整寬進度條（高 3、圓頭，軌道為 20% 文字色、填滿為 85% 文字色，`position / length`，皆為微秒；`position` 夾在 `length` 內），其下 5 px 左為已播放時間、右為剩餘時間（11 px 等寬數字，`-m:ss`；串流 `length` 為 0 時進度條為空、右側 `--:--`）。
-- 置中的上一首／播放暫停／下一首（`Btn`，間距 48）：Font Awesome Free 的 solid 字形（`backward` \uf04a／`pause` \uf04c 或 `play` \uf04b／`forward` \uf04e），字型由 `FontLoader` 載入套件內的 `contents/fonts/fa-solid-900.woff2`；上下首 15 px、播放暫停 19 px，純文字色；框寬固定 24 讓播放與暫停切換時不推動兩側，框高等於字級、垂直置中，不帶行距造成的下方空白；不能用時 0.3 透明度，按下縮為 0.88；分別呼叫 `Previous`／`PlayPause`／`Next`，依 `canGoPrevious`／`canPause` 或 `canPlay`／`canGoNext` 啟用。按鈕列有 `HoverHandler`，`controlsHovered` 由 main.qml 寫入 `overBody`，讓桌面容器在按鈕上不把按下當成移動小工具。
-- 第一列與進度條之間、時間與按鈕列之間為兩段相同的可伸縮空白（最小皆 12），格子較高時平均撐開。
+與卡片相同底色與圓角，比照 iOS 鎖定畫面播放器的比例顯示播放中的媒體。資料來自 Plasma 媒體控制器同一套 MPRIS 模組 `org.kde.plasma.private.mpris`（私有 API）的 `Mpris2Model.currentPlayer`；沒有播放器、或播放器沒有曲名（例如閒置的 KDE Connect 手機）時（`active` 為 false）置中顯示淡化的 `media-default-album` 圖示與「沒有播放中的媒體」。內距上 14、下 16、左右 14，由上而下：
+- 第一列：46 px 圓角 6 的專輯圖（`Kirigami.ShadowedImage`，`color` 設透明——預設白底會蓋住佔位底色；沒有 `artUrl` 或載入失敗時顯示 `media-default-album`）；曲名（DemiBold）與演出者（muted，沒有時隱藏）同為 14 px，對專輯圖垂直置中；靠右為播放器圖示（`iconName`，16 px、0.6 透明度，垂直置中）。
+- 同一列的已播放時間、進度條、剩餘時間（間距 9；時間 11 px muted 等寬數字，剩餘時間前為減號 `−`；進度條高 6、全圓頭，軌道 15%、填滿 60% 文字色，`position / length`，皆為微秒，`position` 夾在 `length` 內；串流 `length` 為 0 時進度條為空、右側 `--:--`）。
+- 上一首／播放暫停／下一首（`Btn`）：每顆佔 57 px 寬的格子，三格合起來置中，所以按鈕中心等距、暫停在卡片正中央。字形為 Font Awesome Free solid（`backward` \uf04a／`pause` \uf04c 或 `play` \uf04b／`forward` \uf04e），字型由 `FontLoader` 載入套件內的 `contents/fonts/fa-solid-900.woff2`；`glyphs` 記錄各字形的字級與水平拉伸：上下首 18 px、拉寬 1.39 倍（Font Awesome 的箭頭接近方形 1.14:1，拉成參考圖的 1.58:1 長方形），暫停 27 px、壓窄 0.68 倍（細長兩條），播放 27 px 不拉伸。拉伸用 `Scale`，原點必須寫 `t.width / 2`——在 `Scale` 裡未限定的 `width` 會取到外層格子的寬度，字形就會偏離中心。不能用時 0.3 透明度，按下縮為 0.88。按鈕列有 `HoverHandler`，`controlsHovered` 由 main.qml 寫入 `overBody`，讓桌面容器在按鈕上不把按下當成移動小工具。
+- 第一列與時間列之間、時間列與按鈕列之間為可伸縮空白（最小 10／14），格子較高時平均撐開。
 
 播放器只在跳轉時回報位置，所以播放中且可見時每秒呼叫 `updatePosition()`。`implicitHeight` 為版面所需的最小高度，main.qml 在空間小於它時不顯示這張卡；實際高度由 main.qml 決定；不屬於 `cfg.items`，不能拖曳重排，在按鈕列以外按住它可移動整個小工具。
 

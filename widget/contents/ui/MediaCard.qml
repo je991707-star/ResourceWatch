@@ -3,9 +3,9 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.private.mpris as Mpris
 
-// Now playing (MPRIS, the same player Plasma's media controller picks), laid out like a lock-screen player:
-// album art with title / artist and the player's icon, a full-width progress bar with elapsed and remaining
-// time, then centered previous / play-pause / next buttons (Font Awesome).
+// Now playing (MPRIS, the same player Plasma's media controller picks), laid out like the iOS lock-screen
+// player: album art with title / artist and the player's icon, elapsed time / progress bar / remaining time
+// on one row, then previous / play-pause / next (Font Awesome, stretched to its proportions) centered.
 // main.qml sizes it to fill the empty space left in the CPU card's column.
 Rectangle {
     id: a
@@ -13,7 +13,7 @@ Rectangle {
     radius: 16
     color: theme.card
     // the least height that fits the layout; main.qml hides the card when the free space is smaller
-    implicitHeight: col.implicitHeight + 32
+    implicitHeight: col.implicitHeight + col.anchors.topMargin + col.anchors.bottomMargin
 
     Mpris.Mpris2Model { id: mpris }
     readonly property var player: mpris.currentPlayer
@@ -28,29 +28,36 @@ Rectangle {
 
     // Font Awesome Free solid glyphs (contents/fonts, SIL OFL 1.1) for the transport buttons
     FontLoader { id: fa; source: Qt.resolvedUrl("../fonts/fa-solid-900.woff2") }
-    readonly property var glyphs: ({ prev: "\uf04a", next: "\uf04e", play: "\uf04b", pause: "\uf04c" })
+    // glyph, font size, horizontal stretch: Font Awesome's skip arrows are nearly square (1.14:1) and its pause
+    // bars thick, so they are stretched to the reference's wide arrows (1.58:1) and thin bars
+    readonly property var glyphs: ({
+        prev: ["", 18, 1.39], next: ["", 18, 1.39],
+        play: ["", 27, 1], pause: ["", 27, 0.68]
+    })
 
-    // transport button: backward / forward / play / pause
-    component Btn: Text {
+    // transport button in a 57 px slot, so the three sit centered with even spacing
+    component Btn: Item {
         id: b
         required property string kind
         signal clicked()
-        text: a.glyphs[kind]
-        font.family: fa.font.family
-        font.weight: fa.font.weight
-        font.pixelSize: kind === "prev" || kind === "next" ? 15 : 19
-        color: a.theme.text
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        // fixed box: play and pause (different glyph widths) do not shift their neighbours, and the height is
-        // the glyph's, without the line spacing that would add space under the row
-        Layout.preferredWidth: 24
-        Layout.preferredHeight: font.pixelSize
-        Layout.alignment: Qt.AlignVCenter
+        readonly property var g: a.glyphs[kind]
+        Layout.preferredWidth: 57
+        Layout.preferredHeight: 24
         opacity: enabled ? 1 : 0.3
-        scale: ma.pressed ? 0.88 : 1
-        Behavior on scale { NumberAnimation { duration: 80 } }
-        MouseArea { id: ma; anchors { fill: parent; margins: -8 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: b.clicked() }
+        Text {
+            id: t
+            anchors.centerIn: parent
+            text: b.g[0]
+            font.family: fa.font.family
+            font.weight: fa.font.weight
+            font.pixelSize: b.g[1]
+            color: a.theme.text
+            // t.width, not width: inside Scale an unqualified width is the button slot's
+            transform: Scale { origin.x: t.width / 2; origin.y: t.height / 2; xScale: b.g[2] }
+            scale: ma.pressed ? 0.88 : 1
+            Behavior on scale { NumberAnimation { duration: 80 } }
+        }
+        MouseArea { id: ma; anchors { fill: parent; leftMargin: 10; rightMargin: 10; topMargin: -6; bottomMargin: -6 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: b.clicked() }
     }
 
     // the player only reports position on seeks, so ask for it while playing
@@ -72,22 +79,22 @@ Rectangle {
     ColumnLayout {
         id: col
         visible: a.active
-        anchors { fill: parent; margins: 16 }
+        anchors { fill: parent; topMargin: 14; bottomMargin: 16; leftMargin: 14; rightMargin: 14 }
         spacing: 0
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 10
             // album art; a placeholder icon when there is none
             Rectangle {
-                Layout.preferredWidth: 44
-                Layout.preferredHeight: 44
-                radius: 8
+                Layout.preferredWidth: 46
+                Layout.preferredHeight: 46
+                radius: 6
                 color: a.theme.field
                 Kirigami.ShadowedImage {
                     id: art
                     anchors.fill: parent
-                    radius: 8
+                    radius: 6
                     color: "transparent" // default white would cover the placeholder
                     source: a.player?.artUrl ?? ""
                     fillMode: Image.PreserveAspectCrop
@@ -103,48 +110,50 @@ Rectangle {
                     opacity: 0.6
                 }
             }
+            // title and artist at the same size, centered on the art; the artist only lighter
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 2
-                Text { text: a.player?.track ?? ""; color: a.theme.text; font.bold: true; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
-                Text { text: a.player?.artist ?? ""; visible: text !== ""; color: a.theme.muted; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 1
+                Text { text: a.player?.track ?? ""; color: a.theme.text; font.weight: Font.DemiBold; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
+                Text { text: a.player?.artist ?? ""; visible: text !== ""; color: a.theme.muted; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
             }
             Kirigami.Icon {
                 Layout.preferredWidth: 16
                 Layout.preferredHeight: 16
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 source: a.player?.iconName || "media-default-album"
-                opacity: 0.7
+                opacity: 0.6
             }
         }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 10 }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 3
-            radius: 1.5
-            color: Qt.alpha(a.theme.text, 0.2)
-            Rectangle {
-                height: parent.height
-                radius: 1.5
-                color: Qt.alpha(a.theme.text, 0.85)
-                width: a.length > 0 ? Math.max(height, parent.width * a.position / a.length) : 0
-            }
-        }
+        // elapsed, bar, remaining on one row
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: 5
+            spacing: 9
             Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
-            Item { Layout.fillWidth: true }
-            Text { text: a.length > 0 ? "-" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 6
+                radius: 3
+                color: Qt.alpha(a.theme.text, 0.15)
+                Rectangle {
+                    height: parent.height
+                    radius: 3
+                    color: Qt.alpha(a.theme.text, 0.6)
+                    width: a.length > 0 ? Math.max(height, parent.width * a.position / a.length) : 0
+                }
+            }
+            Text { text: a.length > 0 ? "−" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
         }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 14 }
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 48
+            spacing: 0
             HoverHandler { id: controlsHover }
             Btn { kind: "prev"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
             Btn {
