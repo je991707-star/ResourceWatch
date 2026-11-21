@@ -505,11 +505,15 @@ function widgetCard(s, row) {
   const seg = (key, opts) => `<div class="seg">${opts.map(([v, t]) => `<button data-w="${key}" data-val="${esc(v)}" class="${String(wcfg[key] ?? '') === String(v) ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
   // shown cards in their order, then the hidden ones; the order itself is changed by long-pressing cards on the widget
   const chips = [...wcfg.items, ...Object.keys(WIDGET_ITEMS).filter((k) => !wcfg.items.includes(k))];
-  return card('桌面小工具', [
+  // GNOME has no desktop widget, only the top-bar extension (gnome/), which uses the panel fields
+  const gnome = /^GNOME\b/.test(info?.desktop ?? '');
+  const interval = row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']]));
+  const err = wErr ? `<p class="hint err">${esc(wErr)}</p>` : '';
+  const desk = card('桌面小工具', [
     `<p class="hint">右鍵桌面 → 新增或管理小工具 → ResourceWatch</p>`,
     row('顯示項目', '點擊切換顯示／隱藏，在小工具上長按卡片調整位置', `<div class="seg">${chips.map((k) =>
       `<button data-w="item" data-val="${k}" class="${wcfg.items.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k]}</button>`).join('')}</div>`),
-    row('更新間隔', '每次取樣約需 1 秒', seg('interval', [[2, '2 秒'], [5, '5 秒'], [10, '10 秒']])),
+    interval,
     row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'nic', wcfg.nic, nicOpts(s))),
     s.gpus.length ? row('顯示卡', '', dropdown('w', 'gpu', wcfg.gpu ?? 0, gpuOpts(s))) : '',
     row('音樂播放格子', '處理器上方的播放中媒體', seg('app', [[true, '顯示'], [false, '隱藏']])),
@@ -517,14 +521,18 @@ function widgetCard(s, row) {
       const t = Math.round((100 - (wcfg.opacity ?? 100)) / (W_MAX_TRANS / 100) / 5) * 5;
       return `<div class="set-ctl"><input type="range" class="wrange" data-wrange min="0" max="100" step="5" value="${t}"><span class="wrange-val">${t}%</span></div>`;
     })()),
-    wErr ? `<p class="hint err">${esc(wErr)}</p>` : '',
-  ].join('')) + card('面板小工具', [
-    `<p class="hint">把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片</p>`,
+    err,
+  ].join(''));
+  const panel = card(gnome ? '頂欄' : '面板小工具', [
+    `<p class="hint">${gnome ? '在「擴充功能」App 啟用 ResourceWatch 後，頂欄顯示的項目；點頂欄上的項目可展開該卡片'
+      : '把 ResourceWatch 小工具加到面板時顯示的項目（與桌面卡片分開設定），點面板上的項目可展開該卡片'}</p>`,
     row('顯示項目', '點擊切換顯示／隱藏，拖動調整順序', `<div class="seg wchips">${panelChips().map((k) =>
       `<button data-w="panel" data-val="${k}" data-wchip="${k}" class="${wcfg.panel?.includes(k) ? 'on' : ''}">${WIDGET_ITEMS[k]}</button>`).join('')}</div>`),
     row('網路卡', '自動：有預設閘道的網卡', dropdown('w', 'panelNic', wcfg.panelNic, nicOpts(s))),
     s.gpus.length ? row('顯示卡', '', dropdown('w', 'panelGpu', wcfg.panelGpu ?? 0, gpuOpts(s))) : '',
+    ...(gnome ? [interval, err] : []),
   ].join(''));
+  return gnome ? panel : desk + panel;
 }
 // shown items in panel order, then the hidden ones
 const panelChips = () => { const p = wcfg.panel ?? PANEL_ITEMS; return [...p, ...PANEL_ITEMS.filter((k) => !p.includes(k))]; };
