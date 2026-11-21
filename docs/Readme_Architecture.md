@@ -253,6 +253,38 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 `.pragma library`，與 app.js 同邏輯的 `bytes`／`rate`／`pct`／`ratio`；`temp` 固定 °C（App 的 °C／°F 存在 WebView localStorage，小工具讀不到）。
 `nic(s, name)`：指定介面 → 有預設閘道 → 已連線 → 第一個（同儀表板 `primaryNet`）；`temps(s)`：每個感測器裝置的第一個溫度（`{ device, value, crit }`）；`sum(list, key)`：各硬碟某欄位的加總，全部缺值時為 null；`short(b)`：面板用的精簡速率（B／K／M／G，以 1000 為進位門檻、1024 為除數，個位數時一位小數）。
 
+## gnome/
+
+GNOME Shell 擴充功能（uuid `resourcewatch@je991707-star.github.io`，GJS／ES 模組，GNOME 46 以上），只提供頂欄；GNOME 沒有桌面小工具。純 JavaScript，沒有編譯步驟；資料全部來自 `resourcewatch --widget`（見 src/widget.rs），設定共用 widget.json 的 `panel`／`interval`／`panelNic`／`panelGpu`。
+
+### metadata.json
+
+uuid、名稱、說明、`shell-version`（46–51）、專案網址。
+
+### extension.js
+
+`Extension` 子類別：`enable()` 建立 `Source`（data.js）與 `PanelItems`（panel.js），`disable()` 依序銷毀並清空參照；所有物件都在 `enable()` 內建立（GNOME 鎖定螢幕時會停用擴充功能，重新啟用不能留下殘留）。
+
+### data.js
+
+`Source`：建立時立即執行一次 `resourcewatch --widget`，之後每 `cfg.interval` 秒（`GLib.timeout_add_seconds`，間隔改變時重設計時器）以 `Gio.Subprocess` 非同步執行（`communicate_utf8_async`，可由 `Gio.Cancellable` 取消），上一次還沒結束就略過；執行檔先找 `~/.local/bin/resourcewatch`（gnome-shell 的 PATH 不一定有），再用 `GLib.find_program_in_path`。結果解析出 `config`／`snapshot`／`cpuModel`，錯誤時 `error` 為「找不到 resourcewatch，請先執行 install.sh」／「resourcewatch 執行失敗：…」／「無法解析 resourcewatch 輸出」（同 Plasma 版）。`Gio.FileMonitor` 監看 `$XDG_CONFIG_HOME/resourcewatch/widget.json`，寫入完成（`CHANGES_DONE_HINT`／`CREATED`）時非同步讀檔套用，讀不到或解析失敗時略過。歷史 `hist` 各序列 60 點：`cpu`、`mem`（%）、`gpu`（`panelGpu` 選出的顯示卡）、`rx`／`tx`（`panelNic` 選出的網卡）、`r`／`w`（所有硬碟讀寫加總）。`subscribe(fn)` 回傳取消函式，每次取樣、設定變更或錯誤後呼叫；`destroy()` 取消執行中的子程序與讀檔、移除計時器與檔案監看。
+
+### fmt.js
+
+與 widget/contents/ui/fmt.js 相同的格式化（`bytes`、`rate`、`pct`、`temp`、`ratio`、`nic`、`sum`、`short`），改寫為 ES 模組匯出；另有 `gpu(s, i)`：依索引取顯示卡，超出時夾到最後一張。
+
+### panel.js
+
+`PanelItems`：頂欄按鈕（`PanelMenu.Button`，加在 `Main.panel` 右側），訂閱 `Source` 更新文字；`destroy()` 取消訂閱並銷毀按鈕。
+
+### stylesheet.css
+
+頂欄與彈出卡片的樣式。
+
+### dev/nested.sh、dev/devtools@resourcewatch/
+
+測試用，不會被 install.sh 安裝。`nested.sh` 在 distrobox 容器 `resourcewatch-gnome`（Fedora，含 `gnome-shell`、`mutter-devkit`、`dbus-daemon`、WebKitGTK 執行期）內以無頭模式執行 GNOME Shell（`--headless --virtual-monitor 1600x900 --no-x11`，主機上不開視窗）：`HOME`／`XDG_CONFIG_HOME`／`XDG_DATA_HOME`／`XDG_CACHE_HOME`／`XDG_STATE_HOME`／`XDG_RUNTIME_DIR` 都指到 `~/.local/share/resourcewatch-gnome-test/` 底下，`dbus-run-session` 提供獨立的工作階段匯流排，另啟一個私有的空 `dbus-daemon` 當系統匯流排（Shell 沒有系統匯流排會無法啟動，又不讓它碰到主機的 logind 等服務），所以不會讀寫主機的 dconf、擴充功能或 Wayland socket。`start` 把擴充功能（不含 `dev/`）與 `devtools@resourcewatch` 複製進測試家目錄、連結 `~/.local/bin/resourcewatch`、複製 widget.json、以 gsettings 啟用兩者後執行 Shell；`eval '<js>'` 呼叫 `org.gnome.Shell.Eval`，`shot <png>` 呼叫 Shell 的截圖介面，`stop` 結束 Shell 與私有匯流排。`devtools@resourcewatch` 只在 `enable()` 打開 `global.context.unsafe_mode`，讓上述兩個 D-Bus 方法可用。
+
 ## frontend/
 
 ### index.html

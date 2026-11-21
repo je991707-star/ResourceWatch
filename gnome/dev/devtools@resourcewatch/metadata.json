@@ -1,0 +1,6 @@
+{
+    "uuid": "devtools@resourcewatch",
+    "name": "ResourceWatch test devtools",
+    "description": "Test-only: turns on unsafe mode so org.gnome.Shell.Eval and Screenshot work. Installed only into the isolated test home by nested.sh.",
+    "shell-version": ["46", "47", "48", "49", "50", "51"]
+}

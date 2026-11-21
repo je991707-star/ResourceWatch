@@ -38,20 +38,20 @@ GNOME Shell 擴充功能（gnome/）
 ---
 
 ## Phase 0：測試環境
-- [ ] distrobox 容器 `resourcewatch-gnome`（Fedora）：安裝 `gnome-shell`、巢狀執行所需的 `mutter-devkit`（GNOME 48 以前為 `--nested --wayland`），以及 `resourcewatch` 執行所需的 WebKitGTK 執行期函式庫。
-- [ ] 巢狀 Shell 以 `dbus-run-session` 加上獨立的 `HOME`／`XDG_CONFIG_HOME`／`XDG_DATA_HOME`（放在 `~/.local/share/resourcewatch-gnome-test/`）執行：不讀寫主機的 dconf 與擴充功能資料夾；`widget.json` 由測試腳本複製進去。
-- [ ] 測試腳本 `gnome/dev/nested.sh`：同步擴充功能到測試家目錄、啟用、開啟巢狀 Shell。
-- [ ] 確認巢狀 Shell 內 `resourcewatch --widget` 讀得到資料（容器內讀不到 NVML 屬已知限制）。
+- [x] ✅ distrobox 容器 `resourcewatch-gnome`（Fedora）：安裝 `gnome-shell`、巢狀執行所需的 `mutter-devkit`（GNOME 48 以前為 `--nested --wayland`），以及 `resourcewatch` 執行所需的 WebKitGTK 執行期函式庫。
+- [x] ✅ 巢狀 Shell 以無頭模式（`--headless --virtual-monitor`，主機上不開視窗）、`dbus-run-session`、私有的空系統匯流排，加上獨立的 `HOME`／`XDG_CONFIG_HOME`／`XDG_DATA_HOME`（放在 `~/.local/share/resourcewatch-gnome-test/`）執行：不讀寫主機的 dconf 與擴充功能資料夾；`widget.json` 由測試腳本複製進去。
+- [x] ✅ 測試腳本 `gnome/dev/nested.sh`：同步擴充功能到測試家目錄、啟用、開啟巢狀 Shell。
+- [x] ✅ 確認巢狀 Shell 內 `resourcewatch --widget` 讀得到資料（容器內讀不到 NVML 屬已知限制）。
 
 ## Phase 1：App 設定頁
-- [ ] 設定頁依桌面環境（`SystemInfo.desktop`）調整：GNOME 時「面板小工具」卡片改稱「頂欄」，說明改為「在『擴充功能』App 啟用 ResourceWatch」；桌面小工具卡片在 GNOME 隱藏。
-- [ ] 更新 Architecture（app.js），commit。
+- [x] ✅ 設定頁依桌面環境（`SystemInfo.desktop`）調整：GNOME 時「面板小工具」卡片改稱「頂欄」，說明改為「在『擴充功能』App 啟用 ResourceWatch」；桌面小工具卡片在 GNOME 隱藏。
+- [x] ✅ 更新 Architecture（app.js），commit。
 
 ## Phase 2：擴充功能骨架與資料流（新目錄 `gnome/`）
-- [ ] `metadata.json`（uuid `resourcewatch@je991707-star.github.io`、`shell-version`、名稱與說明）、`extension.js`（`Extension` 子類別，`enable`／`disable`）、`stylesheet.css`。
-- [ ] `data.js`：非同步執行 `--widget`、錯誤狀態（找不到執行檔／結束碼／JSON 解析失敗，訊息同 Plasma 版）、歷史 60 點、`FileMonitor` 監看 widget.json。
-- [ ] 頂欄先放一個純文字按鈕顯示 CPU %，驗證資料流與 enable／disable 不洩漏（反覆停用啟用）。
-- [ ] 新增 Architecture `gnome/` 章節，commit。
+- [x] ✅ `metadata.json`（uuid `resourcewatch@je991707-star.github.io`、`shell-version`、名稱與說明）、`extension.js`（`Extension` 子類別，`enable`／`disable`）、`stylesheet.css`。
+- [x] ✅ `data.js`：非同步執行 `--widget`、錯誤狀態（找不到執行檔／結束碼／JSON 解析失敗，訊息同 Plasma 版）、歷史 60 點、`FileMonitor` 監看 widget.json。
+- [x] ✅ 頂欄先放一個純文字按鈕顯示 CPU %，驗證資料流與 enable／disable 不洩漏（反覆停用啟用）。
+- [x] ✅ 新增 Architecture `gnome/` 章節，commit。
 
 ## Phase 3：頂欄項目
 - [ ] `panel.js`：依 `panel` 排出項目——CPU／GPU／RAM 為上下兩行（標籤／%）加迷你面積圖；網路／磁碟為圖示加兩行速率與對稱條狀圖（`fmt.short`），網路卡／顯示卡用 `panelNic`／`panelGpu`。

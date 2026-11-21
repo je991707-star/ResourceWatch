@@ -1,0 +1,7 @@
+{
+    "uuid": "resourcewatch@je991707-star.github.io",
+    "name": "ResourceWatch",
+    "description": "CPU, GPU, memory, network and disk in the top bar; click an item for its card. Needs the ResourceWatch app (resourcewatch on PATH or in ~/.local/bin).",
+    "shell-version": ["46", "47", "48", "49", "50", "51"],
+    "url": "https://github.com/je991707-star/ResourceWatch"
+}
