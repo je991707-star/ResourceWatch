@@ -28,7 +28,7 @@ Plasma 桌面小工具 ── 定時執行 `resourcewatch --widget` ── widge
   - 原始碼目錄（有 `src-tauri/Cargo.toml`）且 `can_build`：能進入 distrobox 容器 `resourcewatch-dev`（可用 `RESOURCEWATCH_BOX` 改名）時在容器內 `cargo tauri build --no-bundle`，否則用主機的 cargo-tauri；
   - 解開的預先編譯包（有 `target/release/resourcewatch`、沒有 `Cargo.toml`）：不建置，直接安裝包內的檔案；
   - 其他情況（原始碼目錄但沒有容器與 cargo-tauri，或以 `curl -fsSL …/install.sh | bash` 執行而沒有任何檔案）：`download_install` 以 curl 下載 `$PKG_URL`（預設 GitHub 最新 Release 的 `resourcewatch-x86_64-linux.tar.gz`，可用 `RESOURCEWATCH_PKG_URL` 覆寫，測試時可指向 `file://`）到 `mktemp -d`，解開後執行包內的 `install.sh install`，讓執行檔與小工具同一版本；暫存資料夾由 EXIT trap 刪除。
-  安裝時  先 `pkill -x resourcewatch`，再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到 `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、
+  安裝時先 `pkill -x resourcewatch`，再安裝執行檔到 `~/.local/bin/resourcewatch`、圖示到 `~/.local/share/icons/hicolor/128x128/apps/io.github.local.resourcewatch.png`、
   啟動器到 `~/.local/share/applications/resourcewatch.desktop`（檔名須等於 Wayland app_id，也就是執行檔名，KWin 才找得到圖示）。
   有 `kpackagetool6`（KDE Plasma 6）時安裝 `widget/` 桌面小工具（`io.github.local.resourcewatch.widget`）：已安裝則 `--upgrade` 並提示 plasmashell 會快取舊版 QML，需重新登入或 `systemctl --user restart plasma-plasmashell`；沒有 `kpackagetool6` 時略過並提示。
   舊版 Plasma Widget（id `io.github.local.resourcewatch`，v0.0.5）仍在時提示移除指令；`has_applet` 以整行比對清單，因為舊 id 是新 id 的前綴。
