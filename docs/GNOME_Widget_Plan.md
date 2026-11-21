@@ -59,10 +59,10 @@ GNOME Shell 擴充功能（gnome/）
 - [x] ✅ commit。
 
 ## Phase 4：彈出卡片（St＋Cairo）
-- [ ] `theme.js`：深／淺色 token，跟隨 Shell 的配色。
-- [ ] `chart.js`：面積曲線、對稱條狀圖、圓環、堆疊條、執行緒直條（St.DrawingArea＋Cairo，資料變更時 `queue_repaint`，只重畫開啟中的卡片）。
-- [ ] 五張卡片：處理器、記憶體、顯示卡、網路、磁碟，版面與 Plasma 版一致。
-- [ ] 巢狀 Shell 截圖與 Plasma 版比對，commit。
+- [x] ✅ `theme.js`：指標色；文字、格線與軌道取選單的文字色，跟隨 Shell 的淺色／深色樣式。
+- [x] ✅ `chart.js`：面積曲線、對稱條狀圖、圓環、堆疊條、執行緒直條（St.DrawingArea＋Cairo，資料變更時 `queue_repaint`，只重畫開啟中的卡片）。
+- [x] ✅ 五張卡片：處理器、記憶體、顯示卡、網路、磁碟，版面與 Plasma 版一致。
+- [x] ✅ 巢狀 Shell 截圖與 Plasma 版比對，commit。
 
 ## Phase 5：安裝、文件
 - [ ] `install.sh`：偵測到 `gnome-extensions` 時，把 `gnome/`（不含 `dev/`）複製到 `~/.local/share/gnome-shell/extensions/<uuid>/` 並 `gnome-extensions enable <uuid>`；提示 Wayland 下新安裝或更新的擴充功能要重新登入才會載入。`uninstall` 一併移除。

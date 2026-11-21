@@ -8,6 +8,7 @@
 #   nested.sh eval '<js>'  org.gnome.Shell.Eval in the test shell (unsafe mode is on via devtools@resourcewatch)
 #   nested.sh shot <png>   screenshot of the virtual monitor
 #   nested.sh stop         stop the test shell
+# RW_COLOR_SCHEME=prefer-light|prefer-dark sets the test shell's style on start.
 set -euo pipefail
 BOX="${RESOURCEWATCH_GNOME_BOX:-resourcewatch-gnome}"
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,7 +19,7 @@ MONITOR="${RW_MONITOR:-1600x900}"
 
 # run inside the container
 if [ ! -e /run/.containerenv ]; then
-    exec distrobox enter "$BOX" -- env RW_REAL_HOME="$HOME" RW_MONITOR="$MONITOR" bash "$SRC/dev/nested.sh" "$@"
+    exec distrobox enter "$BOX" -- env RW_REAL_HOME="$HOME" RW_MONITOR="$MONITOR" RW_COLOR_SCHEME="${RW_COLOR_SCHEME:-}" bash "$SRC/dev/nested.sh" "$@"
 fi
 
 export HOME="$TEST/home" XDG_CONFIG_HOME="$TEST/home/.config" XDG_DATA_HOME="$TEST/home/.local/share" \

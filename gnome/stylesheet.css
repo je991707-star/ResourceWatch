@@ -7,3 +7,30 @@
 .rw-label { font-weight: bold; }
 .rw-chart { width: 16px; height: 18px; }
 .rw-mirror { width: 32px; height: 18px; }
+
+/* cards in the popups: sizes from widget/contents/ui/Card.qml and the cards (content 246 px wide) */
+.rw-card-box { padding: 6px 10px; }
+.rw-card { width: 246px; spacing: 10px; }
+.rw-card-head { spacing: 8px; }
+.rw-card-title { font-size: 15px; font-weight: bold; }
+.rw-card-top { spacing: 4px; }
+.rw-card-sub { font-size: 12px; }
+.rw-small { font-size: 12px; font-feature-settings: "tnum"; }
+.rw-error { font-size: 12px; color: #ef5350; }
+.rw-dot { width: 8px; height: 8px; border-radius: 4px; }
+.rw-pair { spacing: 12px; }
+.rw-big { spacing: 2px; }
+.rw-big-row { spacing: 6px; }
+.rw-big-value { font-size: 22px; font-weight: bold; font-feature-settings: "tnum"; }
+.rw-legend { spacing: 6px; }
+.rw-legends { spacing: 4px; }
+.rw-bar { height: 8px; }
+.rw-bar-thin { height: 5px; }
+.rw-meter { spacing: 3px; }
+.rw-meters { spacing: 6px; }
+.rw-card-chart { height: 56px; }
+.rw-cores { height: 54px; width: 66px; }
+.rw-cpu-chart { height: 54px; }
+.rw-gpu-row { spacing: 16px; }
+.rw-ring { width: 72px; height: 72px; }
+.rw-ring-text { font-size: 15px; font-weight: bold; font-feature-settings: "tnum"; }

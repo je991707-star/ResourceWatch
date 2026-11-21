@@ -277,7 +277,7 @@ uuid、名稱、說明、`shell-version`（46–51）、專案網址。
 
 `PanelItems`：依 `cfg.panel`（只取 `SPEC` 認得的 `cpu`／`gpu`／`mem`／`net`／`disk`）每項建立一個 `Item`——各自一個 `PanelMenu.Button`，以 `addToStatusArea('<uuid>-<key>', …, 位置 i, 'right')` 依序放在頂欄右側（系統選單左邊）；清單改變時全部重建，否則每次 `Source` 更新呼叫各項的 `update()`。`destroy()` 取消訂閱並銷毀所有按鈕。
 - 內容（`.rw-item`，間距 4）：CPU／GPU／RAM 為兩行置中（粗體標籤「CPU」「GPU」「RAM」、其下 %），右側 16×18 的面積圖（`hist.cpu`／`gpu`／`mem`，藍／青／黃，最近 30 點）；網路／磁碟為 14 px 符號圖示（`network-wired-symbolic`／`drive-harddisk-symbolic`）、兩行靠右的「↓下載」「↑上傳」或「R 讀取」「W 寫入」（`Fmt.short`），右側 32×18 的對稱條狀圖（上傳／讀取桃紅在上、下載／寫入藍在下）。顯示卡與網卡依 `panelGpu`／`panelNic`（`Source.gpu()`／`nic()`）；還沒有資料時數值為 `--`。
-- 點擊開啟按鈕自己的選單（一個不可選取的 `PopupBaseMenuItem`），內容為該項卡片；錯誤時顯示 `Source.error`。
+- 點擊開啟按鈕自己的選單：卡片容器（`.rw-card-box`）直接加進 `menu.box`——包在不可選取的 `PopupBaseMenuItem` 裡會被套上 `popup-inactive-menu-item` 而變淡。卡片在第一次開啟時才以 `makeCard` 建立，之後只在選單開啟期間（開啟當下與每次取樣）更新；卡片上方有一行紅字顯示 `Source.error`（無錯誤時隱藏）。
 
 ### chart.js
 
@@ -285,7 +285,16 @@ St.DrawingArea 的 Cairo 繪圖（`repaint` 時呼叫，結束後 `cr.$dispose()
 
 ### theme.js
 
-`COLORS`：與 Theme.qml 深色相同的指標色（GNOME 頂欄在淺色樣式下也是深色）；`vbox(props)`：垂直的 `St.BoxLayout`——GNOME 48 起以 `orientation` 取代 `vertical`，46／47 只有 `vertical`，依物件有無 `orientation` 屬性擇一設定。
+`COLORS`：與 Theme.qml 深色相同的指標色（在 GNOME 淺色與深色樣式上都清楚；GNOME 47 起淺色樣式的頂欄也是淺色）；`vbox(props)`：垂直的 `St.BoxLayout`——GNOME 48 起以 `orientation` 取代 `vertical`，46／47 只有 `vertical`，依物件有無 `orientation` 屬性擇一設定。
+
+### cards.js
+
+`makeCard(key, source)` → `{ actor, update(snapshot) }`，對應 Plasma 版的 `CpuCard`／`MemCard`／`GpuCard`／`NetCard`／`DiskCard`（內容寬 246）：標題列（粗體 15 px 標題、靠右 muted 12 px `extra`）與 muted 副標題（沒有時隱藏）放在間距 4 的 `.rw-card-top` 裡——Card.qml 的副標題用 -6 的負邊距，St 對負邊距算出 2³² 的高度，選單就不會出現。文字用選單本身的文字色（muted 為 2/3 不透明度），格線、條狀圖軌道與圓環軌道為文字色 15% 透明度，所以跟著 GNOME 的淺色／深色樣式；指標色用 `COLORS`。元件：`big`（色點＋22 px 粗體數字、其下 muted 說明）、`legend`（色點、muted 標籤、靠右數值）、`stackBar`（圓角軌道裁切的堆疊條）、`chart`（面積曲線＋儀表板格線：底部實線、頂端與中間虛線）、`mirrorChart`、執行緒直條（先 `clip` 再畫路徑，每條多畫 3 px 讓底部被裁掉、只有上方圓角）、圓環（8 px、圓頭，中間為 %）。
+- 處理器：`extra` 溫度、副標題 CPU 型號（`--widget` 的 `cpuModel`）；使用率（藍點）／平均頻率；執行緒直條（寬 66、高 54）與使用率曲線並排。
+- 記憶體：`extra` 總量；% 與「N 已使用」、應用程式黃／快取藍／可用綠的堆疊條、四列圖例（SWAP 沒有時隱藏）。
+- 顯示卡（`panelGpu`）：`extra` 溫度、副標題型號；72 px 圓環與顯示記憶體／編碼器／解碼器三條細條，下方曲線；沒有顯示卡時「沒有顯示卡」。
+- 網路（`panelNic`）：`extra` 介面名、副標題「本機 IPv4 ip/prefix」；下載（藍）／上傳（桃紅）大字與對稱條狀圖；沒有網卡時「沒有網路介面」。
+- 磁碟：讀取／寫入大字與對稱條狀圖，其下每顆已掛載的硬碟一列型號、已用／總量與黃色用量條（硬碟清單改變時重建）。
 
 ### stylesheet.css
 
@@ -293,7 +302,7 @@ St.DrawingArea 的 Cairo 繪圖（`repaint` 時呼叫，結束後 `cr.$dispose()
 
 ### dev/nested.sh、dev/devtools@resourcewatch/
 
-測試用，不會被 install.sh 安裝。`nested.sh` 在 distrobox 容器 `resourcewatch-gnome`（Fedora，含 `gnome-shell`、`mutter-devkit`、`dbus-daemon`、WebKitGTK 執行期）內以無頭模式執行 GNOME Shell（`--headless --virtual-monitor 1600x900 --no-x11`，主機上不開視窗）：`HOME`／`XDG_CONFIG_HOME`／`XDG_DATA_HOME`／`XDG_CACHE_HOME`／`XDG_STATE_HOME`／`XDG_RUNTIME_DIR` 都指到 `~/.local/share/resourcewatch-gnome-test/` 底下，`dbus-run-session` 提供獨立的工作階段匯流排，另啟一個私有的空 `dbus-daemon` 當系統匯流排（Shell 沒有系統匯流排會無法啟動，又不讓它碰到主機的 logind 等服務），所以不會讀寫主機的 dconf、擴充功能或 Wayland socket。`start` 把擴充功能（不含 `dev/`）與 `devtools@resourcewatch` 複製進測試家目錄、連結 `~/.local/bin/resourcewatch`、複製 widget.json、以 gsettings 啟用兩者後執行 Shell；`eval '<js>'` 呼叫 `org.gnome.Shell.Eval`，`shot <png>` 呼叫 Shell 的截圖介面，`stop` 結束 Shell 與私有匯流排。`devtools@resourcewatch` 只在 `enable()` 打開 `global.context.unsafe_mode`，讓上述兩個 D-Bus 方法可用。
+測試用，不會被 install.sh 安裝。`nested.sh` 在 distrobox 容器 `resourcewatch-gnome`（Fedora，含 `gnome-shell`、`mutter-devkit`、`dbus-daemon`、WebKitGTK 執行期）內以無頭模式執行 GNOME Shell（`--headless --virtual-monitor 1600x900 --no-x11`，主機上不開視窗）：`HOME`／`XDG_CONFIG_HOME`／`XDG_DATA_HOME`／`XDG_CACHE_HOME`／`XDG_STATE_HOME`／`XDG_RUNTIME_DIR` 都指到 `~/.local/share/resourcewatch-gnome-test/` 底下，`dbus-run-session` 提供獨立的工作階段匯流排，另啟一個私有的空 `dbus-daemon` 當系統匯流排（Shell 沒有系統匯流排會無法啟動，又不讓它碰到主機的 logind 等服務），所以不會讀寫主機的 dconf、擴充功能或 Wayland socket。`start` 把擴充功能（不含 `dev/`）與 `devtools@resourcewatch` 複製進測試家目錄、連結 `~/.local/bin/resourcewatch`、複製 widget.json、以 gsettings 啟用兩者後執行 Shell；`eval '<js>'` 呼叫 `org.gnome.Shell.Eval`，`shot <png>` 呼叫 Shell 的截圖介面，`stop` 結束 Shell 與私有匯流排；`RW_COLOR_SCHEME=prefer-light|prefer-dark` 在啟動時設定測試 Shell 的樣式。`devtools@resourcewatch` 只在 `enable()` 打開 `global.context.unsafe_mode`，讓上述兩個 D-Bus 方法可用。
 
 ## frontend/
 

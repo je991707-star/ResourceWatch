@@ -5,10 +5,10 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Fmt from './fmt.js';
 import * as Chart from './chart.js';
 import { vbox, COLORS } from './theme.js';
+import { makeCard } from './cards.js';
 
 const SPEC = {
     cpu: { label: 'CPU', chart: ['cpu', COLORS.blue] },
@@ -37,10 +37,13 @@ class Item {
         box.add_child(this._chart);
         this.button.add_child(box);
 
-        this._body = new St.Label({ style_class: 'rw-card' });
-        const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-        item.add_child(this._body);
-        this.button.menu.addMenuItem(item);
+        // the card is built on first open and only updated while the menu is open
+        // straight into the menu's box: a non-reactive menu item would be styled as inactive (dimmed)
+        this._box = vbox({ style_class: 'rw-card-box', x_expand: true });
+        this._err = new St.Label({ style_class: 'rw-error' });
+        this._box.add_child(this._err);
+        this.button.menu.box.add_child(this._box);
+        this.button.menu.connect('open-state-changed', (_m, open) => { if (open) this._updateCard(); });
         Main.panel.addToStatusArea(`${uuid}-${key}`, this.button, position, 'right');
     }
 
@@ -56,7 +59,19 @@ class Item {
         this._l1.text = lines[0];
         this._l2.text = lines[1];
         this._chart.queue_repaint();
-        if (this.button.menu.isOpen || !this._body.text) this._body.text = src.error || lines.join(' ');
+        if (this.button.menu.isOpen) this._updateCard();
+    }
+
+    _updateCard() {
+        const src = this._source;
+        this._err.text = src.error;
+        this._err.visible = !!src.error;
+        if (!src.snap) return;
+        if (!this._card) {
+            this._card = makeCard(this.key, src);
+            this._box.add_child(this._card.actor);
+        }
+        this._card.update(src.snap);
     }
 
     _paint(area) {

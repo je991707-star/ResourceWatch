@@ -1,4 +1,5 @@
-// Colors from widget/contents/ui/Theme.qml (dark; GNOME's top bar is dark in both styles) and small St helpers.
+// Indicator colors from widget/contents/ui/Theme.qml (dark set; they read well on GNOME's light and dark styles)
+// and small St helpers. Text, grid lines and bar tracks take the popup's own text color instead (cards.js).
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
