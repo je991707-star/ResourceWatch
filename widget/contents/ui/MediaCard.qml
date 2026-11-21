@@ -38,13 +38,16 @@ Rectangle {
         text: a.glyphs[kind]
         font.family: fa.font.family
         font.weight: fa.font.weight
-        font.pixelSize: kind === "prev" || kind === "next" ? 20 : 26
+        font.pixelSize: kind === "prev" || kind === "next" ? 15 : 19
         color: a.theme.text
         horizontalAlignment: Text.AlignHCenter
-        // fixed width so play and pause (different glyph widths) do not shift their neighbours
-        Layout.preferredWidth: 28
+        verticalAlignment: Text.AlignVCenter
+        // fixed box: play and pause (different glyph widths) do not shift their neighbours, and the height is
+        // the glyph's, without the line spacing that would add space under the row
+        Layout.preferredWidth: 24
+        Layout.preferredHeight: font.pixelSize
         Layout.alignment: Qt.AlignVCenter
-        opacity: !enabled ? 0.3 : ma.containsMouse ? 1 : 0.85
+        opacity: enabled ? 1 : 0.3
         scale: ma.pressed ? 0.88 : 1
         Behavior on scale { NumberAnimation { duration: 80 } }
         MouseArea { id: ma; anchors { fill: parent; margins: -8 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: b.clicked() }
@@ -119,29 +122,29 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 5
-            radius: 2.5
-            color: a.theme.track
+            Layout.preferredHeight: 3
+            radius: 1.5
+            color: Qt.alpha(a.theme.text, 0.2)
             Rectangle {
                 height: parent.height
-                radius: 2.5
-                color: a.theme.text
+                radius: 1.5
+                color: Qt.alpha(a.theme.text, 0.85)
                 width: a.length > 0 ? Math.max(height, parent.width * a.position / a.length) : 0
             }
         }
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: 4
-            Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 10; font.features: { "tnum": 1 } }
+            Layout.topMargin: 5
+            Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
             Item { Layout.fillWidth: true }
-            Text { text: a.length > 0 ? "-" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 10; font.features: { "tnum": 1 } }
+            Text { text: a.length > 0 ? "-" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
         }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 6 }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 40
+            spacing: 48
             HoverHandler { id: controlsHover }
             Btn { kind: "prev"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
             Btn {
