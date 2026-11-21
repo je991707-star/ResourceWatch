@@ -47,7 +47,7 @@ distrobox enter resourcewatch-dev -- bash -lc '
 ## 3. 安裝方式
 
 ```bash
-git clone <repo-url> ResourceWatch
+git clone https://github.com/je991707-star/ResourceWatch.git
 cd ResourceWatch
 ./install.sh
 ```
