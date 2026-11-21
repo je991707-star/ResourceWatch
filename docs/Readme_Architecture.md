@@ -82,7 +82,7 @@ Snapshot {
   cpu:     { usage, cores: (number|null)[], freqMhz, temp }   // %；temp 取第一個 coretemp/k10temp/zenpower/cpu_thermal 溫度
   mem:     { total, used, available, free, cached, swapTotal, swapUsed }
            // bytes；used = MemTotal − MemAvailable；free = MemFree；cached = Buffers+Cached+SReclaimable
-  gpus:    [{ name, usage, memUsed, memTotal, temp, encoder, decoder }] // encoder/decoder：NVENC／NVDEC 使用率 %，非 NVIDIA 為 null
+  gpus:    [{ name, usage, memUsed, memTotal, temp, encoder, decoder }] // encoder/decoder：NVENC／NVDEC 或 DRM fdinfo 的 Video Encode／Decode 引擎使用率 %，讀不到為 null
   disks:   [{ name, model, size, readBps, writeBps, busy, used, total, mounts }]
            // busy：活動時間 %（diskstats io_ticks 差值／經過時間，上限 100）
            // 只列有 /sys/block/<n>/device、容量 > 0、不是光碟機（sr*）的實體磁碟；used/total/mounts 為掛載在這顆硬碟上的檔案系統加總（沒有掛載時 used/total 為 null）
@@ -173,10 +173,10 @@ SystemInfo { hostname, os, desktop, kernel, cpuModel, cpuCores, cpuThreads, home
 - NVIDIA：`libnvidia-ml.so.1` 以 `libloading` 載入、`nvmlInit_v2` 只呼叫一次；每次取樣依索引取 handle，讀名稱、使用率、記憶體（v1 `used`）、溫度、編碼／解碼使用率（`nvmlDeviceGetEncoder/DecoderUtilization`，舊驅動沒有這兩個符號時為 `null`），任一呼叫失敗該欄為 `null`。另讀風扇 %（`nvmlDeviceGetFanSpeed`）與功耗（`nvmlDeviceGetPowerUsage`，mW → W），兩個符號皆為可選，結果與 `nvml` 旗標只供感測器使用（`serde(skip)`，不在 GPU JSON 中）。函式指標與 `Library` 同生命週期（`_lib` 欄位）。
 - 每程序 GPU（`proc_util(own, secs)`，由 `processes` 呼叫）：
   - NVML：可選符號 `nvmlDeviceGetProcessUtilization`，先以 null 緩衝區取筆數再讀；`lastSeenTimeStamp` 用上次讀到的最新時間戳（第一次為現在 − 3 秒，避免拿到驅動整個緩衝區），同一程序多筆樣本取平均，sm／enc／dec 取最大者為 `3D`／`Video Encode`／`Video Decode`，GPU 索引即 NVML 索引。有此符號時所有程序都涵蓋（回傳旗標 `true`）。
-  - DRM（AMD／Intel）：只掃自己的程序 `/proc/<pid>/fd` 中指向 `/dev/dri/` 的 fd（`drm_clients`，`sample` 的使用率備援也用它），`parse_fdinfo` 讀 `drm-client-id`、`drm-pdev`、`drm-engine-<名稱>: <ns> ns`（略過 `capacity-`；xe 的 cycles 計數器與 NVIDIA 專有驅動沒有這些行，不支援）。同一個 (PCI 位址, client id, 引擎) 只算一次（fork 後多個程序共用），% ＝ ns 差值／經過時間，上一回的值存在 `drm_prev`；`drm-pdev` 對應 `drm` 清單中卡片的 PCI 位址（`device` 連結 canonicalize 後的名稱），索引接在 NVML 之後。引擎名稱經 `engine_label`：`gfx`／`render` → 3D、`compute` → Compute、`dec`／`video`／`jpeg` → Video Decode、`enc*` → Video Encode、`video-enhance` → Video Processing、`dma`／`copy` → Copy。
-  - 每個程序保留最忙的一筆（`put`）。單元測試涵蓋 fdinfo 解析、引擎名稱與 `busiest`。
-- 其他：`/sys/class/drm/cardN/device`，vendor `0x1002` AMD、`0x8086` Intel、`0x10de`（只在 NVML 載入失敗時，例如 nouveau）；讀 `gpu_busy_percent`、`mem_info_vram_used/total`、`hwmon/*/temp1_input`。`sample` 因此需要 `&mut self`。
-  - 使用率備援：`gpu_busy_percent` 讀不到（i915 沒有這個檔；amdgpu 的舊式電源管理，例如 SI／CIK 世代的 Kaveri 內顯與 Hainan 獨顯，回傳 EOPNOTSUPP），且 `device/driver` 是 `amdgpu` 或 `i915` 時，`fdinfo_busy` 掃所有 `/proc/<pid>` 的 DRM client（讀不到的別人程序自動略過；桌面上合成器是自己的程序，所以大部分繪圖都算得到），以 (PCI 位址, client id, 引擎) 去重後存進 `busy_prev`（含讀取時間）。`busiest` 把兩次之間各 client 同一引擎的 ns 差值加總、除以經過時間，取該卡最忙的引擎，上限 100；兩次都在的 client 才計入。第一次呼叫沒有前值，使用率為 null；之後該卡沒有任何 client 視為 0。`--widget` 本來就取樣兩次、間隔 1 秒，所以也有數值。
+  - DRM（AMD／Intel）：只掃自己的程序 `/proc/<pid>/fd` 中指向 `/dev/dri/` 的 fd（`drm_clients`，`sample` 的使用率備援也用它），`parse_fdinfo` 讀 `drm-client-id`、`drm-pdev`、`drm-engine-<名稱>: <ns> ns`（略過 `capacity-`；xe 的 cycles 計數器與 NVIDIA 專有驅動沒有這些行，不支援）。同一個 (PCI 位址, client id, 引擎) 只算一次（fork 後多個程序共用），% ＝ ns 差值／經過時間，上一回的值存在 `drm_prev`；`drm-pdev` 對應 `drm` 清單中卡片的 PCI 位址（`device` 連結 canonicalize 後的名稱），索引接在 NVML 之後。引擎名稱經 `engine_label`：`gfx`／`render` → 3D、`compute` → Compute、`dec`／`video`／`jpeg` → Video Decode、`enc*` → Video Encode、`video-enhance`／`vpe` → Video Processing、`dma`／`copy` → Copy。
+  - 每個程序保留最忙的一筆（`put`）。單元測試涵蓋 fdinfo 解析、引擎名稱、`busiest` 與兩種名稱資料庫的解析。
+- 其他：`/sys/class/drm/cardN/device`，vendor `0x1002` AMD、`0x8086` Intel、`0x10de`（只在 NVML 載入失敗時，例如 nouveau）；名稱由 `gpu_name` 查系統的 ID 資料庫：AMD 先查 libdrm 的 `/usr/share/libdrm/amdgpu.ids`（`amdgpu_ids_name`，裝置 ID＋`revision`，例如「AMD Radeon R6 Graphics」），否則查 `pci.ids`（`/usr/share/hwdata`、`/usr/share/misc`、`/usr/share`，`pci_ids_name`：該廠商區塊下的裝置名稱，有方括號時只取括號內的行銷名稱），沒有廠商名開頭時加上 AMD／Intel／NVIDIA；都查不到時為「AMD GPU」等通稱；讀 `gpu_busy_percent`、`mem_info_vram_used/total`、`hwmon/*/temp1_input`。`sample` 因此需要 `&mut self`。
+  - 引擎計數器（`fdinfo_busy`）：`device/driver` 是 `amdgpu` 或 `i915`（fdinfo 有以 ns 計的引擎計數器）時，每次 `sample` 掃所有 `/proc/<pid>` 的 DRM client（讀不到的別人程序自動略過；桌面上合成器是自己的程序，所以大部分繪圖都算得到），以 (PCI 位址, client id, 引擎) 去重後存進 `busy_prev`（含讀取時間）。`busiest` 把兩次之間各 client 同一引擎的 ns 差值加總、除以經過時間、上限 100，再依 `engine_label` 分類取最忙的引擎（amdgpu 的 `enc` 與 `enc_1` 是兩個引擎，取較忙者而非相加）；兩次都在的 client 才計入。結果：`encoder` ＝ Video Encode、`decoder` ＝ Video Decode；`usage` 優先用 `gpu_busy_percent`，讀不到（i915 沒有這個檔；amdgpu 的舊式電源管理，例如 SI／CIK 世代，回傳 EOPNOTSUPP）時取所有分類中最忙的。第一次呼叫沒有前值，三者為 null；之後沒有 client 用到的引擎為 0（卡本身沒有影片引擎時也顯示 0）。`--widget` 本來就取樣兩次、間隔 1 秒，所以也有數值。限制：VCN 4.0 以後（RX 7000、Ryzen 7040 起）解碼也走統一的 VCN 佇列，fdinfo 記在 `enc`，解碼會顯示在編碼器。
   Intel 與 nouveau 通常沒有這些檔案，對應欄位為 `null`。名稱只有廠牌（不讀 PCI ID 資料庫）。
 
 ## widget/

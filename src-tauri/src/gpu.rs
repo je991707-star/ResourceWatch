@@ -264,9 +264,10 @@ fn drm_clients(pid: u32) -> Vec<Client> {
 
 type Counters = HashMap<(String, u64, String), u64>;
 
-/// (PCI address, client id, engine) busy ns at two times `secs` apart → per PCI address, the
-/// busiest engine's share (%) summed over clients present at both times, capped at 100.
-fn busiest(prev: &Counters, cur: &Counters, secs: f64) -> HashMap<String, f64> {
+/// (PCI address, client id, engine) busy ns at two times `secs` apart → (PCI address,
+/// `engine_label`) → busy %: each engine summed over the clients present at both times and capped
+/// at 100, then the busiest engine per label (amdgpu's `enc` and `enc_1` are separate engines).
+fn busiest(prev: &Counters, cur: &Counters, secs: f64) -> HashMap<(String, String), f64> {
     let mut engines: HashMap<(&str, &str), f64> = HashMap::new();
     for (k, ns) in cur {
         if let Some(p) = prev.get(k) {
@@ -275,11 +276,70 @@ fn busiest(prev: &Counters, cur: &Counters, secs: f64) -> HashMap<String, f64> {
         }
     }
     let mut out = HashMap::new();
-    for ((pdev, _), v) in engines {
-        let m = out.entry(pdev.to_string()).or_insert(0.0_f64);
+    for ((pdev, e), v) in engines {
+        let m = (out.entry((pdev.to_string(), engine_label(e).to_string()))).or_insert(0.0_f64);
         *m = m.max(v.min(100.0));
     }
     out
+}
+
+/// libdrm's amdgpu.ids line `130A,\t00,\tAMD Radeon R6 Graphics` for this device id and revision.
+fn amdgpu_ids_name(text: &str, id: &str, rev: &str) -> Option<String> {
+    text.lines().find_map(|l| {
+        let mut f = l.splitn(3, ',').map(str::trim);
+        let hit = f.next()?.eq_ignore_ascii_case(id) && f.next()?.eq_ignore_ascii_case(rev);
+        hit.then(|| f.next().map(String::from)).flatten()
+    })
+}
+
+/// pci.ids device name under `vendor` (`\t6664  Jet XT [Radeon R5 M240]`), only the bracketed
+/// marketing name when there is one.
+fn pci_ids_name(text: &str, vendor: &str, id: &str) -> Option<String> {
+    let mut ours = false;
+    text.lines().find_map(|l| {
+        match l.strip_prefix('\t') {
+            Some(d) if ours && !d.starts_with('\t') => {
+                let n = d.strip_prefix(id)?.strip_prefix("  ")?;
+                let b = n.rfind('[').filter(|_| n.ends_with(']'));
+                return Some(b.map_or(n, |b| &n[b + 1..n.len() - 1]).to_string());
+            }
+            Some(_) => {}
+            None if !l.starts_with('#') && !l.is_empty() => {
+                ours = l.split_whitespace().next() == Some(vendor)
+            }
+            None => {}
+        }
+        None
+    })
+}
+
+/// Product name for a DRM device from the system's id databases, with the vendor in front; None
+/// when neither file knows it.
+fn gpu_name(dev: &std::path::Path, vendor: &str, short: &str) -> Option<String> {
+    let hex = |f: &str| {
+        let v = fs::read_to_string(dev.join(f)).ok()?;
+        Some(v.trim().trim_start_matches("0x").to_lowercase())
+    };
+    let id = hex("device")?;
+    let amd = (vendor == "1002")
+        .then(|| fs::read_to_string("/usr/share/libdrm/amdgpu.ids").ok())
+        .flatten()
+        .and_then(|t| amdgpu_ids_name(&t, &id, &hex("revision")?));
+    let name = amd.or_else(|| {
+        [
+            "/usr/share/hwdata/pci.ids",
+            "/usr/share/misc/pci.ids",
+            "/usr/share/pci.ids",
+        ]
+        .iter()
+        .find_map(|p| fs::read_to_string(p).ok())
+        .and_then(|t| pci_ids_name(&t, vendor, &id))
+    })?;
+    Some(if name.starts_with(short) {
+        name
+    } else {
+        format!("{short} {name}")
+    })
 }
 
 /// amdgpu / i915 engine name → Task Manager style label.
@@ -288,7 +348,7 @@ fn engine_label(e: &str) -> &str {
         "gfx" | "render" => "3D",
         "compute" => "Compute",
         "dec" | "video" | "jpeg" => "Video Decode",
-        "video-enhance" => "Video Processing",
+        "video-enhance" | "vpe" => "Video Processing",
         "dma" | "copy" => "Copy",
         _ if e.starts_with("enc") => "Video Encode",
         _ => e,
@@ -321,18 +381,21 @@ impl Gpus {
             })
             .filter_map(|e| {
                 let dev = e.path().join("device");
-                let name = match fs::read_to_string(dev.join("vendor")).ok()?.trim() {
-                    "0x1002" => "AMD GPU",
-                    "0x8086" => "Intel GPU",
-                    "0x10de" if nvml.is_none() => "NVIDIA GPU",
+                let vendor = fs::read_to_string(dev.join("vendor")).ok()?;
+                let vendor = vendor.trim().trim_start_matches("0x");
+                let short = match vendor {
+                    "1002" => "AMD",
+                    "8086" => "Intel",
+                    "10de" if nvml.is_none() => "NVIDIA",
                     _ => return None,
                 };
+                let name = gpu_name(&dev, vendor, short).unwrap_or_else(|| format!("{short} GPU"));
                 let pci = fs::canonicalize(&dev)
                     .ok()?
                     .file_name()?
                     .to_str()?
                     .to_string();
-                Some((name.to_string(), dev, pci))
+                Some((name, dev, pci))
             })
             .collect();
         drm.sort_by(|a, b| a.1.cmp(&b.1));
@@ -401,10 +464,10 @@ impl Gpus {
         (out, all)
     }
 
-    /// Busiest engine per PCI address (%) since the last call, summed over every DRM client whose
-    /// fdinfo we can read (our own processes, which on a desktop includes the compositor);
+    /// Busy % per (PCI address, engine label) since the last call (see `busiest`), over every DRM
+    /// client whose fdinfo we can read (our own processes, which on a desktop includes the compositor);
     /// None on the first call.
-    fn fdinfo_busy(&mut self) -> Option<HashMap<String, f64>> {
+    fn fdinfo_busy(&mut self) -> Option<HashMap<(String, String), f64>> {
         let now = std::time::Instant::now();
         let mut cur = HashMap::new();
         let pids = fs::read_dir("/proc").into_iter().flatten().flatten();
@@ -423,16 +486,14 @@ impl Gpus {
 
     pub fn sample(&mut self) -> Vec<Gpu> {
         let num = |p: std::path::PathBuf| fs::read_to_string(p).ok()?.trim().parse::<f64>().ok();
-        // gpu_busy_percent is missing on i915 and returns EOPNOTSUPP on amdgpu's legacy (SI/CIK)
-        // power management; those two drivers report engine busy ns in fdinfo instead
+        // these two drivers report engine busy ns in fdinfo: the source of the encoder / decoder
+        // figures, and of usage where gpu_busy_percent is missing (i915) or returns EOPNOTSUPP
+        // (amdgpu's legacy SI/CIK power management)
         let fdinfo_driver = |dev: &PathBuf| {
             fs::read_link(dev.join("driver"))
                 .is_ok_and(|d| d.ends_with("amdgpu") || d.ends_with("i915"))
         };
-        let busy = self
-            .drm
-            .iter()
-            .any(|(_, dev, _)| num(dev.join("gpu_busy_percent")).is_none() && fdinfo_driver(dev))
+        let busy = (self.drm.iter().any(|(_, dev, _)| fdinfo_driver(dev)))
             .then(|| self.fdinfo_busy())
             .flatten();
         let mut out = self.nvml.as_ref().map(Nvml::sample).unwrap_or_default();
@@ -443,18 +504,26 @@ impl Gpus {
                 .flatten()
                 .find_map(|e| num(e.path().join("temp1_input")))
                 .map(|t| t / 1000.0);
+            // an engine no client used in the interval is idle: 0 rather than unknown
+            let b = busy.as_ref().filter(|_| fdinfo_driver(dev));
+            let engine = |label: &str| {
+                b.map(|b| {
+                    b.get(&(pci.clone(), label.to_string()))
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+            };
+            let any = b.map(|b| {
+                (b.iter().filter(|((p, _), _)| p == pci)).fold(0.0_f64, |m, (_, &v)| m.max(v))
+            });
             Gpu {
                 name: name.clone(),
-                usage: num(dev.join("gpu_busy_percent")).or_else(|| {
-                    // no client on this GPU in the interval: idle
-                    let b = busy.as_ref().filter(|_| fdinfo_driver(dev))?;
-                    Some(b.get(pci).copied().unwrap_or(0.0))
-                }),
+                usage: num(dev.join("gpu_busy_percent")).or(any),
                 mem_used: num(dev.join("mem_info_vram_used")).map(|v| v as u64),
                 mem_total: num(dev.join("mem_info_vram_total")).map(|v| v as u64),
                 temp,
-                encoder: None,
-                decoder: None,
+                encoder: engine("Video Encode"),
+                decoder: engine("Video Decode"),
                 nvml: false,
                 fan: None,
                 power: None,
@@ -479,8 +548,40 @@ mod tests {
             (k(1, "compute"), 100_000_000),
             (k(3, "gfx"), 900_000_000),
         ]);
-        assert_eq!(busiest(&prev, &cur, 1.0)["0000:00:01.0"], 50.0);
-        assert_eq!(busiest(&prev, &cur, 0.1)["0000:00:01.0"], 100.0);
+        let at =
+            |m: &HashMap<(String, String), f64>, l: &str| m[&("0000:00:01.0".into(), l.into())];
+        assert_eq!(at(&busiest(&prev, &cur, 1.0), "3D"), 50.0);
+        assert_eq!(at(&busiest(&prev, &cur, 1.0), "Compute"), 10.0);
+        assert_eq!(at(&busiest(&prev, &cur, 0.1), "3D"), 100.0);
+        // enc and enc_1 are two engines: the busier one, not the sum
+        let prev = Counters::from([(k(1, "enc"), 0), (k(1, "enc_1"), 0)]);
+        let cur = Counters::from([(k(1, "enc"), 600_000_000), (k(1, "enc_1"), 300_000_000)]);
+        assert_eq!(at(&busiest(&prev, &cur, 1.0), "Video Encode"), 60.0);
+    }
+
+    #[test]
+    fn names() {
+        let ids = "# comment\n130A,\t00,\tAMD Radeon R6 Graphics\n130A,\t01,\tOther\n";
+        assert_eq!(
+            amdgpu_ids_name(ids, "130a", "00").as_deref(),
+            Some("AMD Radeon R6 Graphics")
+        );
+        assert_eq!(amdgpu_ids_name(ids, "130b", "00"), None);
+        let pci = "# c\n1002  Advanced Micro Devices, Inc. [AMD/ATI]\n\t6664  Jet XT [Radeon R5 M240]\n\
+                   \t\t17aa 3801  Sub\n\t6665  Plain Name\n8086  Intel Corporation\n\t6664  Not AMD\n";
+        assert_eq!(
+            pci_ids_name(pci, "1002", "6664").as_deref(),
+            Some("Radeon R5 M240")
+        );
+        assert_eq!(
+            pci_ids_name(pci, "1002", "6665").as_deref(),
+            Some("Plain Name")
+        );
+        assert_eq!(
+            pci_ids_name(pci, "8086", "6664").as_deref(),
+            Some("Not AMD")
+        );
+        assert_eq!(pci_ids_name(pci, "8086", "1234"), None);
     }
 
     #[test]
