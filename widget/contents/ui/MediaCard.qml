@@ -13,9 +13,10 @@ Rectangle {
     radius: 16
     color: theme.card
     // the full layout's height; given less (main.qml fills the column gap, hiding the card below 60 px) the
-    // card switches to the compact layout: album art and the buttons only
+    // card switches to the compact layout: album art and the buttons, plus title and artist from 100 px
     implicitHeight: col.implicitHeight + col.anchors.topMargin + col.anchors.bottomMargin
     readonly property bool compact: height < implicitHeight
+    readonly property bool medium: compact && height >= 100
 
     Mpris.Mpris2Model { id: mpris }
     // every player (the model's first row is Plasma's multiplexer, skipped)
@@ -194,14 +195,22 @@ Rectangle {
         Controls { id: fullControls; Layout.alignment: Qt.AlignHCenter }
     }
 
-    // compact: album art at the left, the buttons centered in the rest
+    // compact: album art at the left, the buttons centered in the rest; from 100 px title and artist above them
     RowLayout {
         visible: a.active && a.compact
         anchors { fill: parent; margins: 10; leftMargin: 12; rightMargin: 12 }
-        spacing: 0
-        Art { size: Math.min(parent.height, 64) }
-        Item { Layout.fillWidth: true }
-        Controls { id: compactControls }
-        Item { Layout.fillWidth: true }
+        spacing: 12
+        Art { size: Math.min(parent.height, a.medium ? 76 : 64) }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 1
+            Item { visible: !a.medium; Layout.fillHeight: true }
+            Text { visible: a.medium; text: a.player?.track ?? ""; color: a.theme.text; font.weight: Font.DemiBold; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
+            Text { visible: a.medium && text !== ""; text: a.player?.artist ?? ""; color: a.theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+            Item { Layout.fillHeight: true }
+            Controls { id: compactControls; Layout.alignment: Qt.AlignHCenter }
+            Item { visible: !a.medium; Layout.fillHeight: true }
+        }
     }
 }
