@@ -4,8 +4,8 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.private.mpris as Mpris
 
 // Now playing (MPRIS, the same player Plasma's media controller picks), laid out like a lock-screen player:
-// small album art with title / artist and the player's icon, a full-width progress bar with elapsed and
-// remaining time, then centered previous / play-pause / next buttons.
+// album art with title / artist and the player's icon, a full-width progress bar with elapsed and remaining
+// time, then centered previous / play-pause / next buttons (Font Awesome).
 // main.qml sizes it to fill the empty space left in the CPU card's column.
 Rectangle {
     id: a
@@ -13,10 +13,12 @@ Rectangle {
     radius: 16
     color: theme.card
     // the least height that fits the layout; main.qml hides the card when the free space is smaller
-    implicitHeight: col.implicitHeight + 28
+    implicitHeight: col.implicitHeight + 32
 
     Mpris.Mpris2Model { id: mpris }
     readonly property var player: mpris.currentPlayer
+    // a player with no track (e.g. a KDE Connect phone that is idle) counts as nothing playing
+    readonly property bool active: !!player && (player.track ?? "") !== ""
     readonly property bool playing: player?.playbackStatus === Mpris.PlaybackStatus.Playing
     // microseconds; length is 0 for streams
     readonly property real length: player?.length ?? 0
@@ -24,16 +26,28 @@ Rectangle {
     // pointer over the buttons: main.qml stops the desktop from taking the press as a widget move
     readonly property bool controlsHovered: controlsHover.hovered
 
-    component Ctl: Kirigami.Icon {
-        id: ic
+    // Font Awesome Free solid glyphs (contents/fonts, SIL OFL 1.1) for the transport buttons
+    FontLoader { id: fa; source: Qt.resolvedUrl("../fonts/fa-solid-900.woff2") }
+    readonly property var glyphs: ({ prev: "\uf04a", next: "\uf04e", play: "\uf04b", pause: "\uf04c" })
+
+    // transport button: backward / forward / play / pause
+    component Btn: Text {
+        id: b
+        required property string kind
         signal clicked()
-        property real size: 20
-        Layout.preferredWidth: size
-        Layout.preferredHeight: size
-        isMask: true
+        text: a.glyphs[kind]
+        font.family: fa.font.family
+        font.weight: fa.font.weight
+        font.pixelSize: kind === "prev" || kind === "next" ? 20 : 26
         color: a.theme.text
-        opacity: !enabled ? 0.3 : ma.containsMouse ? 1 : 0.8
-        MouseArea { id: ma; anchors { fill: parent; margins: -6 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: ic.clicked() }
+        horizontalAlignment: Text.AlignHCenter
+        // fixed width so play and pause (different glyph widths) do not shift their neighbours
+        Layout.preferredWidth: 28
+        Layout.alignment: Qt.AlignVCenter
+        opacity: !enabled ? 0.3 : ma.containsMouse ? 1 : 0.85
+        scale: ma.pressed ? 0.88 : 1
+        Behavior on scale { NumberAnimation { duration: 80 } }
+        MouseArea { id: ma; anchors { fill: parent; margins: -8 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: b.clicked() }
     }
 
     // the player only reports position on seeks, so ask for it while playing
@@ -44,89 +58,98 @@ Rectangle {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
     }
 
-    Text { visible: !a.player; anchors.centerIn: parent; text: "沒有播放中的媒體"; color: a.theme.muted; font.pixelSize: 13 }
+    ColumnLayout {
+        visible: !a.active
+        anchors.centerIn: parent
+        spacing: 8
+        Kirigami.Icon { source: "media-default-album"; Layout.preferredWidth: 32; Layout.preferredHeight: 32; Layout.alignment: Qt.AlignHCenter; opacity: 0.5 }
+        Text { text: "沒有播放中的媒體"; color: a.theme.muted; font.pixelSize: 13; Layout.alignment: Qt.AlignHCenter }
+    }
 
     ColumnLayout {
         id: col
-        visible: !!a.player
-        anchors { fill: parent; margins: 14 }
-        spacing: 6
+        visible: a.active
+        anchors { fill: parent; margins: 16 }
+        spacing: 0
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 10
-            // album art; the player's icon when there is none
+            spacing: 12
+            // album art; a placeholder icon when there is none
             Rectangle {
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
-                radius: 6
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                radius: 8
                 color: a.theme.field
                 Kirigami.ShadowedImage {
                     id: art
                     anchors.fill: parent
-                    radius: 6
+                    radius: 8
                     color: "transparent" // default white would cover the placeholder
                     source: a.player?.artUrl ?? ""
                     fillMode: Image.PreserveAspectCrop
-                    sourceSize: Qt.size(96, 96)
+                    sourceSize: Qt.size(128, 128)
                     asynchronous: true
                 }
                 Kirigami.Icon {
                     anchors.centerIn: parent
-                    width: 20
-                    height: 20
+                    width: 22
+                    height: 22
                     visible: art.status !== Image.Ready
                     source: "media-default-album"
+                    opacity: 0.6
                 }
             }
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 1
-                Text { text: a.player?.track || a.player?.identity || ""; color: a.theme.text; font.bold: true; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+                spacing: 2
+                Text { text: a.player?.track ?? ""; color: a.theme.text; font.bold: true; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
                 Text { text: a.player?.artist ?? ""; visible: text !== ""; color: a.theme.muted; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
             }
             Kirigami.Icon {
-                Layout.preferredWidth: 18
-                Layout.preferredHeight: 18
+                Layout.preferredWidth: 16
+                Layout.preferredHeight: 16
                 Layout.alignment: Qt.AlignTop
                 source: a.player?.iconName || "media-default-album"
-                opacity: 0.8
+                opacity: 0.7
             }
         }
+
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.topMargin: 4
-            Layout.preferredHeight: 4
-            radius: 2
+            Layout.preferredHeight: 5
+            radius: 2.5
             color: a.theme.track
             Rectangle {
                 height: parent.height
-                radius: 2
+                radius: 2.5
                 color: a.theme.text
-                width: a.length > 0 ? parent.width * a.position / a.length : 0
+                width: a.length > 0 ? Math.max(height, parent.width * a.position / a.length) : 0
             }
         }
         RowLayout {
             Layout.fillWidth: true
-            Layout.topMargin: -2
-            Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 10 }
+            Layout.topMargin: 4
+            Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 10; font.features: { "tnum": 1 } }
             Item { Layout.fillWidth: true }
-            Text { text: a.length > 0 ? "-" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 10 }
+            Text { text: a.length > 0 ? "-" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 10; font.features: { "tnum": 1 } }
         }
+
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 6 }
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 32
+            spacing: 40
             HoverHandler { id: controlsHover }
-            Ctl { source: "media-skip-backward"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
-            Ctl {
-                size: 26
-                source: a.playing ? "media-playback-pause" : "media-playback-start"
+            Btn { kind: "prev"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
+            Btn {
+                kind: a.playing ? "pause" : "play"
                 enabled: !!(a.playing ? a.player?.canPause : a.player?.canPlay)
                 onClicked: a.player.PlayPause()
             }
-            Ctl { source: "media-skip-forward"; enabled: !!a.player?.canGoNext; onClicked: a.player.Next() }
+            Btn { kind: "next"; enabled: !!a.player?.canGoNext; onClicked: a.player.Next() }
         }
     }
 }
