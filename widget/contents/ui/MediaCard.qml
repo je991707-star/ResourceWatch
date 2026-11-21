@@ -12,8 +12,10 @@ Rectangle {
     required property Theme theme
     radius: 16
     color: theme.card
-    // the least height that fits the layout; main.qml hides the card when the free space is smaller
+    // the full layout's height; given less (main.qml fills the column gap, hiding the card below 60 px) the
+    // card switches to the compact layout: album art and the buttons only
     implicitHeight: col.implicitHeight + col.anchors.topMargin + col.anchors.bottomMargin
+    readonly property bool compact: height < implicitHeight
 
     Mpris.Mpris2Model { id: mpris }
     // every player (the model's first row is Plasma's multiplexer, skipped)
@@ -45,7 +47,7 @@ Rectangle {
     readonly property real length: player?.length ?? 0
     readonly property real position: Math.min(player?.position ?? 0, length > 0 ? length : Infinity)
     // pointer over the buttons: main.qml stops the desktop from taking the press as a widget move
-    readonly property bool controlsHovered: controlsHover.hovered
+    readonly property bool controlsHovered: fullControls.hovered || compactControls.hovered
 
     // Font Awesome Free solid glyphs (contents/fonts, SIL OFL 1.1) for the transport buttons
     FontLoader { id: fa; source: Qt.resolvedUrl("../fonts/fa-solid-900.woff2") }
@@ -81,6 +83,47 @@ Rectangle {
         MouseArea { id: ma; anchors { fill: parent; leftMargin: 10; rightMargin: 10; topMargin: -6; bottomMargin: -6 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: b.clicked() }
     }
 
+    // album art; a placeholder icon when there is none
+    component Art: Rectangle {
+        required property real size
+        Layout.preferredWidth: size
+        Layout.preferredHeight: size
+        radius: 6
+        color: a.theme.field
+        Kirigami.ShadowedImage {
+            id: art
+            anchors.fill: parent
+            radius: 6
+            color: "transparent" // default white would cover the placeholder
+            source: a.player?.artUrl ?? ""
+            fillMode: Image.PreserveAspectCrop
+            sourceSize: Qt.size(128, 128)
+            asynchronous: true
+        }
+        Kirigami.Icon {
+            anchors.centerIn: parent
+            width: parent.size / 2
+            height: width
+            visible: art.status !== Image.Ready
+            source: "media-default-album"
+            opacity: 0.6
+        }
+    }
+
+    // previous / play-pause / next
+    component Controls: RowLayout {
+        readonly property alias hovered: hover.hovered
+        spacing: 0
+        HoverHandler { id: hover }
+        Btn { kind: "prev"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
+        Btn {
+            kind: a.playing ? "pause" : "play"
+            enabled: !!(a.playing ? a.player?.canPause : a.player?.canPlay)
+            onClicked: a.player.PlayPause()
+        }
+        Btn { kind: "next"; enabled: !!a.player?.canGoNext; onClicked: a.player.Next() }
+    }
+
     // the player only reports position on seeks, so ask for it while playing
     Timer { interval: 1000; repeat: true; running: a.playing && a.visible; onTriggered: a.player.updatePosition() }
 
@@ -93,44 +136,20 @@ Rectangle {
         visible: !a.active
         anchors.centerIn: parent
         spacing: 8
-        Kirigami.Icon { source: "media-default-album"; Layout.preferredWidth: 32; Layout.preferredHeight: 32; Layout.alignment: Qt.AlignHCenter; opacity: 0.5 }
+        Kirigami.Icon { visible: !a.compact; source: "media-default-album"; Layout.preferredWidth: 32; Layout.preferredHeight: 32; Layout.alignment: Qt.AlignHCenter; opacity: 0.5 }
         Text { text: "沒有播放中的媒體"; color: a.theme.muted; font.pixelSize: 13; Layout.alignment: Qt.AlignHCenter }
     }
 
     ColumnLayout {
         id: col
-        visible: a.active
+        visible: a.active && !a.compact
         anchors { fill: parent; topMargin: 20; bottomMargin: 16; leftMargin: 14; rightMargin: 14 }
         spacing: 0
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
-            // album art; a placeholder icon when there is none
-            Rectangle {
-                Layout.preferredWidth: 46
-                Layout.preferredHeight: 46
-                radius: 6
-                color: a.theme.field
-                Kirigami.ShadowedImage {
-                    id: art
-                    anchors.fill: parent
-                    radius: 6
-                    color: "transparent" // default white would cover the placeholder
-                    source: a.player?.artUrl ?? ""
-                    fillMode: Image.PreserveAspectCrop
-                    sourceSize: Qt.size(128, 128)
-                    asynchronous: true
-                }
-                Kirigami.Icon {
-                    anchors.centerIn: parent
-                    width: 22
-                    height: 22
-                    visible: art.status !== Image.Ready
-                    source: "media-default-album"
-                    opacity: 0.6
-                }
-            }
+            Art { size: 46 }
             // title and artist at the same size, centered on the art; the artist only lighter
             ColumnLayout {
                 Layout.fillWidth: true
@@ -172,17 +191,17 @@ Rectangle {
 
         Item { Layout.fillHeight: true; Layout.minimumHeight: 10 }
 
-        RowLayout {
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 0
-            HoverHandler { id: controlsHover }
-            Btn { kind: "prev"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
-            Btn {
-                kind: a.playing ? "pause" : "play"
-                enabled: !!(a.playing ? a.player?.canPause : a.player?.canPlay)
-                onClicked: a.player.PlayPause()
-            }
-            Btn { kind: "next"; enabled: !!a.player?.canGoNext; onClicked: a.player.Next() }
-        }
+        Controls { id: fullControls; Layout.alignment: Qt.AlignHCenter }
+    }
+
+    // compact: album art at the left, the buttons centered in the rest
+    RowLayout {
+        visible: a.active && a.compact
+        anchors { fill: parent; margins: 10; leftMargin: 12; rightMargin: 12 }
+        spacing: 0
+        Art { size: Math.min(parent.height, 64) }
+        Item { Layout.fillWidth: true }
+        Controls { id: compactControls }
+        Item { Layout.fillWidth: true }
     }
 }

@@ -307,17 +307,17 @@ PlasmoidItem {
                             for (let i = 0; i < cardRep.count; i++) h += cardRep.itemAt(i)?.implicitHeight ?? 0;
                             return h + Math.max(0, cardRep.count - 1) * spacing;
                         }
-                        // now playing at the top of the CPU card's column: fills what the other column is taller by,
-                        // at least its own layout height (then the columns' bottoms no longer line up)
+                        // now playing at the top of the CPU card's column, filling what the other column is taller by;
+                        // hidden below 60 px, compact (art and buttons) below its full layout height
                         MediaCard {
                             readonly property var other: columns.count > 1 ? columns.itemAt(1 - col) : null
                             readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
                             theme: colors
                             readonly property bool isApp: true
                             onControlsHoveredChanged: root.overBody = controlsHovered
-                            visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0
+                            visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 60
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.max(gap, implicitHeight)
+                            Layout.preferredHeight: gap
                         }
                         Repeater {
                             id: cardRep
