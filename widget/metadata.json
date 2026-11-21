@@ -7,7 +7,7 @@
         "Icon": "io.github.local.resourcewatch",
         "Category": "System Information",
         "License": "MIT",
-        "Version": "0.4.3",
+        "Version": "0.4.4",
         "FormFactors": ["desktop"]
     },
     "KPackageStructure": "Plasma/Applet",
