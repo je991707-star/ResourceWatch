@@ -195,22 +195,22 @@ Rectangle {
         Controls { id: fullControls; Layout.alignment: Qt.AlignHCenter }
     }
 
-    // compact: album art at the left, the buttons centered in the rest; from 100 px title and artist above them
+    // compact: album art at the left, the buttons centered in the rest; from 100 px title and artist above them.
+    // The right column's content is centered vertically as one group (equal space above and below).
     RowLayout {
         visible: a.active && a.compact
-        anchors { fill: parent; margins: 10; leftMargin: 12; rightMargin: 12 }
+        anchors { fill: parent; topMargin: 10; bottomMargin: 10; leftMargin: 14; rightMargin: 14 }
         spacing: 12
         Art { size: Math.min(parent.height, a.medium ? 76 : 64) }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 1
-            Item { visible: !a.medium; Layout.fillHeight: true }
-            Text { visible: a.medium; text: a.player?.track ?? ""; color: a.theme.text; font.weight: Font.DemiBold; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
-            Text { visible: a.medium && text !== ""; text: a.player?.artist ?? ""; color: a.theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+            spacing: 0
             Item { Layout.fillHeight: true }
-            Controls { id: compactControls; Layout.alignment: Qt.AlignHCenter }
-            Item { visible: !a.medium; Layout.fillHeight: true }
+            Text { visible: a.medium; text: a.player?.track ?? ""; color: a.theme.text; font.weight: Font.DemiBold; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
+            Text { visible: a.medium && text !== ""; text: a.player?.artist ?? ""; color: a.theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true; Layout.topMargin: 1 }
+            Controls { id: compactControls; Layout.alignment: Qt.AlignHCenter; Layout.topMargin: a.medium ? 10 : 0 }
+            Item { Layout.fillHeight: true }
         }
     }
 }

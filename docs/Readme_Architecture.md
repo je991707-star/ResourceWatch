@@ -213,7 +213,7 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 - 上一首／播放暫停／下一首（`Btn`）：每顆佔 57 px 寬的格子，三格合起來置中，所以按鈕中心等距、暫停在卡片正中央。字形為 Font Awesome Free solid（`backward` \uf04a／`pause` \uf04c 或 `play` \uf04b／`forward` \uf04e），字型由 `FontLoader` 載入套件內的 `contents/fonts/fa-solid-900.woff2`；`glyphs` 記錄各字形的字級與水平拉伸：上下首 18 px、拉寬 1.39 倍（Font Awesome 的箭頭接近方形 1.14:1，拉成參考圖的 1.58:1 長方形），暫停 25 px、壓窄 0.85 倍，播放 25 px 不拉伸。字形以 `\uXXXX` 跳脫寫在原始碼裡（私用區字元直接寫入會看不見）。拉伸用 `Scale`，原點必須寫 `t.width / 2`——在 `Scale` 裡未限定的 `width` 會取到外層格子的寬度，字形就會偏離中心。不能用時 0.3 透明度，按下縮為 0.88。按鈕列有 `HoverHandler`，`controlsHovered` 由 main.qml 寫入 `overBody`，讓桌面容器在按鈕上不把按下當成移動小工具。
 - 第一列與時間列之間、時間列與按鈕列之間為可伸縮空白（最小 8／10），格子較高時平均撐開。
 
-播放器只在跳轉時回報位置，所以播放中且可見時每秒呼叫 `updatePosition()`。`implicitHeight` 為完整版面所需的高度；main.qml 給的高度小於它時 `compact` 為 true，改為精簡模式：左側專輯圖（內距上下 10、左右 12，與右側相隔 12），右側不顯示時間與進度條——高度未滿 100 時專輯圖邊長 min(內容高, 64)、右側只有垂直置中的按鈕列；100 以上（`medium`）專輯圖最大 76，右側上方為曲名（DemiBold 14）與演出者（muted 13），按鈕列在底部；空狀態在精簡模式只顯示文字。專輯圖（`Art`）與按鈕列（`Controls`，`hovered` 供 `controlsHovered`）是兩種模式共用的 inline component；不屬於 `cfg.items`，不能拖曳重排，在按鈕列以外按住它可移動整個小工具。
+播放器只在跳轉時回報位置，所以播放中且可見時每秒呼叫 `updatePosition()`。`implicitHeight` 為完整版面所需的高度；main.qml 給的高度小於它時 `compact` 為 true，改為精簡模式：左側專輯圖（內距上下 10、左右 14，與完整版面相同；與右側相隔 12），右側不顯示時間與進度條，右欄內容以上下兩段相等的伸縮空白整組垂直置中——高度未滿 100 時專輯圖邊長 min(內容高, 64)、右欄只有按鈕列；100 以上（`medium`）專輯圖最大 76，右欄為曲名（DemiBold 14）、演出者（muted 13），其下 10 為按鈕列；空狀態在精簡模式只顯示文字。專輯圖（`Art`）與按鈕列（`Controls`，`hovered` 供 `controlsHovered`）是兩種模式共用的 inline component；不屬於 `cfg.items`，不能拖曳重排，在按鈕列以外按住它可移動整個小工具。
 
 ### contents/fonts/
 
