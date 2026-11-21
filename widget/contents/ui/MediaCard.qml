@@ -4,7 +4,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.private.mpris as Mpris
 
 // Now playing (MPRIS, the same player Plasma's media controller picks): album art, title, artist, progress
-// bar and time. main.qml sizes it to fill the empty space left in the CPU card's column.
+// bar, time and previous / play-pause / next buttons. main.qml sizes it to fill the empty space left in the CPU card's column.
 Rectangle {
     id: a
     required property Theme theme
@@ -17,6 +17,19 @@ Rectangle {
     // microseconds; length is 0 for streams
     readonly property real length: player?.length ?? 0
     readonly property real position: player?.position ?? 0
+    // pointer over the buttons: main.qml stops the desktop from taking the press as a widget move
+    readonly property bool controlsHovered: controlsHover.hovered
+
+    component Ctl: Kirigami.Icon {
+        id: ic
+        signal clicked()
+        Layout.preferredWidth: 18
+        Layout.preferredHeight: 18
+        isMask: true
+        color: a.theme.text
+        opacity: !enabled ? 0.3 : ma.containsMouse ? 1 : 0.75
+        MouseArea { id: ma; anchors { fill: parent; margins: -4 } hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: ic.clicked() }
+    }
 
     // the player only reports position on seeks, so ask for it while playing
     Timer { interval: 1000; repeat: true; running: a.playing && a.visible; onTriggered: a.player.updatePosition() }
@@ -43,6 +56,7 @@ Rectangle {
                 id: art
                 anchors.fill: parent
                 radius: 8
+                color: "transparent" // default white would cover the placeholder
                 source: a.player?.artUrl ?? ""
                 fillMode: Image.PreserveAspectCrop
                 sourceSize: Qt.size(192, 192)
@@ -76,7 +90,17 @@ Rectangle {
             }
             RowLayout {
                 Layout.fillWidth: true
+                spacing: 6
+                HoverHandler { id: controlsHover }
                 Text { text: a.time(a.position); color: a.theme.muted; font.pixelSize: 11 }
+                Item { Layout.fillWidth: true }
+                Ctl { source: "media-skip-backward"; enabled: !!a.player?.canGoPrevious; onClicked: a.player.Previous() }
+                Ctl {
+                    source: a.playing ? "media-playback-pause" : "media-playback-start"
+                    enabled: !!(a.playing ? a.player?.canPause : a.player?.canPlay)
+                    onClicked: a.player.PlayPause()
+                }
+                Ctl { source: "media-skip-forward"; enabled: !!a.player?.canGoNext; onClicked: a.player.Next() }
                 Item { Layout.fillWidth: true }
                 Text { text: a.length > 0 ? a.time(a.length) : "--:--"; color: a.theme.muted; font.pixelSize: 11 }
             }

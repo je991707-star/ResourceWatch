@@ -207,7 +207,7 @@ KDE Plasma 6 小工具（plasmoid，id `io.github.local.resourcewatch.widget`，
 
 ### contents/ui/MediaCard.qml
 
-與卡片相同底色與圓角，顯示播放中的媒體。資料來自 Plasma 媒體控制器同一套 MPRIS 模組 `org.kde.plasma.private.mpris`（私有 API）的 `Mpris2Model.currentPlayer`：左為專輯圖（`Kirigami.ShadowedImage`，圓角 8，邊長 min(高度 − 28, 96)；沒有 `artUrl` 或載入失敗時顯示播放器圖示 `iconName`，再沒有則 `media-default-album`），右為粗體曲名（沒有時為播放器名稱 `identity`）、muted 演出者（沒有時隱藏）、藍色進度條（`position / length`，皆為微秒；串流 `length` 為 0 時進度條為空、總長顯示 `--:--`）、兩端為目前時間與總長（`m:ss`）。播放器只在跳轉時回報位置，所以播放中且可見時每秒呼叫 `updatePosition()`。沒有播放器時置中顯示「沒有播放中的媒體」。高度由 main.qml 決定；不屬於 `cfg.items`，不能拖曳重排，按住它可移動整個小工具。
+與卡片相同底色與圓角，顯示播放中的媒體。資料來自 Plasma 媒體控制器同一套 MPRIS 模組 `org.kde.plasma.private.mpris`（私有 API）的 `Mpris2Model.currentPlayer`：左為專輯圖（`Kirigami.ShadowedImage`，圓角 8，`color` 設透明——預設白底會蓋住佔位底色；邊長 min(高度 − 28, 96)；沒有 `artUrl` 或載入失敗時顯示播放器圖示 `iconName`，再沒有則 `media-default-album`），右為粗體曲名（沒有時為播放器名稱 `identity`）、muted 演出者（沒有時隱藏）、藍色進度條（`position / length`，皆為微秒；串流 `length` 為 0 時進度條為空、總長顯示 `--:--`）、最下一列兩端為目前時間與總長（`m:ss`），中間為上一首／播放暫停／下一首（`Ctl`：18 px 單色 `Kirigami.Icon`（`isMask`、文字色），滑鼠移上不透明、平時 0.75、不能用時 0.3；`media-skip-backward`／`media-playback-pause` 或 `-start`／`media-skip-forward`，分別呼叫 `Previous`／`PlayPause`／`Next`，依 `canGoPrevious`／`canPause` 或 `canPlay`／`canGoNext` 啟用）。這一列有 `HoverHandler`，`controlsHovered` 由 main.qml 寫入 `overBody`，讓桌面容器在按鈕上不把按下當成移動小工具。播放器只在跳轉時回報位置，所以播放中且可見時每秒呼叫 `updatePosition()`。沒有播放器時置中顯示「沒有播放中的媒體」。高度由 main.qml 決定；不屬於 `cfg.items`，不能拖曳重排，按住它可移動整個小工具。
 
 ### contents/ui/Theme.qml
 

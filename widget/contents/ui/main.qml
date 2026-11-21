@@ -313,6 +313,7 @@ PlasmoidItem {
                             readonly property real gap: (other?.cardsHeight ?? 0) - parent.cardsHeight - parent.spacing
                             theme: colors
                             readonly property bool isApp: true
+                            onControlsHoveredChanged: root.overBody = controlsHovered
                             visible: !full.single && root.cfg.app !== false && root.cfg.items.indexOf("cpu") % full.cols === col && cardRep.count > 0 && gap >= 72
                             Layout.fillWidth: true
                             Layout.preferredHeight: gap
