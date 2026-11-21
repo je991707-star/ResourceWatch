@@ -16,9 +16,30 @@ Rectangle {
     implicitHeight: col.implicitHeight + col.anchors.topMargin + col.anchors.bottomMargin
 
     Mpris.Mpris2Model { id: mpris }
-    readonly property var player: mpris.currentPlayer
-    // a player with no track (e.g. a KDE Connect phone that is idle) counts as nothing playing
-    readonly property bool active: !!player && (player.track ?? "") !== ""
+    // every player (the model's first row is Plasma's multiplexer, skipped)
+    Instantiator {
+        id: players
+        model: mpris
+        delegate: QtObject { required property var container; required property bool isMultiplexer }
+    }
+    // Plasma's pick (currentPlayer) can stay on an idle player after plasmashell starts, e.g. a paused
+    // KDE Connect phone with no track while another app plays; so: a playing player with a track, else
+    // Plasma's pick if it has a track, else any player with a track
+    readonly property var player: {
+        const cur = mpris.currentPlayer;
+        if (cur?.track && cur.playbackStatus === Mpris.PlaybackStatus.Playing) return cur;
+        let any = null;
+        for (let i = 0; i < players.count; i++) {
+            const o = players.objectAt(i);
+            const c = o && !o.isMultiplexer ? o.container : null;
+            if (!c?.track) continue;
+            if (c.playbackStatus === Mpris.PlaybackStatus.Playing) return c;
+            any = any ?? c;
+        }
+        return cur?.track ? cur : any;
+    }
+    // no player with a track counts as nothing playing
+    readonly property bool active: !!player
     readonly property bool playing: player?.playbackStatus === Mpris.PlaybackStatus.Playing
     // microseconds; length is 0 for streams
     readonly property real length: player?.length ?? 0
