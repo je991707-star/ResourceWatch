@@ -1,1 +1,9 @@
-/* ResourceWatch top bar */
+/* ResourceWatch top bar: sizes follow the Plasma panel item (chart 16 px, mirror 32 px, about 60% of the bar) */
+.rw-item { spacing: 4px; }
+.rw-icon { icon-size: 14px; }
+.rw-lines { spacing: 0; }
+.rw-rates .rw-line { text-align: right; }
+.rw-line { font-size: 8.5pt; font-weight: normal; font-feature-settings: "tnum"; }
+.rw-label { font-weight: bold; }
+.rw-chart { width: 16px; height: 18px; }
+.rw-mirror { width: 32px; height: 18px; }

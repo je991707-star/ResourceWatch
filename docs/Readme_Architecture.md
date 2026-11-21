@@ -275,11 +275,21 @@ uuid、名稱、說明、`shell-version`（46–51）、專案網址。
 
 ### panel.js
 
-`PanelItems`：頂欄按鈕（`PanelMenu.Button`，加在 `Main.panel` 右側），訂閱 `Source` 更新文字；`destroy()` 取消訂閱並銷毀按鈕。
+`PanelItems`：依 `cfg.panel`（只取 `SPEC` 認得的 `cpu`／`gpu`／`mem`／`net`／`disk`）每項建立一個 `Item`——各自一個 `PanelMenu.Button`，以 `addToStatusArea('<uuid>-<key>', …, 位置 i, 'right')` 依序放在頂欄右側（系統選單左邊）；清單改變時全部重建，否則每次 `Source` 更新呼叫各項的 `update()`。`destroy()` 取消訂閱並銷毀所有按鈕。
+- 內容（`.rw-item`，間距 4）：CPU／GPU／RAM 為兩行置中（粗體標籤「CPU」「GPU」「RAM」、其下 %），右側 16×18 的面積圖（`hist.cpu`／`gpu`／`mem`，藍／青／黃，最近 30 點）；網路／磁碟為 14 px 符號圖示（`network-wired-symbolic`／`drive-harddisk-symbolic`）、兩行靠右的「↓下載」「↑上傳」或「R 讀取」「W 寫入」（`Fmt.short`），右側 32×18 的對稱條狀圖（上傳／讀取桃紅在上、下載／寫入藍在下）。顯示卡與網卡依 `panelGpu`／`panelNic`（`Source.gpu()`／`nic()`）；還沒有資料時數值為 `--`。
+- 點擊開啟按鈕自己的選單（一個不可選取的 `PopupBaseMenuItem`），內容為該項卡片；錯誤時顯示 `Source.error`。
+
+### chart.js
+
+St.DrawingArea 的 Cairo 繪圖（`repaint` 時呼叫，結束後 `cr.$dispose()`）：`rgb(hex)`；`area(cr, w, h, values, color, { max, points, line, fill })`——面積曲線，最新點在右緣、`points` 個點佔滿寬度（資料不足時從右側長出），`null` 斷線，半透明面積上再畫線；`mirror(cr, w, h, up, down, upColor, downColor, { points, gap })`——以中線為界的對稱條狀圖，上下各自依目前最大值縮放，0 畫成中線上 1 px 的短條。
+
+### theme.js
+
+`COLORS`：與 Theme.qml 深色相同的指標色（GNOME 頂欄在淺色樣式下也是深色）；`vbox(props)`：垂直的 `St.BoxLayout`——GNOME 48 起以 `orientation` 取代 `vertical`，46／47 只有 `vertical`，依物件有無 `orientation` 屬性擇一設定。
 
 ### stylesheet.css
 
-頂欄與彈出卡片的樣式。
+頂欄項目的尺寸與字級（`.rw-line` 8.5pt 等寬數字、`.rw-label` 粗體、`.rw-chart` 16×18、`.rw-mirror` 32×18、`.rw-icon` 14 px）與彈出卡片的樣式。
 
 ### dev/nested.sh、dev/devtools@resourcewatch/
 

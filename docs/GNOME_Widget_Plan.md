@@ -54,9 +54,9 @@ GNOME Shell 擴充功能（gnome/）
 - [x] ✅ 新增 Architecture `gnome/` 章節，commit。
 
 ## Phase 3：頂欄項目
-- [ ] `panel.js`：依 `panel` 排出項目——CPU／GPU／RAM 為上下兩行（標籤／%）加迷你面積圖；網路／磁碟為圖示加兩行速率與對稱條狀圖（`fmt.short`），網路卡／顯示卡用 `panelNic`／`panelGpu`。
-- [ ] 每個項目各自是一個 PanelMenu 按鈕，點擊彈出該項的選單（Phase 4 完成前先顯示文字）。
-- [ ] commit。
+- [x] ✅ `panel.js`：依 `panel` 排出項目——CPU／GPU／RAM 為上下兩行（標籤／%）加迷你面積圖；網路／磁碟為圖示加兩行速率與對稱條狀圖（`fmt.short`），網路卡／顯示卡用 `panelNic`／`panelGpu`。
+- [x] ✅ 每個項目各自是一個 PanelMenu 按鈕，點擊彈出該項的選單（Phase 4 完成前先顯示文字）。
+- [x] ✅ commit。
 
 ## Phase 4：彈出卡片（St＋Cairo）
 - [ ] `theme.js`：深／淺色 token，跟隨 Shell 的配色。
