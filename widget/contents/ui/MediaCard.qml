@@ -29,10 +29,10 @@ Rectangle {
     // Font Awesome Free solid glyphs (contents/fonts, SIL OFL 1.1) for the transport buttons
     FontLoader { id: fa; source: Qt.resolvedUrl("../fonts/fa-solid-900.woff2") }
     // glyph, font size, horizontal stretch: Font Awesome's skip arrows are nearly square (1.14:1) and its pause
-    // bars thick, so they are stretched to the reference's wide arrows (1.58:1) and thin bars
+    // bars thick, so the arrows are stretched to the reference's wide ones (1.58:1) and the pause bars narrowed a little
     readonly property var glyphs: ({
-        prev: ["", 18, 1.39], next: ["", 18, 1.39],
-        play: ["", 27, 1], pause: ["", 27, 0.68]
+        prev: ["\uf04a", 18, 1.39], next: ["\uf04e", 18, 1.39],
+        play: ["\uf04b", 25, 1], pause: ["\uf04c", 25, 0.85]
     })
 
     // transport button in a 57 px slot, so the three sit centered with even spacing
@@ -79,7 +79,7 @@ Rectangle {
     ColumnLayout {
         id: col
         visible: a.active
-        anchors { fill: parent; topMargin: 14; bottomMargin: 16; leftMargin: 14; rightMargin: 14 }
+        anchors { fill: parent; topMargin: 20; bottomMargin: 16; leftMargin: 14; rightMargin: 14 }
         spacing: 0
 
         RowLayout {
@@ -127,7 +127,7 @@ Rectangle {
             }
         }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 10 }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
 
         // elapsed, bar, remaining on one row
         RowLayout {
@@ -149,7 +149,7 @@ Rectangle {
             Text { text: a.length > 0 ? "−" + a.time(a.length - a.position) : "--:--"; color: a.theme.muted; font.pixelSize: 11; font.features: { "tnum": 1 } }
         }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 14 }
+        Item { Layout.fillHeight: true; Layout.minimumHeight: 10 }
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
