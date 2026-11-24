@@ -567,7 +567,7 @@ const PAGES = {
       row('儀表板網路卡', '自動：有預設閘道的網卡', dropdown('pref', 'nic', prefs.nic, nicOpts(s))),
       s.gpus.length ? row('儀表板顯示卡', '', dropdown('pref', 'gpu', prefs.gpu, gpuOpts(s))) : '',
       row('開發者模式', '開啟後按 F12 或 Ctrl+Shift+I 開啟檢查器', `<div class="set-ctl">${prefs.dev ? '<button class="btn" data-devtools>開啟檢查器</button>' : ''}${seg('dev', [['', '關閉'], ['1', '開啟']])}</div>`),
-    ].join(''))}${widgetCard(s, row)}${card('關於', `<div class="about">ResourceWatch 0.4.4 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
+    ].join(''))}${widgetCard(s, row)}${card('關於', `<div class="about">ResourceWatch 0.4.5 · MIT License<br>${esc(info?.os || '')} · Linux ${esc(info?.kernel || '')}<br>
       圖示：Font Awesome Free 7.3.1（CC BY 4.0／SIL OFL 1.1／MIT）</div>`)}</div>`;
   }],
 
